@@ -145,9 +145,9 @@ export function ApiKeysMutateDrawer({
   const groupsRaw = groupsData?.data || {}
   const groups: ApiKeyGroupOption[] = Object.entries(groupsRaw).map(
     ([key, info]) => ({
-      value: key,
+      value: info.key || key,
       label: key,
-      desc: info.desc || key,
+      desc: info.desc || info.key || key,
       ratio: info.ratio,
     })
   )
