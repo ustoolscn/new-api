@@ -53,7 +53,7 @@ import {
 } from '../lib/mock-stats'
 import { replaceModelInPath } from '../lib/model-helpers'
 import { inferApiInfo } from '../lib/model-metadata'
-import type { PricingModel } from '../types'
+import type { PricingEndpointInfo, PricingModel } from '../types'
 
 // ---------------------------------------------------------------------------
 // Code-sample registry
@@ -448,7 +448,7 @@ function buildSample(
 
 function CodeSamplesSection(props: {
   model: PricingModel
-  endpointMap: Record<string, { path?: string; method?: string }>
+  endpointMap: Record<string, PricingEndpointInfo>
 }) {
   const { t } = useTranslation()
   const { status } = useStatus()
@@ -856,7 +856,7 @@ function AuthSection() {
 
 export function ModelDetailsApi(props: {
   model: PricingModel
-  endpointMap: Record<string, { path?: string; method?: string }>
+  endpointMap: Record<string, PricingEndpointInfo>
 }) {
   return (
     <div className='space-y-6'>

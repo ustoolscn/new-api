@@ -178,6 +178,16 @@ func Relay(c *gin.Context, relayFormat types.RelayFormat) {
 
 	relayInfo.SetEstimatePromptTokens(tokens)
 
+	if helper.HasVideoSecondsBillingConfig(relayInfo.OriginModelName) {
+		newAPIError = types.NewErrorWithStatusCode(
+			fmt.Errorf("model %s is configured for video per-second billing; please use the video generation endpoint", relayInfo.OriginModelName),
+			types.ErrorCodeInvalidRequest,
+			http.StatusBadRequest,
+			types.ErrOptionWithSkipRetry(),
+		)
+		return
+	}
+
 	priceData, err := helper.ModelPriceHelper(c, relayInfo, tokens, meta)
 	if err != nil {
 		newAPIError = types.NewError(err, types.ErrorCodeModelPriceError, types.ErrOptionWithStatusCode(http.StatusBadRequest))

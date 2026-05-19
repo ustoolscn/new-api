@@ -431,6 +431,7 @@
     "Authorization Endpoint": "Point de terminaison d'autorisation",
     "Authorization Endpoint (Optional)": "Point de terminaison d'autorisation (Facultatif)",
     "Authorize": "Autoriser",
+    "Available endpoints": "Points de terminaison disponibles",
     "Auto": "Auto",
     "Auto (Circuit Breaker)": "Auto (Disjoncteur)",
     "Auto assignment order": "Ordre d'affectation automatique",

@@ -116,3 +116,23 @@ func TestModelPriceHelperVideoSecondsDoesNotExposeBillableRatios(t *testing.T) {
 	require.Equal(t, 5.0, priceData.ModelPrice)
 	require.Empty(t, priceData.OtherRatios)
 }
+
+func TestHasModelBillingConfigAcceptsVideoSeconds(t *testing.T) {
+	saved := map[string]string{}
+	require.NoError(t, config.GlobalConfig.SaveToDB(func(key, value string) error {
+		saved[key] = value
+		return nil
+	}))
+	t.Cleanup(func() {
+		require.NoError(t, config.GlobalConfig.LoadFromDB(saved))
+	})
+
+	require.NoError(t, config.GlobalConfig.LoadFromDB(map[string]string{
+		"billing_setting.billing_mode": `{"doubao-seedance-2.0":"video_seconds"}`,
+		"billing_setting.video_price":  `{"doubao-seedance-2.0":{"base_fps":24,"prices":{"720p":1}}}`,
+	}))
+
+	require.True(t, HasModelBillingConfig("doubao-seedance-2.0"))
+	require.True(t, HasVideoSecondsBillingConfig("doubao-seedance-2.0"))
+	require.False(t, HasVideoSecondsBillingConfig("missing-video-model"))
+}

@@ -431,6 +431,7 @@
     "Authorization Endpoint": "認可エンドポイント",
     "Authorization Endpoint (Optional)": "認証エンドポイント (オプション)",
     "Authorize": "認証",
+    "Available endpoints": "利用可能なエンドポイント",
     "Auto": "自動",
     "Auto (Circuit Breaker)": "自動（サーキットブレーカー）",
     "Auto assignment order": "自動割り当て順序",

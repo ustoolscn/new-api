@@ -19,11 +19,12 @@ For commercial licensing, please contact support@quantumnous.com
 import { useMemo } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { useNavigate, useParams, useSearch } from '@tanstack/react-router'
-import { ArrowLeft, HeartPulse, Info, Timer } from 'lucide-react'
+import { ArrowLeft, ExternalLink, HeartPulse, Info, Timer } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 import { getLobeIcon } from '@/lib/lobe-icon'
 import { cn } from '@/lib/utils'
 import { Button } from '@/components/ui/button'
+import { useStatus } from '@/hooks/use-status'
 import {
   Sheet,
   SheetContent,
@@ -59,14 +60,23 @@ import {
   isDynamicPricingModel,
 } from '../lib/dynamic-price'
 import { parseTags } from '../lib/filters'
-import { getAvailableGroups, isTokenBasedModel } from '../lib/model-helpers'
+import {
+  getAvailableGroups,
+  isTokenBasedModel,
+  replaceModelInPath,
+} from '../lib/model-helpers'
 import {
   formatFixedPrice,
   formatGroupPrice,
   formatVideoSecondPrice,
   getVideoPriceEntries,
 } from '../lib/price'
-import type { PriceType, PricingModel, TokenUnit } from '../types'
+import type {
+  PriceType,
+  PricingEndpointInfo,
+  PricingModel,
+  TokenUnit,
+} from '../types'
 import { DynamicPricingBreakdown } from './dynamic-pricing-breakdown'
 import { ModelDetailsPerformance } from './model-details-performance'
 
@@ -513,6 +523,87 @@ function PriceSection(props: {
   )
 }
 
+function ModelEndpointsSection(props: {
+  model: PricingModel
+  endpointMap: Record<string, PricingEndpointInfo>
+}) {
+  const { t } = useTranslation()
+  const { status } = useStatus()
+  const baseUrl = useMemo(() => {
+    const candidate =
+      (status as Record<string, unknown> | null)?.server_address ??
+      (status as Record<string, unknown> | null)?.serverAddress ??
+      (status?.data as Record<string, unknown> | undefined)?.server_address ??
+      (status?.data as Record<string, unknown> | undefined)?.serverAddress
+    if (candidate && typeof candidate === 'string') {
+      return candidate.replace(/\/$/, '')
+    }
+    if (typeof window !== 'undefined') return window.location.origin
+    return ''
+  }, [status])
+  const endpoints = useMemo(() => {
+    const seen = new Set<string>()
+    return (props.model.supported_endpoint_types || [])
+      .map((type) => {
+        const info = props.endpointMap[type] || {}
+        const method = (info.method || 'POST').toUpperCase()
+        const path = info.path
+          ? replaceModelInPath(info.path, props.model.model_name || '')
+          : ''
+        const href = path
+          ? `${baseUrl}${path.startsWith('/') ? '' : '/'}${path}`
+          : ''
+        return { type, method, path, href }
+      })
+      .filter((endpoint) => {
+        const key = `${endpoint.method}:${endpoint.href || endpoint.type}`
+        if (seen.has(key)) return false
+        seen.add(key)
+        return true
+      })
+  }, [
+    baseUrl,
+    props.model.model_name,
+    props.model.supported_endpoint_types,
+    props.endpointMap,
+  ])
+
+  if (endpoints.length === 0) return null
+
+  return (
+    <section className='bg-card/60 space-y-3 rounded-xl border p-4 shadow-sm'>
+      <SectionTitle>{t('Available endpoints')}</SectionTitle>
+      <div className='grid gap-2 sm:grid-cols-2'>
+        {endpoints.map((endpoint) => (
+          <div
+            key={`${endpoint.type}-${endpoint.path || endpoint.method}`}
+            className='bg-muted/20 flex min-w-0 items-center gap-2 rounded-lg border px-3 py-2'
+          >
+            <span className='bg-background text-muted-foreground shrink-0 rounded border px-1.5 py-0.5 font-mono text-[10px] font-semibold'>
+              {endpoint.method}
+            </span>
+            {endpoint.href ? (
+              <a
+                href={endpoint.href}
+                target='_blank'
+                rel='noreferrer'
+                className='text-foreground hover:text-primary inline-flex min-w-0 items-center gap-1 font-mono text-sm'
+              >
+                <span className='min-w-0 truncate'>{endpoint.href}</span>
+                <ExternalLink className='size-3 shrink-0' />
+              </a>
+            ) : (
+              <code className='text-foreground min-w-0 truncate font-mono text-sm'>
+                {endpoint.type}
+              </code>
+            )}
+          </div>
+        ))}
+      </div>
+    </section>
+  )
+}
+
 // ----------------------------------------------------------------------------
 // Auto group chain (used inside group pricing section)
 // ----------------------------------------------------------------------------
@@ -923,7 +1014,7 @@ export interface ModelDetailsContentProps {
   model: PricingModel
   groupRatio: Record<string, number>
   usableGroup: Record<string, { desc: string; ratio: number }>
-  endpointMap: Record<string, { path?: string; method?: string }>
+  endpointMap: Record<string, PricingEndpointInfo>
   autoGroups: string[]
   priceRate: number
   usdExchangeRate: number
@@ -962,6 +1053,11 @@ export function ModelDetailsContent(props: ModelDetailsContentProps) {
 
         <TabsContent value='overview' className='space-y-6 outline-none'>
           <OverviewSummaryGrid model={props.model} />
+
+          <ModelEndpointsSection
+            model={props.model}
+            endpointMap={props.endpointMap}
+          />
 
           <section className='bg-card/60 space-y-5 rounded-xl border p-4 shadow-sm'>
             <SectionTitle>{t('Pricing')}</SectionTitle>
@@ -1123,12 +1219,7 @@ export function ModelDetails() {
           usdExchangeRate={usdExchangeRate ?? 1}
           tokenUnit={tokenUnit}
           showRechargePrice={search.rechargePrice ?? false}
-          endpointMap={
-            (endpointMap as Record<
-              string,
-              { path?: string; method?: string }
-            >) || {}
-          }
+          endpointMap={endpointMap || {}}
         />
       </div>
     </PublicLayout>

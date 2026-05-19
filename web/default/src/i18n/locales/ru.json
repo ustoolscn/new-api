@@ -431,6 +431,7 @@
     "Authorization Endpoint": "Конечная точка авторизации",
     "Authorization Endpoint (Optional)": "Конечная точка авторизации (необязательно)",
     "Authorize": "Авторизовать",
+    "Available endpoints": "Доступные конечные точки",
     "Auto": "Авто",
     "Auto (Circuit Breaker)": "Авто (Автовыключатель)",
     "Auto assignment order": "Порядок автоматического назначения",

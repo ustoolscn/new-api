@@ -431,6 +431,7 @@
     "Authorization Endpoint": "Điểm cuối ủy quyền",
     "Authorization Endpoint (Optional)": "Điểm cuối ủy quyền (Tùy chọn)",
     "Authorize": "Ủy quyền",
+    "Available endpoints": "Điểm cuối khả dụng",
     "Auto": "Tự động",
     "Auto (Circuit Breaker)": "Tự động (Bộ ngắt mạch)",
     "Auto assignment order": "Thứ tự gán tự động",

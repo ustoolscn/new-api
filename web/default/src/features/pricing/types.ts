@@ -73,6 +73,11 @@ export type PricingModel = {
   capabilities?: ModelCapability[]
 }
 
+export type PricingEndpointInfo = {
+  path?: string
+  method?: string
+}
+
 export type VideoPricingConfig = {
   base_fps?: number
   prices?: Record<string, number>
@@ -103,7 +108,7 @@ export type PricingData = {
   vendors: PricingVendor[]
   group_ratio: Record<string, number>
   usable_group: Record<string, { desc: string; ratio: number }>
-  supported_endpoint: Record<string, string>
+  supported_endpoint: Record<string, PricingEndpointInfo>
   auto_groups: string[]
 }
 

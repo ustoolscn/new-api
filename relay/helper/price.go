@@ -436,11 +436,23 @@ func HasModelBillingConfig(modelName string) bool {
 	if _, ok, _ := ratio_setting.GetModelRatio(modelName); ok {
 		return true
 	}
-	if billing_setting.GetBillingMode(modelName) != billing_setting.BillingModeTieredExpr {
+	switch billing_setting.GetBillingMode(modelName) {
+	case billing_setting.BillingModeTieredExpr:
+		expr, ok := billing_setting.GetBillingExpr(modelName)
+		return ok && strings.TrimSpace(expr) != ""
+	case billing_setting.BillingModeVideoSeconds:
+		return HasVideoSecondsBillingConfig(modelName)
+	default:
 		return false
 	}
-	expr, ok := billing_setting.GetBillingExpr(modelName)
-	return ok && strings.TrimSpace(expr) != ""
+}
+
+func HasVideoSecondsBillingConfig(modelName string) bool {
+	if billing_setting.GetBillingMode(modelName) != billing_setting.BillingModeVideoSeconds {
+		return false
+	}
+	cfg, ok := billing_setting.GetVideoPriceConfig(modelName)
+	return ok && len(cfg.Prices) > 0
 }
 
 func modelPriceHelperTiered(c *gin.Context, info *relaycommon.RelayInfo, promptTokens int, meta *types.TokenCountMeta, groupRatioInfo types.GroupRatioInfo) (types.PriceData, error) {

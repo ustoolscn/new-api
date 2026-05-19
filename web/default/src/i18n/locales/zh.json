@@ -431,6 +431,7 @@
     "Authorization Endpoint": "授权端点",
     "Authorization Endpoint (Optional)": "授权端点（可选）",
     "Authorize": "授权",
+    "Available endpoints": "可用端点",
     "Auto": "自动",
     "Auto (Circuit Breaker)": "自动分组（熔断）",
     "Auto assignment order": "自动分配顺序",
