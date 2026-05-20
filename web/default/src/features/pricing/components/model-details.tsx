@@ -19,11 +19,12 @@ For commercial licensing, please contact support@quantumnous.com
 import { useMemo } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { useNavigate, useParams, useSearch } from '@tanstack/react-router'
-import { ArrowLeft, ExternalLink, HeartPulse, Info, Timer } from 'lucide-react'
+import { ArrowLeft, Check, Copy, HeartPulse, Info, Timer } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 import { getLobeIcon } from '@/lib/lobe-icon'
 import { cn } from '@/lib/utils'
 import { Button } from '@/components/ui/button'
+import { useCopyToClipboard } from '@/hooks/use-copy-to-clipboard'
 import { useStatus } from '@/hooks/use-status'
 import {
   Sheet,
@@ -529,6 +530,7 @@ function ModelEndpointsSection(props: {
 }) {
   const { t } = useTranslation()
   const { status } = useStatus()
+  const { copiedText, copyToClipboard } = useCopyToClipboard()
   const baseUrl = useMemo(() => {
     const candidate =
       (status as Record<string, unknown> | null)?.server_address ??
@@ -583,15 +585,19 @@ function ModelEndpointsSection(props: {
               {endpoint.method}
             </span>
             {endpoint.href ? (
-              <a
-                href={endpoint.href}
-                target='_blank'
-                rel='noreferrer'
-                className='text-foreground hover:text-primary inline-flex min-w-0 items-center gap-1 font-mono text-sm'
+              <button
+                type='button'
+                onClick={() => copyToClipboard(endpoint.href)}
+                className='text-foreground hover:text-primary focus-visible:ring-ring inline-flex min-w-0 flex-1 items-center gap-1 rounded-sm font-mono text-sm focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:outline-none'
+                aria-label={t('Copy')}
               >
                 <span className='min-w-0 truncate'>{endpoint.href}</span>
-                <ExternalLink className='size-3 shrink-0' />
-              </a>
+                {copiedText === endpoint.href ? (
+                  <Check className='text-success size-3 shrink-0' />
+                ) : (
+                  <Copy className='size-3 shrink-0' />
+                )}
+              </button>
             ) : (
               <code className='text-foreground min-w-0 truncate font-mono text-sm'>
                 {endpoint.type}
