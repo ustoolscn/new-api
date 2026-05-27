@@ -230,24 +230,36 @@ func ModelPriceHelperPerCall(c *gin.Context, info *relaycommon.RelayInfo) (types
 }
 
 type videoSecondsBillingTrace struct {
-	Resolution     string
-	Duration       float64
-	FPS            float64
-	BaseFPS        float64
-	FPSMultiplier  float64
-	PricePerSecond float64
-	TotalPrice     float64
+	Resolution               string
+	Duration                 float64
+	FPS                      float64
+	BaseFPS                  float64
+	FPSMultiplier            float64
+	PricePerSecond           float64
+	GeneratedVideoPrice      float64
+	InputContentCharged      bool
+	InputContentPrice        float64
+	InputVideoDuration       float64
+	InputVideoPricePerSecond float64
+	InputVideoPrice          float64
+	TotalPrice               float64
 }
 
 func (t videoSecondsBillingTrace) toPriceDataTrace() *types.VideoSecondsTrace {
 	return &types.VideoSecondsTrace{
-		Resolution:     t.Resolution,
-		Duration:       t.Duration,
-		FPS:            t.FPS,
-		BaseFPS:        t.BaseFPS,
-		FPSMultiplier:  t.FPSMultiplier,
-		PricePerSecond: t.PricePerSecond,
-		TotalPrice:     t.TotalPrice,
+		Resolution:               t.Resolution,
+		Duration:                 t.Duration,
+		FPS:                      t.FPS,
+		BaseFPS:                  t.BaseFPS,
+		FPSMultiplier:            t.FPSMultiplier,
+		PricePerSecond:           t.PricePerSecond,
+		GeneratedVideoPrice:      t.GeneratedVideoPrice,
+		InputContentCharged:      t.InputContentCharged,
+		InputContentPrice:        t.InputContentPrice,
+		InputVideoDuration:       t.InputVideoDuration,
+		InputVideoPricePerSecond: t.InputVideoPricePerSecond,
+		InputVideoPrice:          t.InputVideoPrice,
+		TotalPrice:               t.TotalPrice,
 	}
 }
 
@@ -297,15 +309,36 @@ func calculateVideoSecondsBilling(req relaycommon.TaskSubmitReq, cfg billing_set
 		fps = baseFPS
 	}
 	fpsMultiplier := fps / baseFPS
-	totalPrice := pricePerSecond * duration * fpsMultiplier
+	generatedVideoPrice := pricePerSecond * duration * fpsMultiplier
+	inputContentCharged := hasInputContent(req) && cfg.InputContentPrice > 0
+	inputContentPrice := 0.0
+	if inputContentCharged {
+		inputContentPrice = cfg.InputContentPrice
+	}
+	inputVideoPrice := 0.0
+	inputVideoDuration := 0.0
+	if hasInputVideo(req) && cfg.InputVideoPricePerSecond > 0 {
+		inputVideoDuration = resolveInputVideoDuration(req)
+		if inputVideoDuration <= 0 {
+			return videoSecondsBillingTrace{}, fmt.Errorf("input video duration is required for video per-second billing")
+		}
+		inputVideoPrice = inputVideoDuration * cfg.InputVideoPricePerSecond
+	}
+	totalPrice := generatedVideoPrice + inputContentPrice + inputVideoPrice
 	return videoSecondsBillingTrace{
-		Resolution:     resolution,
-		Duration:       duration,
-		FPS:            fps,
-		BaseFPS:        baseFPS,
-		FPSMultiplier:  fpsMultiplier,
-		PricePerSecond: pricePerSecond,
-		TotalPrice:     totalPrice,
+		Resolution:               resolution,
+		Duration:                 duration,
+		FPS:                      fps,
+		BaseFPS:                  baseFPS,
+		FPSMultiplier:            fpsMultiplier,
+		PricePerSecond:           pricePerSecond,
+		GeneratedVideoPrice:      generatedVideoPrice,
+		InputContentCharged:      inputContentCharged,
+		InputContentPrice:        inputContentPrice,
+		InputVideoDuration:       inputVideoDuration,
+		InputVideoPricePerSecond: cfg.InputVideoPricePerSecond,
+		InputVideoPrice:          inputVideoPrice,
+		TotalPrice:               totalPrice,
 	}, nil
 }
 
@@ -327,6 +360,23 @@ func resolveVideoDuration(req relaycommon.TaskSubmitReq) float64 {
 		return sec
 	}
 	return firstPositiveMetadataNumber(req.Metadata, "duration", "seconds", "duration_seconds", "durationSeconds")
+}
+
+func resolveInputVideoDuration(req relaycommon.TaskSubmitReq) float64 {
+	if req.InputVideoDuration > 0 {
+		return req.InputVideoDuration
+	}
+	if duration := firstPositiveMetadataNumber(
+		req.Metadata,
+		"input_video_duration",
+		"inputVideoDuration",
+		"input_video_seconds",
+		"inputVideoSeconds",
+		"inputVideoDurationSeconds",
+	); duration > 0 {
+		return duration
+	}
+	return firstPositiveMetadataContentNumber(req.Metadata, "duration", "seconds", "duration_seconds", "durationSeconds")
 }
 
 func resolveVideoFPS(req relaycommon.TaskSubmitReq) float64 {
@@ -365,6 +415,166 @@ func resolveVideoResolution(req relaycommon.TaskSubmitReq) string {
 		return normalizeVideoResolution(fmt.Sprintf("%dp", shortSide))
 	}
 	return ""
+}
+
+func hasInputContent(req relaycommon.TaskSubmitReq) bool {
+	if strings.TrimSpace(req.Image) != "" || strings.TrimSpace(req.InputReference) != "" || strings.TrimSpace(req.InputVideo) != "" {
+		return true
+	}
+	if len(req.Images) > 0 || len(req.ImageInputs) > 0 || len(req.InputVideos) > 0 {
+		return true
+	}
+	return metadataHasMedia(req.Metadata)
+}
+
+func hasInputVideo(req relaycommon.TaskSubmitReq) bool {
+	if strings.TrimSpace(req.InputVideo) != "" || len(req.InputVideos) > 0 {
+		return true
+	}
+	for _, value := range append([]string{req.InputReference}, req.Images...) {
+		if mediaURLLooksVideo(value) {
+			return true
+		}
+	}
+	for _, input := range req.ImageInputs {
+		if mediaURLLooksVideo(input.URL) || strings.Contains(strings.ToLower(input.Role), "video") {
+			return true
+		}
+	}
+	return metadataHasVideo(req.Metadata)
+}
+
+func metadataHasMedia(metadata map[string]interface{}) bool {
+	if metadata == nil {
+		return false
+	}
+	for _, key := range []string{"image", "images", "input_reference", "input_video", "input_videos", "video", "video_url"} {
+		if value, ok := metadata[key]; ok && metadataValuePresent(value) {
+			return true
+		}
+	}
+	return metadataContentHasMedia(metadata)
+}
+
+func metadataHasVideo(metadata map[string]interface{}) bool {
+	if metadata == nil {
+		return false
+	}
+	for _, key := range []string{"input_video", "input_videos", "video", "video_url", "inputVideo", "inputVideos"} {
+		if value, ok := metadata[key]; ok && metadataValuePresent(value) {
+			return true
+		}
+	}
+	return metadataContentHasVideo(metadata)
+}
+
+func metadataValuePresent(value interface{}) bool {
+	switch v := value.(type) {
+	case string:
+		return strings.TrimSpace(v) != ""
+	case []interface{}:
+		return len(v) > 0
+	case []string:
+		return len(v) > 0
+	case map[string]interface{}:
+		return len(v) > 0
+	default:
+		return value != nil
+	}
+}
+
+func metadataContentHasVideo(metadata map[string]interface{}) bool {
+	return metadataContentHasMediaType(metadata, "video")
+}
+
+func metadataContentHasMedia(metadata map[string]interface{}) bool {
+	return metadataContentHasMediaType(metadata, "")
+}
+
+func metadataContentHasMediaType(metadata map[string]interface{}, mediaType string) bool {
+	contentRaw, ok := metadata["content"]
+	if !ok {
+		return false
+	}
+	contentSlice, ok := contentRaw.([]interface{})
+	if !ok {
+		return false
+	}
+	for _, item := range contentSlice {
+		itemMap, ok := item.(map[string]interface{})
+		if !ok {
+			continue
+		}
+		for _, key := range []string{"image_url", "video_url", "audio_url", "file", "file_url", "image", "video", "audio"} {
+			if mediaType != "" && !strings.Contains(key, mediaType) {
+				continue
+			}
+			if _, ok := itemMap[key]; ok {
+				return true
+			}
+		}
+		if value, ok := itemMap["type"].(string); ok {
+			lower := strings.ToLower(value)
+			if mediaType == "" {
+				if strings.Contains(lower, "image") || strings.Contains(lower, "video") || strings.Contains(lower, "audio") || strings.Contains(lower, "file") {
+					return true
+				}
+			} else if strings.Contains(lower, mediaType) {
+				return true
+			}
+		}
+	}
+	return false
+}
+
+func firstPositiveMetadataContentNumber(metadata map[string]interface{}, keys ...string) float64 {
+	if metadata == nil {
+		return 0
+	}
+	contentRaw, ok := metadata["content"]
+	if !ok {
+		return 0
+	}
+	contentSlice, ok := contentRaw.([]interface{})
+	if !ok {
+		return 0
+	}
+	for _, item := range contentSlice {
+		itemMap, ok := item.(map[string]interface{})
+		if !ok {
+			continue
+		}
+		isVideo := false
+		if value, ok := itemMap["type"].(string); ok && strings.Contains(strings.ToLower(value), "video") {
+			isVideo = true
+		}
+		if _, ok := itemMap["video_url"]; ok {
+			isVideo = true
+		}
+		if !isVideo {
+			continue
+		}
+		if n := firstPositiveMetadataNumber(itemMap, keys...); n > 0 {
+			return n
+		}
+	}
+	return 0
+}
+
+func mediaURLLooksVideo(value string) bool {
+	value = strings.ToLower(strings.TrimSpace(value))
+	if value == "" {
+		return false
+	}
+	if strings.HasPrefix(value, "data:video/") {
+		return true
+	}
+	for _, ext := range []string{".mp4", ".mov", ".webm", ".mkv", ".avi", ".m4v"} {
+		if strings.Contains(value, ext) {
+			return true
+		}
+	}
+	return false
 }
 
 func resolutionFromSize(size string) string {

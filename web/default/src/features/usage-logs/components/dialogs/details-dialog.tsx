@@ -392,9 +392,45 @@ function BillingBreakdown(props: {
           ? ` × ${formatNumber(other.video_fps_multiplier)}`
           : ''
       rows.push({
-        label: t('Billing formula'),
-        value: `${other.video_resolution ? `${other.video_resolution}: ` : ''}${fmtPrice(other.video_price_per_second)}/${t('second')} × ${formatNumber(other.video_duration)}${t('seconds')}${fpsMultiplier} = ${fmtPrice(other.video_total_price ?? other.model_price ?? 0)}`,
+        label: t('Generated video formula'),
+        value: `${other.video_resolution ? `${other.video_resolution}: ` : ''}${fmtPrice(other.video_price_per_second)}/${t('second')} × ${formatNumber(other.video_duration)}${t('seconds')}${fpsMultiplier} = ${fmtPrice(other.video_generated_price ?? other.video_total_price ?? other.model_price ?? 0)}`,
       })
+    }
+    if (other.video_input_content_price != null) {
+      rows.push({
+        label: t('Input content'),
+        value: fmtPrice(other.video_input_content_price),
+      })
+    }
+    if (
+      other.video_input_price_per_second != null &&
+      other.video_input_duration != null
+    ) {
+      rows.push({
+        label: t('Input video formula'),
+        value: `${fmtPrice(other.video_input_price_per_second)}/${t('second')} × ${formatNumber(other.video_input_duration)}${t('seconds')} = ${fmtPrice(other.video_input_price ?? 0)}`,
+      })
+    }
+    if (
+      other.video_generated_price != null ||
+      other.video_input_content_price != null ||
+      other.video_input_price != null
+    ) {
+      const parts = [
+        other.video_generated_price != null
+          ? fmtPrice(other.video_generated_price)
+          : null,
+        other.video_input_content_price != null
+          ? fmtPrice(other.video_input_content_price)
+          : null,
+        other.video_input_price != null ? fmtPrice(other.video_input_price) : null,
+      ].filter(Boolean)
+      if (parts.length > 1) {
+        rows.push({
+          label: t('Billing formula'),
+          value: `${parts.join(' + ')} = ${fmtPrice(other.video_total_price ?? other.model_price ?? 0)}`,
+        })
+      }
     }
     rows.push({
       label: t('Total Cost'),

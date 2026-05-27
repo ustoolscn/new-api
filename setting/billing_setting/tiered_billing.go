@@ -20,8 +20,10 @@ const (
 // BillingSetting is managed by config.GlobalConfig.Register.
 // DB keys: billing_setting.billing_mode, billing_setting.billing_expr, billing_setting.video_price
 type VideoPriceConfig struct {
-	BaseFPS float64            `json:"base_fps,omitempty"`
-	Prices  map[string]float64 `json:"prices,omitempty"`
+	BaseFPS                  float64            `json:"base_fps,omitempty"`
+	InputContentPrice        float64            `json:"input_content_price,omitempty"`
+	InputVideoPricePerSecond float64            `json:"input_video_price_per_second,omitempty"`
+	Prices                   map[string]float64 `json:"prices,omitempty"`
 }
 
 type BillingSetting struct {

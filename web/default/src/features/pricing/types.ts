@@ -80,6 +80,8 @@ export type PricingEndpointInfo = {
 
 export type VideoPricingConfig = {
   base_fps?: number
+  input_content_price?: number
+  input_video_price_per_second?: number
   prices?: Record<string, number>
 }
 

@@ -47,6 +47,15 @@ func LogTaskConsumption(c *gin.Context, info *relaycommon.RelayInfo) {
 			other["video_resolution"] = trace.Resolution
 			other["video_duration"] = trace.Duration
 			other["video_price_per_second"] = trace.PricePerSecond
+			other["video_generated_price"] = trace.GeneratedVideoPrice
+			if trace.InputContentCharged {
+				other["video_input_content_price"] = trace.InputContentPrice
+			}
+			if trace.InputVideoPrice > 0 {
+				other["video_input_duration"] = trace.InputVideoDuration
+				other["video_input_price_per_second"] = trace.InputVideoPricePerSecond
+				other["video_input_price"] = trace.InputVideoPrice
+			}
 			other["video_fps"] = trace.FPS
 			other["video_base_fps"] = trace.BaseFPS
 			other["video_fps_multiplier"] = trace.FPSMultiplier

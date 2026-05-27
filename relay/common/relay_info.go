@@ -680,6 +680,9 @@ type TaskSubmitReq struct {
 	Image                string                 `json:"image,omitempty"`
 	Images               []string               `json:"images,omitempty"`
 	ImageInputs          []TaskImageInput       `json:"-"`
+	InputVideo           string                 `json:"input_video,omitempty"`
+	InputVideos          []string               `json:"input_videos,omitempty"`
+	InputVideoDuration   float64                `json:"input_video_duration,omitempty"`
 	Size                 string                 `json:"size,omitempty"`
 	Width                int                    `json:"width,omitempty"`
 	Height               int                    `json:"height,omitempty"`
@@ -738,6 +741,9 @@ func (t *TaskSubmitReq) UnmarshalJSON(data []byte) error {
 		Mode                 string                 `json:"mode,omitempty"`
 		Image                string                 `json:"image,omitempty"`
 		Images               json.RawMessage        `json:"images,omitempty"`
+		InputVideo           string                 `json:"input_video,omitempty"`
+		InputVideos          []string               `json:"input_videos,omitempty"`
+		InputVideoDuration   json.RawMessage        `json:"input_video_duration,omitempty"`
 		Size                 string                 `json:"size,omitempty"`
 		Width                int                    `json:"width,omitempty"`
 		Height               int                    `json:"height,omitempty"`
@@ -760,6 +766,8 @@ func (t *TaskSubmitReq) UnmarshalJSON(data []byte) error {
 	t.Model = aux.Model
 	t.Mode = aux.Mode
 	t.Image = aux.Image
+	t.InputVideo = aux.InputVideo
+	t.InputVideos = aux.InputVideos
 	t.Size = aux.Size
 	t.Width = aux.Width
 	t.Height = aux.Height
@@ -779,6 +787,20 @@ func (t *TaskSubmitReq) UnmarshalJSON(data []byte) error {
 			if err := common.Unmarshal(aux.Duration, &durationStr); err == nil && durationStr != "" {
 				if v, err := strconv.Atoi(durationStr); err == nil {
 					t.Duration = v
+				}
+			}
+		}
+	}
+
+	if len(aux.InputVideoDuration) > 0 {
+		var durationFloat float64
+		if err := common.Unmarshal(aux.InputVideoDuration, &durationFloat); err == nil {
+			t.InputVideoDuration = durationFloat
+		} else {
+			var durationStr string
+			if err := common.Unmarshal(aux.InputVideoDuration, &durationStr); err == nil && durationStr != "" {
+				if v, err := strconv.ParseFloat(strings.TrimSpace(durationStr), 64); err == nil {
+					t.InputVideoDuration = v
 				}
 			}
 		}

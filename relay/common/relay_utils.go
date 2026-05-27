@@ -88,12 +88,13 @@ func validateMultipartTaskRequest(c *gin.Context, info *RelayInfo, action string
 
 	formData := c.Request.PostForm
 	req = TaskSubmitReq{
-		Prompt:   formData.Get("prompt"),
-		Model:    formData.Get("model"),
-		Mode:     formData.Get("mode"),
-		Image:    formData.Get("image"),
-		Size:     formData.Get("size"),
-		Metadata: make(map[string]interface{}),
+		Prompt:     formData.Get("prompt"),
+		Model:      formData.Get("model"),
+		Mode:       formData.Get("mode"),
+		Image:      formData.Get("image"),
+		InputVideo: formData.Get("input_video"),
+		Size:       formData.Get("size"),
+		Metadata:   make(map[string]interface{}),
 	}
 
 	if durationStr := formData.Get("seconds"); durationStr != "" {
@@ -107,6 +108,14 @@ func validateMultipartTaskRequest(c *gin.Context, info *RelayInfo, action string
 		req.ImageInputs = make([]TaskImageInput, 0, len(images))
 		for _, image := range images {
 			req.ImageInputs = append(req.ImageInputs, TaskImageInput{URL: image})
+		}
+	}
+	if videos := formData["input_videos"]; len(videos) > 0 {
+		req.InputVideos = videos
+	}
+	if durationStr := formData.Get("input_video_duration"); durationStr != "" {
+		if duration, err := strconv.ParseFloat(durationStr, 64); err == nil {
+			req.InputVideoDuration = duration
 		}
 	}
 
@@ -190,14 +199,17 @@ func ValidateMultipartDirect(c *gin.Context, info *RelayInfo) *dto.TaskError {
 
 func isKnownTaskField(field string) bool {
 	knownFields := map[string]bool{
-		"prompt":          true,
-		"model":           true,
-		"mode":            true,
-		"image":           true,
-		"images":          true,
-		"size":            true,
-		"duration":        true,
-		"input_reference": true, // Sora 特有字段
+		"prompt":               true,
+		"model":                true,
+		"mode":                 true,
+		"image":                true,
+		"images":               true,
+		"input_video":          true,
+		"input_videos":         true,
+		"input_video_duration": true,
+		"size":                 true,
+		"duration":             true,
+		"input_reference":      true, // Sora 特有字段
 	}
 	return knownFields[field]
 }

@@ -78,7 +78,47 @@ func TestCalculateVideoSecondsBilling(t *testing.T) {
 	require.Equal(t, "720p", trace.Resolution)
 	require.Equal(t, 5.0, trace.Duration)
 	require.Equal(t, 30.0/24.0, trace.FPSMultiplier)
+	require.Equal(t, 6.25, trace.GeneratedVideoPrice)
 	require.Equal(t, 6.25, trace.TotalPrice)
+}
+
+func TestCalculateVideoSecondsBillingIncludesInputContentAndVideo(t *testing.T) {
+	trace, err := calculateVideoSecondsBilling(relaycommon.TaskSubmitReq{
+		Duration:           5,
+		Width:              1280,
+		Height:             720,
+		InputVideo:         "https://example.com/ref.mp4",
+		InputVideoDuration: 3,
+	}, billing_setting.VideoPriceConfig{
+		BaseFPS:                  24,
+		InputContentPrice:        0.5,
+		InputVideoPricePerSecond: 0.25,
+		Prices: map[string]float64{
+			"720p": 1,
+		},
+	})
+	require.NoError(t, err)
+	require.True(t, trace.InputContentCharged)
+	require.Equal(t, 0.5, trace.InputContentPrice)
+	require.Equal(t, 3.0, trace.InputVideoDuration)
+	require.Equal(t, 0.75, trace.InputVideoPrice)
+	require.Equal(t, 5.0, trace.GeneratedVideoPrice)
+	require.Equal(t, 6.25, trace.TotalPrice)
+}
+
+func TestCalculateVideoSecondsBillingRequiresInputVideoDurationWhenPriced(t *testing.T) {
+	_, err := calculateVideoSecondsBilling(relaycommon.TaskSubmitReq{
+		Duration:   5,
+		Width:      1280,
+		Height:     720,
+		InputVideo: "https://example.com/ref.mp4",
+	}, billing_setting.VideoPriceConfig{
+		InputVideoPricePerSecond: 0.25,
+		Prices: map[string]float64{
+			"720p": 1,
+		},
+	})
+	require.ErrorContains(t, err, "input video duration is required")
 }
 
 func TestModelPriceHelperVideoSecondsDoesNotExposeBillableRatios(t *testing.T) {
