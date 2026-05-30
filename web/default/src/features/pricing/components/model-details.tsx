@@ -575,11 +575,11 @@ function ModelEndpointsSection(props: {
   return (
     <section className='bg-card/60 space-y-3 rounded-xl border p-4 shadow-sm'>
       <SectionTitle>{t('Available endpoints')}</SectionTitle>
-      <div className='grid gap-2 sm:grid-cols-2'>
+      <div className='grid gap-2'>
         {endpoints.map((endpoint) => (
           <div
             key={`${endpoint.type}-${endpoint.path || endpoint.method}`}
-            className='bg-muted/20 flex min-w-0 items-center gap-2 rounded-lg border px-3 py-2'
+            className='bg-muted/20 grid min-w-0 grid-cols-[auto_minmax(0,1fr)] items-start gap-2 rounded-lg border px-3 py-2'
           >
             <span className='bg-background text-muted-foreground shrink-0 rounded border px-1.5 py-0.5 font-mono text-[10px] font-semibold'>
               {endpoint.method}
@@ -588,18 +588,20 @@ function ModelEndpointsSection(props: {
               <button
                 type='button'
                 onClick={() => copyToClipboard(endpoint.href)}
-                className='text-foreground hover:text-primary focus-visible:ring-ring inline-flex min-w-0 flex-1 items-center gap-1 rounded-sm font-mono text-sm focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:outline-none'
+                className='text-foreground hover:text-primary focus-visible:ring-ring grid min-w-0 grid-cols-[minmax(0,1fr)_auto] items-start gap-1 rounded-sm text-left font-mono text-sm leading-relaxed whitespace-normal focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:outline-none'
                 aria-label={t('Copy')}
               >
-                <span className='min-w-0 truncate'>{endpoint.href}</span>
+                <span className='block min-w-0 whitespace-normal break-all [overflow-wrap:anywhere]'>
+                  {endpoint.href}
+                </span>
                 {copiedText === endpoint.href ? (
-                  <Check className='text-success size-3 shrink-0' />
+                  <Check className='text-success mt-1 size-3 shrink-0' />
                 ) : (
-                  <Copy className='size-3 shrink-0' />
+                  <Copy className='mt-1 size-3 shrink-0' />
                 )}
               </button>
             ) : (
-              <code className='text-foreground min-w-0 truncate font-mono text-sm'>
+              <code className='text-foreground min-w-0 break-all whitespace-normal [overflow-wrap:anywhere] font-mono text-sm'>
                 {endpoint.type}
               </code>
             )}

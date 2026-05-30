@@ -54,7 +54,13 @@ const regionalPromptMessages: Record<RegionalPromptLanguage, string> = {
   vi: 'Bạn có thể đổi ngôn ngữ tại đây.',
 }
 
-export function LanguageSwitcher() {
+type LanguageSwitcherProps = {
+  regionalPrompt?: 'always' | 'desktop' | 'mobile' | 'never'
+}
+
+export function LanguageSwitcher({
+  regionalPrompt = 'always',
+}: LanguageSwitcherProps) {
   const { i18n, t } = useTranslation()
   const queryClient = useQueryClient()
   const user = useAuthStore((s) => s.auth.user)
@@ -63,6 +69,14 @@ export function LanguageSwitcher() {
     useState<RegionalPromptLanguage | null>(null)
   const [promptOpen, setPromptOpen] = useState(false)
   const [promptDismissed, setPromptDismissed] = useState(false)
+
+  const isPromptEnabledForViewport = useCallback(() => {
+    if (regionalPrompt === 'never') return false
+    if (regionalPrompt === 'always') return true
+    if (typeof window === 'undefined') return false
+    const isDesktop = window.matchMedia('(min-width: 640px)').matches
+    return regionalPrompt === 'desktop' ? isDesktop : !isDesktop
+  }, [regionalPrompt])
 
   const dismissRegionalPrompt = useCallback(() => {
     setPromptDismissed(true)
@@ -73,6 +87,7 @@ export function LanguageSwitcher() {
   }, [])
 
   useEffect(() => {
+    if (!isPromptEnabledForViewport()) return
     if (typeof window === 'undefined') return
     if (
       window.localStorage.getItem(LANGUAGE_REGION_PROMPT_DISMISSED_KEY) ===
@@ -87,7 +102,7 @@ export function LanguageSwitcher() {
 
     setPromptLanguage(detectedLanguage)
     setPromptOpen(true)
-  }, [])
+  }, [isPromptEnabledForViewport])
 
   const handleChangeLanguage = useCallback(
     async (code: string) => {
@@ -108,9 +123,9 @@ export function LanguageSwitcher() {
 
   return (
     <Popover
-      open={promptOpen}
+      open={isPromptEnabledForViewport() && promptOpen}
       onOpenChange={(open) => {
-        if (open && !promptDismissed) {
+        if (isPromptEnabledForViewport() && open && !promptDismissed) {
           setPromptOpen(true)
         }
       }}

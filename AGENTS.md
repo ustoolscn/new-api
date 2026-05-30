@@ -39,6 +39,67 @@ web/             — Frontend themes container
   web/default/src/i18n/ — Frontend internationalization (i18next, zh/en/fr/ru/ja/vi)
 ```
 
+## Project Index
+
+Keep this index current. Whenever directories, major modules, routing boundaries, frontend structure, scripts, or other index-worthy project content changes, update this `AGENTS.md` in the same change so future agents can understand the project quickly.
+
+### Root Files
+
+- `main.go` — application bootstrap: loads `.env`, initializes settings, DB, Redis, i18n, OAuth providers, background jobs, routers, analytics injection, and HTTP server.
+- `.env.example` — supported environment variable template. Update it whenever env vars are added, removed, renamed, or semantics change.
+- `go.mod` / `go.sum` — Go module dependencies.
+- `Dockerfile`, `Dockerfile.dev`, `docker-compose.yml`, `docker-compose.dev.yml`, `new-api.service` — container and service deployment entry points.
+- `makefile` — build targets for backend and both frontend themes.
+- `README*.md`, `LICENSE`, `NOTICE`, `THIRD-PARTY-LICENSES.md` — public docs and compliance files. Protected project attribution rules apply.
+- `VERSION` — build/version input used by build scripts when present.
+- `AGENTS.md` / `CLAUDE.md` — agent-facing project conventions. Keep this file as the source of truth for agent indexing.
+
+### Backend Directories
+
+- `router/` — Gin route registration for API, relay, dashboard, web assets, setup, and OAuth routes.
+- `controller/` — HTTP handlers and request orchestration for users, tokens, channels, relay, billing, tasks, subscriptions, pricing, model sync, OAuth callbacks, and admin operations.
+- `service/` — business logic for quota, billing, relay conversion helpers, token counting, notifications, tasks, payments, subscriptions, channel selection, compatibility transforms, and external calls.
+- `model/` — GORM models, migrations, DB initialization, cache-backed lookups, setup state, users, channels, tokens, logs, pricing, subscriptions, vendors, and options.
+- `relay/` — provider relay core plus channel adaptors. `relay/channel/` contains provider-specific implementations such as OpenAI, Claude, Gemini, AWS, Azure, Ali, Ollama, and others.
+- `middleware/` — Gin middleware for auth, logging, CORS, rate limiting, request IDs, distribution, cache, and context handling.
+- `dto/` — request/response DTOs for OpenAI, Claude, Gemini, audio, images, rerank, realtime, tasks, pricing, channels, and related APIs.
+- `setting/` — runtime configuration domains: operation, system, model, ratio, billing, performance, console, payment, reasoning, and config registry.
+- `common/` — shared infrastructure: JSON wrappers, env helpers, Redis, crypto, HTTP/TLS, quota utilities, rate limits, system monitor, disk cache, SSRF protection, email, logging helpers, and constants.
+- `constant/` — stable constants for API types, channels, contexts, endpoint types, Azure, cache keys, tasks, finish reasons, setup, and environment-backed runtime values.
+- `types/` — cross-layer type definitions for relay formats, channel errors, file data/sources, request metadata, sets, maps, and pricing.
+- `oauth/` — OAuth provider registry and implementations for GitHub, Discord, LinuxDo, OIDC, and generic/custom providers.
+- `i18n/` — backend i18n setup and locale YAML files.
+- `logger/` — logging setup and helpers.
+- `pkg/` — internal reusable packages: `billingexpr` for dynamic billing expressions, `cachex` for hybrid cache primitives, `ionet` for io.net integrations, and `perf_metrics` for performance metrics.
+
+### Frontend Directories
+
+- `web/default/` — primary React 19 + TypeScript frontend using Rsbuild, Base UI-style components, Tailwind CSS, TanStack Router/Query/Table, and Bun scripts.
+- `web/default/src/components/` — reusable UI primitives, layout shell, navigation, theme controls, dialogs, form helpers, and shared widgets.
+- `web/default/src/features/` — feature modules for auth, channels, models, pricing, profile, redemption codes, system settings, usage logs, users, and wallet.
+- `web/default/src/i18n/` — i18next configuration and locale JSON files for `en`, `zh`, `fr`, `ja`, `ru`, and `vi`.
+- `web/default/src/routes/` — TanStack Router route tree and page entry points.
+- `web/default/src/assets/`, `context/`, `hooks/`, `lib/`, `stores/`, `types/` — frontend assets, providers, reusable hooks, utilities, state, and shared types.
+- `web/classic/` — legacy/classic React 18 + Vite + Semi Design frontend. Keep compatibility in mind when backend API or shared behavior changes.
+- `web/classic/src/` — classic frontend pages, components, helpers, hooks, constants, contexts, stores, and i18n locales.
+
+### Integration and Support Directories
+
+- `electron/` — Electron desktop wrapper; sets data directory, port, and SQLite path for local packaged usage.
+- `.github/` — repository automation, workflows, and GitHub metadata.
+- `.agents/` — local agent skills and project-specific assistant resources.
+- `docs/` — additional local documentation.
+- `bin/` — local binary/output directory when present.
+
+### Operational Index
+
+- Environment variables are loaded from `.env` via `godotenv.Overload(".env")` in `main.go`; application code reads them primarily through `common.InitEnv()`, `common.GetEnvOrDefault*`, direct `os.Getenv`, and frontend `VITE_` variables.
+- Database support must remain SQLite, MySQL, and PostgreSQL compatible. Check `model/main.go` for DB selection, migration, quoting, and boolean compatibility helpers.
+- Redis is optional. `REDIS_CONN_STRING` enables Redis; memory cache can also be enabled independently with `MEMORY_CACHE_ENABLED`.
+- Background jobs include option sync, quota data updates, channel tests, channel upstream model updates, Codex credential refresh, subscription quota reset, Midjourney/task polling, and optional batch updates.
+- Default frontend build output is embedded from `web/default/dist`; classic build output is embedded from `web/classic/dist`.
+- Frontend environment variables must use the `VITE_` prefix. Prefer Bun commands inside `web/default/`.
+
 ## Internationalization (i18n)
 
 ### Backend (`i18n/`)

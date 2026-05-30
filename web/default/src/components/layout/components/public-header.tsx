@@ -199,7 +199,7 @@ export function PublicHeader(props: PublicHeaderProps) {
             {/* Logo */}
             <Link
               to={homeUrl}
-              className='group flex shrink-0 items-center gap-2.5'
+              className='group flex min-w-0 flex-1 items-center gap-2.5 sm:flex-none sm:shrink-0'
             >
               <div className='flex size-7 shrink-0 items-center justify-center transition-all duration-300 group-hover:scale-105'>
                 {loading ? (
@@ -215,7 +215,7 @@ export function PublicHeader(props: PublicHeaderProps) {
                   />
                 )}
               </div>
-              <span className='text-sm font-semibold tracking-tight'>
+              <span className='truncate text-sm font-semibold tracking-tight'>
                 {loading ? <Skeleton className='h-4 w-16' /> : displaySiteName}
               </span>
             </Link>
@@ -268,7 +268,9 @@ export function PublicHeader(props: PublicHeaderProps) {
                 <div className='bg-border/40 mx-2 h-4 w-px' />
               )}
 
-              {showLanguageSwitcher && <LanguageSwitcher />}
+              {showLanguageSwitcher && (
+                <LanguageSwitcher regionalPrompt='desktop' />
+              )}
               {showThemeSwitch && <ThemeSwitch />}
               {showNotifications && (
                 <NotificationButton
@@ -298,7 +300,10 @@ export function PublicHeader(props: PublicHeaderProps) {
             </div>
 
             {/* Mobile: compact actions + hamburger */}
-            <div className='flex items-center gap-2 sm:hidden'>
+            <div className='flex shrink-0 items-center gap-1 sm:hidden'>
+              {showLanguageSwitcher && (
+                <LanguageSwitcher regionalPrompt='mobile' />
+              )}
               {showThemeSwitch && <ThemeSwitch />}
               {showAuthButtons && !loading && isAuthenticated && (
                 <ProfileDropdown />
@@ -402,6 +407,19 @@ export function PublicHeader(props: PublicHeaderProps) {
             )}
             style={{ transitionDelay: mobileOpen ? '250ms' : '0ms' }}
           >
+            {(showLanguageSwitcher || showThemeSwitch) && (
+              <div className='border-border/70 flex items-center justify-between rounded-lg border px-3 py-2'>
+                <span className='text-muted-foreground text-sm'>
+                  {t('Preferences')}
+                </span>
+                <div className='flex items-center gap-1'>
+                  {showLanguageSwitcher && (
+                    <LanguageSwitcher regionalPrompt='never' />
+                  )}
+                  {showThemeSwitch && <ThemeSwitch />}
+                </div>
+              </div>
+            )}
             {showAuthButtons && (
               <Link
                 to={isAuthenticated ? '/dashboard' : '/sign-in'}
