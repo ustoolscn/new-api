@@ -45,7 +45,6 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select'
-import { Separator } from '@/components/ui/separator'
 import {
   Sheet,
   SheetClose,
@@ -57,6 +56,14 @@ import {
 } from '@/components/ui/sheet'
 import { Switch } from '@/components/ui/switch'
 import { Textarea } from '@/components/ui/textarea'
+import {
+  SideDrawerSection,
+  sideDrawerContentClassName,
+  sideDrawerFooterClassName,
+  sideDrawerFormClassName,
+  sideDrawerHeaderClassName,
+  sideDrawerSwitchItemClassName,
+} from '@/components/drawer-layout'
 import { JsonEditor } from '@/components/json-editor'
 import { TagInput } from '@/components/tag-input'
 import { createModel, updateModel, getModel, getVendors } from '../../api'
@@ -206,8 +213,8 @@ export function ModelMutateDrawer({
 
   return (
     <Sheet open={open} onOpenChange={onOpenChange}>
-      <SheetContent className='flex h-dvh w-full flex-col gap-0 overflow-hidden p-0 sm:max-w-2xl'>
-        <SheetHeader className='border-b px-4 py-3 text-start sm:px-6 sm:py-4'>
+      <SheetContent className={sideDrawerContentClassName('sm:max-w-2xl')}>
+        <SheetHeader className={sideDrawerHeaderClassName()}>
           <SheetTitle>
             {isEditing ? t('Edit Model') : t('Create Model')}
           </SheetTitle>
@@ -226,10 +233,10 @@ export function ModelMutateDrawer({
             onSubmit={form.handleSubmit(
               onSubmit as Parameters<typeof form.handleSubmit>[0]
             )}
-            className='flex-1 space-y-4 overflow-y-auto px-3 py-3 pb-4 sm:space-y-6 sm:px-4'
+            className={sideDrawerFormClassName()}
           >
             {/* Basic Information */}
-            <div className='space-y-4'>
+            <SideDrawerSection>
               <h3 className='text-sm font-semibold'>
                 {t('Basic Information')}
               </h3>
@@ -353,12 +360,10 @@ export function ModelMutateDrawer({
                   </FormItem>
                 )}
               />
-            </div>
-
-            <Separator />
+            </SideDrawerSection>
 
             {/* Matching Configuration */}
-            <div className='space-y-4'>
+            <SideDrawerSection>
               <h3 className='text-sm font-semibold'>{t('Matching Rules')}</h3>
 
               <FormField
@@ -401,12 +406,10 @@ export function ModelMutateDrawer({
                   </FormItem>
                 )}
               />
-            </div>
-
-            <Separator />
+            </SideDrawerSection>
 
             {/* Endpoints Configuration */}
-            <div className='space-y-4'>
+            <SideDrawerSection>
               <div className='flex items-center justify-between'>
                 <h3 className='text-sm font-semibold'>{t('Endpoints')}</h3>
                 <Select<string>
@@ -462,20 +465,18 @@ export function ModelMutateDrawer({
                   </FormItem>
                 )}
               />
-            </div>
-
-            <Separator />
+            </SideDrawerSection>
 
             {/* Status & Sync */}
-            <div className='space-y-4'>
+            <SideDrawerSection>
               <h3 className='text-sm font-semibold'>{t('Status & Sync')}</h3>
 
               <FormField
                 control={form.control}
                 name='status'
                 render={({ field }) => (
-                  <FormItem className='flex items-center justify-between rounded-lg border p-4'>
-                    <div className='space-y-0.5'>
+                  <FormItem className={sideDrawerSwitchItemClassName()}>
+                    <div className='flex flex-col gap-0.5'>
                       <FormLabel className='text-base'>
                         {t('Enabled')}
                       </FormLabel>
@@ -497,8 +498,8 @@ export function ModelMutateDrawer({
                 control={form.control}
                 name='sync_official'
                 render={({ field }) => (
-                  <FormItem className='flex items-center justify-between rounded-lg border p-4'>
-                    <div className='space-y-0.5'>
+                  <FormItem className={sideDrawerSwitchItemClassName()}>
+                    <div className='flex flex-col gap-0.5'>
                       <FormLabel className='text-base'>
                         {t('Official Sync')}
                       </FormLabel>
@@ -515,11 +516,11 @@ export function ModelMutateDrawer({
                   </FormItem>
                 )}
               />
-            </div>
+            </SideDrawerSection>
           </form>
         </Form>
 
-        <SheetFooter className='grid grid-cols-2 gap-2 border-t px-4 py-3 sm:flex sm:px-6 sm:py-4'>
+        <SheetFooter className={sideDrawerFooterClassName()}>
           <SheetClose
             render={<Button variant='outline' disabled={isSubmitting} />}
           >

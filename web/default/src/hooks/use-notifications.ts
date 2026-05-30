@@ -64,7 +64,7 @@ const autoOpenedNotificationSignatures = new Set<string>()
  * Provides unread counts and read status management
  */
 export function useNotifications() {
-  const [dialogOpen, setDialogOpen] = useState(false)
+  const [popoverOpen, setPopoverOpen] = useState(false)
   const [activeTab, setActiveTab] = useState<'notice' | 'announcements'>(
     'notice'
   )
@@ -96,7 +96,6 @@ export function useNotifications() {
     markAnnouncementsRead,
     isAnnouncementRead,
     isNoticeClosed,
-    setClosedUntilDate,
   } = useNotificationStore()
 
   // Extract notice content
@@ -140,22 +139,36 @@ export function useNotifications() {
     })
   }, [noticeContent, unreadAnnouncementKeys, unreadCounts])
 
-  // Handle dialog open
-  const handleOpenDialog = (tab?: 'notice' | 'announcements') => {
-    // Mark Notice as read when opening dialog
+  const markAnnouncementsAsRead = () => {
+    if (announcements.length > 0) {
+      const allKeys = announcements.map((item: Record<string, unknown>) =>
+        getAnnouncementKey(item)
+      )
+      markAnnouncementsRead(allKeys)
+    }
+  }
+
+  // Handle popover open
+  const handleOpenPopover = (tab?: 'notice' | 'announcements') => {
+    const nextTab = tab || activeTab
+
+    // Mark currently visible content as read when opening the notification center
     if (noticeContent) {
       markNoticeRead(noticeContent)
     }
+    if (nextTab === 'announcements') {
+      markAnnouncementsAsRead()
+    }
 
-    setActiveTab(tab || 'notice')
-    setDialogOpen(true)
+    setActiveTab(nextTab)
+    setPopoverOpen(true)
   }
 
   useEffect(() => {
     if (
       noticeLoading ||
       statusLoading ||
-      dialogOpen ||
+      popoverOpen ||
       !autoOpenSignature ||
       isNoticeClosed() ||
       autoOpenRef.current === autoOpenSignature ||
@@ -166,33 +179,32 @@ export function useNotifications() {
 
     autoOpenRef.current = autoOpenSignature
     autoOpenedNotificationSignatures.add(autoOpenSignature)
-    handleOpenDialog(unreadCounts.notice > 0 ? 'notice' : 'announcements')
+    handleOpenPopover(unreadCounts.notice > 0 ? 'notice' : 'announcements')
   }, [
     autoOpenSignature,
-    dialogOpen,
+    isNoticeClosed,
     noticeLoading,
+    popoverOpen,
     statusLoading,
     unreadCounts.notice,
-    isNoticeClosed,
   ])
+
+  const handlePopoverOpenChange = (open: boolean) => {
+    if (open) {
+      handleOpenPopover(activeTab)
+      return
+    }
+
+    setPopoverOpen(false)
+  }
 
   // Handle tab change - mark announcements as read when switching to that tab
   const handleTabChange = (tab: 'notice' | 'announcements') => {
     setActiveTab(tab)
 
-    if (tab === 'announcements' && announcements.length > 0) {
-      const allKeys = announcements.map((item: Record<string, unknown>) =>
-        getAnnouncementKey(item)
-      )
-      markAnnouncementsRead(allKeys)
+    if (tab === 'announcements') {
+      markAnnouncementsAsRead()
     }
-  }
-
-  // Handle "Close Today" action
-  const handleCloseToday = () => {
-    const today = new Date().toDateString()
-    setClosedUntilDate(today)
-    setDialogOpen(false)
   }
 
   return {
@@ -206,19 +218,15 @@ export function useNotifications() {
     unreadNoticeCount: unreadCounts.notice,
     unreadAnnouncementsCount: unreadCounts.announcements,
 
-    // Dialog state
-    dialogOpen,
-    setDialogOpen,
+    // Popover state
+    popoverOpen,
+    setPopoverOpen: handlePopoverOpenChange,
     activeTab,
     setActiveTab: handleTabChange,
 
     // Actions
-    openDialog: handleOpenDialog,
-    closeDialog: () => setDialogOpen(false),
-    closeToday: handleCloseToday,
+    openPopover: handleOpenPopover,
+    closePopover: () => setPopoverOpen(false),
     refetchNotice,
-
-    // Status
-    isNoticeClosed: isNoticeClosed(),
   }
 }

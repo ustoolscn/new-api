@@ -19,9 +19,11 @@ For commercial licensing, please contact support@quantumnous.com
 import { useMemo } from 'react'
 import { type ColumnDef } from '@tanstack/react-table'
 import { useTranslation } from 'react-i18next'
+import { formatQuota } from '@/lib/format'
 import { DataTableColumnHeader } from '@/components/data-table'
 import { GroupBadge } from '@/components/group-badge'
 import { StatusBadge } from '@/components/status-badge'
+import { TableId } from '@/components/table-id'
 import {
   formatDuration,
   formatResetPeriod,
@@ -42,9 +44,7 @@ export function useSubscriptionsColumns(): ColumnDef<PlanRecord>[] {
         header: ({ column }) => (
           <DataTableColumnHeader column={column} title='ID' />
         ),
-        cell: ({ row }) => (
-          <span className='text-muted-foreground'>#{row.original.plan.id}</span>
-        ),
+        cell: ({ row }) => <TableId value={row.original.plan.id} />,
         size: 60,
       },
       {
@@ -169,6 +169,13 @@ export function useSubscriptionsColumns(): ColumnDef<PlanRecord>[] {
               {plan.creem_product_id && (
                 <StatusBadge label='Creem' variant='neutral' copyable={false} />
               )}
+              {plan.waffo_pancake_product_id && (
+                <StatusBadge
+                  label='Waffo Pancake'
+                  variant='neutral'
+                  copyable={false}
+                />
+              )}
             </div>
           )
         },
@@ -176,15 +183,15 @@ export function useSubscriptionsColumns(): ColumnDef<PlanRecord>[] {
       },
       {
         id: 'total_amount',
-        meta: { label: t('Total Quota'), mobileHidden: true },
+        meta: { label: t('Received amount'), mobileHidden: true },
         header: ({ column }) => (
-          <DataTableColumnHeader column={column} title={t('Total Quota')} />
+          <DataTableColumnHeader column={column} title={t('Received amount')} />
         ),
         cell: ({ row }) => {
           const total = Number(row.original.plan.total_amount || 0)
           return (
             <span className='text-muted-foreground'>
-              {total > 0 ? total : t('Unlimited')}
+              {total > 0 ? formatQuota(total) : t('Unlimited')}
             </span>
           )
         },
