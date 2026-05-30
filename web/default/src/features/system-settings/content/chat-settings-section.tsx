@@ -66,10 +66,16 @@ const createChatSchema = (t: (key: string) => string) =>
             return
           }
           const entries = Object.entries(item)
-          if (entries.length !== 1) {
+          const isNamedEntry =
+            typeof item.name === 'string' &&
+            typeof item.url === 'string' &&
+            (item.icon === undefined || typeof item.icon === 'string')
+          if (!isNamedEntry && entries.length !== 1) {
             ctx.addIssue({
               code: z.ZodIssueCode.custom,
-              message: t('Each item must have exactly one key-value pair.'),
+              message: t(
+                'Each item must be either a legacy single key-value object or an object with name, url, and optional icon.'
+              ),
             })
             return
           }
@@ -180,7 +186,7 @@ export function ChatSettingsSection({
                     </FormControl>
                     <FormDescription>
                       {t(
-                        'Array of chat client presets. Each item is an object with one key-value pair: client name and its URL.'
+                        'Array of chat client presets. Supports legacy {"Name":"URL"} items and {"name":"Name","url":"URL","icon":"OpenAI.Color, https://example.com/icon.png, or <svg ...>"} items.'
                       )}
                     </FormDescription>
                     <FormMessage />

@@ -134,12 +134,11 @@ export interface LogOtherData {
   video_total_price?: number
   video_resolution?: string
   video_duration?: number
+  video_billable_duration?: number
   video_price_per_second?: number
   video_generated_price?: number
   video_input_content_price?: number
   video_input_duration?: number
-  video_input_price_per_second?: number
-  video_input_price?: number
   video_fps?: number
   video_base_fps?: number
   video_fps_multiplier?: number

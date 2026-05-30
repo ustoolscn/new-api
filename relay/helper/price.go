@@ -1,15 +1,25 @@
 package helper
 
 import (
+	"bytes"
+	"encoding/base64"
 	"fmt"
+	"io"
+	"mime"
+	"mime/multipart"
+	"net/http"
+	"net/url"
+	"path/filepath"
 	"strconv"
 	"strings"
 
 	"github.com/QuantumNous/new-api/common"
+	"github.com/QuantumNous/new-api/constant"
 	"github.com/QuantumNous/new-api/logger"
 	"github.com/QuantumNous/new-api/model"
 	"github.com/QuantumNous/new-api/pkg/billingexpr"
 	relaycommon "github.com/QuantumNous/new-api/relay/common"
+	"github.com/QuantumNous/new-api/service"
 	"github.com/QuantumNous/new-api/setting/billing_setting"
 	"github.com/QuantumNous/new-api/setting/operation_setting"
 	"github.com/QuantumNous/new-api/setting/ratio_setting"
@@ -230,36 +240,34 @@ func ModelPriceHelperPerCall(c *gin.Context, info *relaycommon.RelayInfo) (types
 }
 
 type videoSecondsBillingTrace struct {
-	Resolution               string
-	Duration                 float64
-	FPS                      float64
-	BaseFPS                  float64
-	FPSMultiplier            float64
-	PricePerSecond           float64
-	GeneratedVideoPrice      float64
-	InputContentCharged      bool
-	InputContentPrice        float64
-	InputVideoDuration       float64
-	InputVideoPricePerSecond float64
-	InputVideoPrice          float64
-	TotalPrice               float64
+	Resolution          string
+	Duration            float64
+	FPS                 float64
+	BaseFPS             float64
+	FPSMultiplier       float64
+	PricePerSecond      float64
+	BillableDuration    float64
+	GeneratedVideoPrice float64
+	InputContentCharged bool
+	InputContentPrice   float64
+	InputVideoDuration  float64
+	TotalPrice          float64
 }
 
 func (t videoSecondsBillingTrace) toPriceDataTrace() *types.VideoSecondsTrace {
 	return &types.VideoSecondsTrace{
-		Resolution:               t.Resolution,
-		Duration:                 t.Duration,
-		FPS:                      t.FPS,
-		BaseFPS:                  t.BaseFPS,
-		FPSMultiplier:            t.FPSMultiplier,
-		PricePerSecond:           t.PricePerSecond,
-		GeneratedVideoPrice:      t.GeneratedVideoPrice,
-		InputContentCharged:      t.InputContentCharged,
-		InputContentPrice:        t.InputContentPrice,
-		InputVideoDuration:       t.InputVideoDuration,
-		InputVideoPricePerSecond: t.InputVideoPricePerSecond,
-		InputVideoPrice:          t.InputVideoPrice,
-		TotalPrice:               t.TotalPrice,
+		Resolution:          t.Resolution,
+		Duration:            t.Duration,
+		FPS:                 t.FPS,
+		BaseFPS:             t.BaseFPS,
+		FPSMultiplier:       t.FPSMultiplier,
+		PricePerSecond:      t.PricePerSecond,
+		BillableDuration:    t.BillableDuration,
+		GeneratedVideoPrice: t.GeneratedVideoPrice,
+		InputContentCharged: t.InputContentCharged,
+		InputContentPrice:   t.InputContentPrice,
+		InputVideoDuration:  t.InputVideoDuration,
+		TotalPrice:          t.TotalPrice,
 	}
 }
 
@@ -272,6 +280,7 @@ func modelPriceHelperVideoSeconds(c *gin.Context, info *relaycommon.RelayInfo, g
 	if err != nil {
 		return types.PriceData{}, err
 	}
+	req = resolveInputVideoDurationForBilling(c, req)
 	trace, err := calculateVideoSecondsBilling(req, cfg)
 	if err != nil {
 		return types.PriceData{}, err
@@ -309,36 +318,34 @@ func calculateVideoSecondsBilling(req relaycommon.TaskSubmitReq, cfg billing_set
 		fps = baseFPS
 	}
 	fpsMultiplier := fps / baseFPS
-	generatedVideoPrice := pricePerSecond * duration * fpsMultiplier
 	inputContentCharged := hasInputContent(req) && cfg.InputContentPrice > 0
 	inputContentPrice := 0.0
 	if inputContentCharged {
 		inputContentPrice = cfg.InputContentPrice
 	}
-	inputVideoPrice := 0.0
 	inputVideoDuration := 0.0
-	if hasInputVideo(req) && cfg.InputVideoPricePerSecond > 0 {
+	if hasInputVideo(req) {
 		inputVideoDuration = resolveInputVideoDuration(req)
 		if inputVideoDuration <= 0 {
 			return videoSecondsBillingTrace{}, fmt.Errorf("input video duration is required for video per-second billing")
 		}
-		inputVideoPrice = inputVideoDuration * cfg.InputVideoPricePerSecond
 	}
-	totalPrice := generatedVideoPrice + inputContentPrice + inputVideoPrice
+	billableDuration := duration + inputVideoDuration
+	generatedVideoPrice := pricePerSecond * billableDuration * fpsMultiplier
+	totalPrice := generatedVideoPrice + inputContentPrice
 	return videoSecondsBillingTrace{
-		Resolution:               resolution,
-		Duration:                 duration,
-		FPS:                      fps,
-		BaseFPS:                  baseFPS,
-		FPSMultiplier:            fpsMultiplier,
-		PricePerSecond:           pricePerSecond,
-		GeneratedVideoPrice:      generatedVideoPrice,
-		InputContentCharged:      inputContentCharged,
-		InputContentPrice:        inputContentPrice,
-		InputVideoDuration:       inputVideoDuration,
-		InputVideoPricePerSecond: cfg.InputVideoPricePerSecond,
-		InputVideoPrice:          inputVideoPrice,
-		TotalPrice:               totalPrice,
+		Resolution:          resolution,
+		Duration:            duration,
+		FPS:                 fps,
+		BaseFPS:             baseFPS,
+		FPSMultiplier:       fpsMultiplier,
+		PricePerSecond:      pricePerSecond,
+		BillableDuration:    billableDuration,
+		GeneratedVideoPrice: generatedVideoPrice,
+		InputContentCharged: inputContentCharged,
+		InputContentPrice:   inputContentPrice,
+		InputVideoDuration:  inputVideoDuration,
+		TotalPrice:          totalPrice,
 	}, nil
 }
 
@@ -377,6 +384,244 @@ func resolveInputVideoDuration(req relaycommon.TaskSubmitReq) float64 {
 		return duration
 	}
 	return firstPositiveMetadataContentNumber(req.Metadata, "duration", "seconds", "duration_seconds", "durationSeconds")
+}
+
+func resolveInputVideoDurationForBilling(c *gin.Context, req relaycommon.TaskSubmitReq) relaycommon.TaskSubmitReq {
+	if resolveInputVideoDuration(req) > 0 || !hasInputVideoForBilling(c, req) {
+		return req
+	}
+	if duration, ok, err := probeMultipartInputVideoDuration(c); ok {
+		if err == nil && duration > 0 {
+			req.InputVideoDuration = duration
+			if strings.TrimSpace(req.InputVideo) == "" {
+				req.InputVideo = "__multipart_input_video__"
+			}
+			return req
+		}
+		logger.LogWarn(c, fmt.Sprintf("failed to probe multipart input video duration: %v", err))
+	}
+	if duration, ok, err := probeURLInputVideoDuration(c, req); ok {
+		if err == nil && duration > 0 {
+			req.InputVideoDuration = duration
+			return req
+		}
+		logger.LogWarn(c, fmt.Sprintf("failed to probe input video URL duration: %v", err))
+	}
+	return req
+}
+
+func hasInputVideoForBilling(c *gin.Context, req relaycommon.TaskSubmitReq) bool {
+	if hasInputVideo(req) {
+		return true
+	}
+	_, ok, _ := firstMultipartInputVideoFile(c)
+	return ok
+}
+
+func probeMultipartInputVideoDuration(c *gin.Context) (float64, bool, error) {
+	fileHeader, ok, err := firstMultipartInputVideoFile(c)
+	if err != nil || !ok {
+		return 0, ok, err
+	}
+	file, err := fileHeader.Open()
+	if err != nil {
+		return 0, true, err
+	}
+	defer file.Close()
+	ext := strings.ToLower(filepath.Ext(fileHeader.Filename))
+	duration, err := common.GetAudioDuration(c.Request.Context(), file, ext)
+	return duration, true, err
+}
+
+func firstMultipartInputVideoFile(c *gin.Context) (*multipart.FileHeader, bool, error) {
+	if c == nil || c.Request == nil {
+		return nil, false, nil
+	}
+	contentType := c.GetHeader("Content-Type")
+	if !strings.Contains(strings.ToLower(contentType), "multipart/") {
+		return nil, false, nil
+	}
+	form, err := common.ParseMultipartFormReusable(c)
+	if err != nil {
+		return nil, false, err
+	}
+	for _, key := range []string{"input_video", "input_videos", "video"} {
+		if files := form.File[key]; len(files) > 0 {
+			return files[0], true, nil
+		}
+	}
+	if files := form.File["input_reference"]; len(files) > 0 && normalizeInputVideoExt(filepath.Ext(files[0].Filename)) != "" {
+		return files[0], true, nil
+	}
+	return nil, false, nil
+}
+
+func probeURLInputVideoDuration(c *gin.Context, req relaycommon.TaskSubmitReq) (float64, bool, error) {
+	for _, rawURL := range inputVideoURLCandidates(req) {
+		duration, ok, err := probeInputVideoURLDuration(c, rawURL)
+		if !ok {
+			continue
+		}
+		return duration, true, err
+	}
+	return 0, false, nil
+}
+
+func inputVideoURLCandidates(req relaycommon.TaskSubmitReq) []string {
+	seen := map[string]bool{}
+	candidates := make([]string, 0, 4)
+	add := func(value string) {
+		value = strings.TrimSpace(value)
+		if value == "" || seen[value] {
+			return
+		}
+		seen[value] = true
+		candidates = append(candidates, value)
+	}
+	add(req.InputVideo)
+	for _, value := range req.InputVideos {
+		add(value)
+	}
+	for _, value := range append([]string{req.InputReference}, req.Images...) {
+		if mediaURLLooksVideo(value) {
+			add(value)
+		}
+	}
+	for _, input := range req.ImageInputs {
+		if mediaURLLooksVideo(input.URL) || strings.Contains(strings.ToLower(input.Role), "video") {
+			add(input.URL)
+		}
+	}
+	addMetadataVideoURLs(req.Metadata, add)
+	return candidates
+}
+
+func addMetadataVideoURLs(value interface{}, add func(string)) {
+	switch v := value.(type) {
+	case map[string]interface{}:
+		for key, item := range v {
+			lowerKey := strings.ToLower(key)
+			if strings.Contains(lowerKey, "video") || lowerKey == "url" || lowerKey == "input_reference" {
+				addMetadataVideoURLs(item, add)
+				continue
+			}
+			if lowerKey == "content" || lowerKey == "contents" {
+				addMetadataVideoURLs(item, add)
+			}
+		}
+	case []interface{}:
+		for _, item := range v {
+			addMetadataVideoURLs(item, add)
+		}
+	case []string:
+		for _, item := range v {
+			if mediaURLLooksVideo(item) {
+				add(item)
+			}
+		}
+	case string:
+		if mediaURLLooksVideo(v) || strings.HasPrefix(strings.TrimSpace(v), "data:video/") {
+			add(v)
+		}
+	}
+}
+
+func probeInputVideoURLDuration(c *gin.Context, rawURL string) (float64, bool, error) {
+	rawURL = strings.TrimSpace(rawURL)
+	if strings.HasPrefix(rawURL, "data:video/") {
+		duration, err := probeDataURLVideoDuration(c, rawURL)
+		return duration, true, err
+	}
+	parsed, err := url.Parse(rawURL)
+	if err != nil || (parsed.Scheme != "http" && parsed.Scheme != "https") {
+		return 0, false, nil
+	}
+	resp, err := service.DoDownloadRequest(rawURL, "input_video_duration_probe")
+	if err != nil {
+		return 0, true, err
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		return 0, true, fmt.Errorf("failed to download input video, status code: %d", resp.StatusCode)
+	}
+	maxFileSize := maxInputVideoProbeBytes()
+	data, err := io.ReadAll(io.LimitReader(resp.Body, maxFileSize+1))
+	if err != nil {
+		return 0, true, err
+	}
+	if int64(len(data)) > maxFileSize {
+		return 0, true, fmt.Errorf("input video exceeds maximum probe size: %dMB", constant.MaxFileDownloadMB)
+	}
+	ext := inputVideoExtFromResponse(resp, parsed)
+	if ext == "" {
+		return 0, true, fmt.Errorf("unsupported input video format")
+	}
+	duration, err := common.GetAudioDuration(c.Request.Context(), bytes.NewReader(data), ext)
+	return duration, true, err
+}
+
+func probeDataURLVideoDuration(c *gin.Context, rawURL string) (float64, error) {
+	mediaType, data, ok := strings.Cut(rawURL, ",")
+	if !ok || !strings.Contains(strings.ToLower(mediaType), ";base64") {
+		return 0, fmt.Errorf("input video data URL must be base64 encoded")
+	}
+	decoded, err := base64.StdEncoding.DecodeString(data)
+	if err != nil {
+		return 0, err
+	}
+	if int64(len(decoded)) > maxInputVideoProbeBytes() {
+		return 0, fmt.Errorf("input video exceeds maximum probe size: %dMB", constant.MaxFileDownloadMB)
+	}
+	ext := inputVideoExtFromContentType(strings.TrimPrefix(strings.Split(mediaType, ";")[0], "data:"))
+	if ext == "" {
+		return 0, fmt.Errorf("unsupported input video data URL format")
+	}
+	return common.GetAudioDuration(c.Request.Context(), bytes.NewReader(decoded), ext)
+}
+
+func inputVideoExtFromResponse(resp *http.Response, parsed *url.URL) string {
+	if ext := normalizeInputVideoExt(filepath.Ext(parsed.Path)); ext != "" {
+		return ext
+	}
+	if _, params, err := mime.ParseMediaType(resp.Header.Get("Content-Disposition")); err == nil {
+		if filename := params["filename"]; filename != "" {
+			if ext := normalizeInputVideoExt(filepath.Ext(filename)); ext != "" {
+				return ext
+			}
+		}
+	}
+	contentType, _, _ := mime.ParseMediaType(resp.Header.Get("Content-Type"))
+	return inputVideoExtFromContentType(contentType)
+}
+
+func inputVideoExtFromContentType(contentType string) string {
+	switch strings.ToLower(strings.TrimSpace(contentType)) {
+	case "video/mp4", "video/x-m4v", "video/quicktime", "application/mp4":
+		return ".mp4"
+	case "video/webm":
+		return ".webm"
+	default:
+		return ""
+	}
+}
+
+func normalizeInputVideoExt(ext string) string {
+	switch strings.ToLower(ext) {
+	case ".mp4", ".m4v", ".mov":
+		return ".mp4"
+	case ".webm":
+		return ".webm"
+	default:
+		return ""
+	}
+}
+
+func maxInputVideoProbeBytes() int64 {
+	limitMB := constant.MaxFileDownloadMB
+	if limitMB <= 0 {
+		limitMB = 64
+	}
+	return int64(limitMB) << 20
 }
 
 func resolveVideoFPS(req relaycommon.TaskSubmitReq) float64 {

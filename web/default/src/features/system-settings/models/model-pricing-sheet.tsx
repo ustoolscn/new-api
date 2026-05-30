@@ -128,7 +128,6 @@ export type ModelRatioData = {
 export type VideoPricingConfig = {
   base_fps?: number
   input_content_price?: number
-  input_video_price_per_second?: number
   prices?: Record<string, number>
 }
 
@@ -316,7 +315,6 @@ function getModeBadgeVariant(
 function createInitialVideoRows(data?: ModelRatioData | null): {
   baseFps: string
   inputContentPrice: string
-  inputVideoPricePerSecond: string
   rows: VideoPriceRow[]
 } {
   const config = data?.videoPrice
@@ -326,9 +324,6 @@ function createInitialVideoRows(data?: ModelRatioData | null): {
     return {
       baseFps: formatNumber(config?.base_fps || 24),
       inputContentPrice: formatNumber(config?.input_content_price),
-      inputVideoPricePerSecond: formatNumber(
-        config?.input_video_price_per_second
-      ),
       rows: [
         { id: 1, resolution: '720p', price: '' },
         { id: 2, resolution: '1080p', price: '' },
@@ -338,9 +333,6 @@ function createInitialVideoRows(data?: ModelRatioData | null): {
   return {
     baseFps: formatNumber(config?.base_fps || 24),
     inputContentPrice: formatNumber(config?.input_content_price),
-    inputVideoPricePerSecond: formatNumber(
-      config?.input_video_price_per_second
-    ),
     rows: entries.map(([resolution, price], index) => ({
       id: index + 1,
       resolution,
@@ -354,7 +346,6 @@ const formatNumber = formatPricingNumber
 function videoRowsToConfig(
   baseFps: string,
   inputContentPrice: string,
-  inputVideoPricePerSecond: string,
   rows: VideoPriceRow[]
 ): VideoPricingConfig {
   const prices: Record<string, number> = {}
@@ -371,10 +362,6 @@ function videoRowsToConfig(
   const contentPrice = toNumberOrNull(inputContentPrice)
   if (contentPrice !== null && contentPrice > 0) {
     config.input_content_price = contentPrice
-  }
-  const inputVideoPrice = toNumberOrNull(inputVideoPricePerSecond)
-  if (inputVideoPrice !== null && inputVideoPrice > 0) {
-    config.input_video_price_per_second = inputVideoPrice
   }
   return config
 }
@@ -537,8 +524,6 @@ export function ModelPricingEditorPanel({
   const [requestRuleExpr, setRequestRuleExpr] = useState('')
   const [videoBaseFps, setVideoBaseFps] = useState('24')
   const [videoInputContentPrice, setVideoInputContentPrice] = useState('')
-  const [videoInputVideoPricePerSecond, setVideoInputVideoPricePerSecond] =
-    useState('')
   const [videoRows, setVideoRows] = useState<VideoPriceRow[]>([])
   const [nextVideoRowId, setNextVideoRowId] = useState(3)
   const [previewOpen, setPreviewOpen] = useState(true)
@@ -608,7 +593,6 @@ export function ModelPricingEditorPanel({
     setLaneEnabled(nextLaneState.enabled)
     setVideoBaseFps(nextVideoState.baseFps)
     setVideoInputContentPrice(nextVideoState.inputContentPrice)
-    setVideoInputVideoPricePerSecond(nextVideoState.inputVideoPricePerSecond)
     setVideoRows(nextVideoState.rows)
     setNextVideoRowId(nextVideoState.rows.length + 1)
     setPreviewOpen(true)
@@ -853,7 +837,6 @@ export function ModelPricingEditorPanel({
       data.videoPrice = videoRowsToConfig(
         videoBaseFps,
         videoInputContentPrice,
-        videoInputVideoPricePerSecond,
         videoRows
       )
     }
@@ -1046,13 +1029,9 @@ export function ModelPricingEditorPanel({
                   <VideoPricingEditor
                     baseFps={videoBaseFps}
                     inputContentPrice={videoInputContentPrice}
-                    inputVideoPricePerSecond={videoInputVideoPricePerSecond}
                     rows={videoRows}
                     onBaseFpsChange={setVideoBaseFps}
                     onInputContentPriceChange={setVideoInputContentPrice}
-                    onInputVideoPricePerSecondChange={
-                      setVideoInputVideoPricePerSecond
-                    }
                     onRowsChange={(rows) => {
                       setVideoRows(rows)
                       setNextVideoRowId(
@@ -1204,12 +1183,10 @@ function PriceLane(props: {
 function VideoPricingEditor(props: {
   baseFps: string
   inputContentPrice: string
-  inputVideoPricePerSecond: string
   rows: VideoPriceRow[]
   nextRowId: number
   onBaseFpsChange: (value: string) => void
   onInputContentPriceChange: (value: string) => void
-  onInputVideoPricePerSecondChange: (value: string) => void
   onRowsChange: (rows: VideoPriceRow[]) => void
   onNextRowIdChange: (value: number) => void
 }) {
@@ -1259,64 +1236,38 @@ function VideoPricingEditor(props: {
         </FieldDescription>
       </Field>
 
-      <div className='grid gap-3 sm:grid-cols-2'>
-        <Field>
-          <FieldLabel>{t('Input content price')}</FieldLabel>
-          <InputGroup>
-            <InputGroupAddon>$</InputGroupAddon>
-            <InputGroupInput
-              inputMode='decimal'
-              value={props.inputContentPrice}
-              placeholder='0'
-              onChange={(event) => {
-                const value = event.target.value
-                if (numericDraftRegex.test(value)) {
-                  props.onInputContentPriceChange(value)
-                }
-              }}
-            />
-            <InputGroupAddon align='inline-end'>
-              {t('per request')}
-            </InputGroupAddon>
-          </InputGroup>
-          <FieldDescription>
-            {t('Flat USD charge when the request includes input content.')}
-          </FieldDescription>
-        </Field>
-
-        <Field>
-          <FieldLabel>{t('Input video price per second')}</FieldLabel>
-          <InputGroup>
-            <InputGroupAddon>$</InputGroupAddon>
-            <InputGroupInput
-              inputMode='decimal'
-              value={props.inputVideoPricePerSecond}
-              placeholder='0'
-              onChange={(event) => {
-                const value = event.target.value
-                if (numericDraftRegex.test(value)) {
-                  props.onInputVideoPricePerSecondChange(value)
-                }
-              }}
-            />
-            <InputGroupAddon align='inline-end'>
-              {t('/ sec')}
-            </InputGroupAddon>
-          </InputGroup>
-          <FieldDescription>
-            {t(
-              'When input video is present, charge input video seconds multiplied by this price.'
-            )}
-          </FieldDescription>
-        </Field>
-      </div>
+      <Field>
+        <FieldLabel>{t('Input content price')}</FieldLabel>
+        <InputGroup>
+          <InputGroupAddon>$</InputGroupAddon>
+          <InputGroupInput
+            inputMode='decimal'
+            value={props.inputContentPrice}
+            placeholder='0'
+            onChange={(event) => {
+              const value = event.target.value
+              if (numericDraftRegex.test(value)) {
+                props.onInputContentPriceChange(value)
+              }
+            }}
+          />
+          <InputGroupAddon align='inline-end'>
+            {t('per request')}
+          </InputGroupAddon>
+        </InputGroup>
+        <FieldDescription>
+          {t('Flat USD charge when the request includes input content.')}
+        </FieldDescription>
+      </Field>
 
       <Field>
         <div className='flex items-center justify-between gap-3'>
           <FieldContent>
             <FieldTitle>{t('Resolution prices')}</FieldTitle>
             <FieldDescription>
-              {t('Configure USD price per generated video second.')}
+              {t(
+                'Configure USD price per video second. When input video is present, billable seconds are input video seconds plus output video seconds.'
+              )}
             </FieldDescription>
           </FieldContent>
           <Button type='button' variant='outline' size='sm' onClick={addRow}>

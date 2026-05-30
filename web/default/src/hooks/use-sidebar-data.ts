@@ -49,11 +49,11 @@ export function useSidebarData(): SidebarData {
   return {
     navGroups: [
       {
-        id: 'chat',
-        title: t('Chat'),
+        id: 'utilities',
+        title: t('Utilities'),
         items: [
           {
-            title: t('Playground'),
+            title: t('Conversation'),
             url: '/playground',
             icon: FlaskConical,
           },

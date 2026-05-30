@@ -40,11 +40,13 @@ import {
   FormMessage,
 } from '@/components/ui/form'
 import { Input } from '@/components/ui/input'
+import { Textarea } from '@/components/ui/textarea'
 
 const createChatDialogSchema = (t: (key: string) => string) =>
   z.object({
     name: z.string().min(1, t('Chat client name is required')),
     url: z.string().min(1, t('URL is required')),
+    icon: z.string().optional(),
   })
 
 type ChatDialogFormValues = z.infer<ReturnType<typeof createChatDialogSchema>>
@@ -52,6 +54,7 @@ type ChatDialogFormValues = z.infer<ReturnType<typeof createChatDialogSchema>>
 export type ChatEntryData = {
   name: string
   url: string
+  icon?: string
 }
 
 type ChatDialogProps = {
@@ -76,6 +79,7 @@ export function ChatDialog({
     defaultValues: {
       name: '',
       url: '',
+      icon: '',
     },
   })
 
@@ -86,6 +90,7 @@ export function ChatDialog({
       form.reset({
         name: '',
         url: '',
+        icon: '',
       })
     }
   }, [editData, form, open])
@@ -144,6 +149,32 @@ export function ChatDialog({
                   </FormControl>
                   <FormDescription>
                     {t('The URL for this chat client.')}
+                  </FormDescription>
+                  <FormMessage />
+                </FormItem>
+              )}
+            />
+
+            <FormField
+              control={form.control}
+              name='icon'
+              render={({ field }) => (
+                <FormItem>
+                  <FormLabel>{t('Icon')}</FormLabel>
+                  <FormControl>
+                    <Textarea
+                      rows={3}
+                      className='max-h-40 min-h-24 resize-y overflow-auto font-mono text-xs break-all'
+                      placeholder={t(
+                        'Icon identifier, image URL, or SVG code'
+                      )}
+                      {...field}
+                    />
+                  </FormControl>
+                  <FormDescription>
+                    {t(
+                      'Optional icon identifier, image URL, or inline SVG code for the sidebar menu item. SVG using currentColor adapts to dark mode.'
+                    )}
                   </FormDescription>
                   <FormMessage />
                 </FormItem>

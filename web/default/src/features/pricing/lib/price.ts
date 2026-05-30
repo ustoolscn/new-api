@@ -318,3 +318,20 @@ export function formatVideoSecondPrice(
     VIDEO_PRICE_FORMAT_OPTIONS
   )
 }
+
+export function formatVideoInputContentPrice(
+  model: PricingModel,
+  showWithRecharge = false,
+  priceRate = 1,
+  _usdExchangeRate = 1,
+  ratio = 1
+): string {
+  const price = Number(model.video_price?.input_content_price)
+  if (!Number.isFinite(price) || price <= 0) return '-'
+  return formatPricingCurrency(
+    price * ratio,
+    showWithRecharge,
+    priceRate,
+    VIDEO_PRICE_FORMAT_OPTIONS
+  )
+}

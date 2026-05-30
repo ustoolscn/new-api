@@ -40,6 +40,47 @@ type ChatSettingsVisualEditorProps = {
 
 type ChatEntry = ChatEntryData
 
+function parseChatEntry(item: unknown): ChatEntry | null {
+  if (typeof item !== 'object' || item === null || Array.isArray(item)) {
+    return null
+  }
+
+  const record = item as Record<string, unknown>
+
+  if (
+    typeof record.name === 'string' &&
+    typeof record.url === 'string' &&
+    record.name.trim() &&
+    record.url.trim()
+  ) {
+    const icon = typeof record.icon === 'string' ? record.icon.trim() : ''
+    return {
+      name: record.name,
+      url: record.url,
+      ...(icon ? { icon } : {}),
+    }
+  }
+
+  const entries = Object.entries(record)
+  if (entries.length === 1) {
+    const [name, url] = entries[0]
+    if (typeof url === 'string') {
+      return { name, url }
+    }
+  }
+
+  return null
+}
+
+function serializeChatEntry(data: ChatEntryData) {
+  const icon = data.icon?.trim()
+  return {
+    name: data.name,
+    url: data.url,
+    ...(icon ? { icon } : {}),
+  }
+}
+
 export function ChatSettingsVisualEditor({
   value,
   onChange,
@@ -58,16 +99,7 @@ export function ChatSettingsVisualEditor({
     })
 
     return parsed
-      .map((item) => {
-        if (typeof item === 'object' && item !== null && !Array.isArray(item)) {
-          const entries = Object.entries(item)
-          if (entries.length === 1) {
-            const [name, url] = entries[0]
-            return { name, url: String(url) }
-          }
-        }
-        return null
-      })
+      .map(parseChatEntry)
       .filter((item): item is ChatEntry => item !== null)
   }, [value])
 
@@ -92,14 +124,12 @@ export function ChatSettingsVisualEditor({
 
     if (editData) {
       updatedArray = updatedArray.filter((item) => {
-        if (typeof item === 'object' && item !== null && !Array.isArray(item)) {
-          return !Object.keys(item).includes(editData.name)
-        }
-        return true
+        const entry = parseChatEntry(item)
+        return entry?.name !== editData.name
       })
     }
 
-    updatedArray.push({ [data.name]: data.url })
+    updatedArray.push(serializeChatEntry(data))
 
     onChange(JSON.stringify(updatedArray, null, 2))
   }
@@ -112,10 +142,8 @@ export function ChatSettingsVisualEditor({
     })
 
     const updatedArray = chatsArray.filter((item) => {
-      if (typeof item === 'object' && item !== null && !Array.isArray(item)) {
-        return !Object.keys(item).includes(name)
-      }
-      return true
+      const entry = parseChatEntry(item)
+      return entry?.name !== name
     })
 
     onChange(JSON.stringify(updatedArray, null, 2))
@@ -163,6 +191,7 @@ export function ChatSettingsVisualEditor({
             <TableHeader>
               <TableRow>
                 <TableHead>{t('Chat Client Name')}</TableHead>
+                <TableHead>{t('Icon')}</TableHead>
                 <TableHead>{t('URL')}</TableHead>
                 <TableHead className='text-right'>{t('Actions')}</TableHead>
               </TableRow>
@@ -171,6 +200,14 @@ export function ChatSettingsVisualEditor({
               {filteredChats.map((chat) => (
                 <TableRow key={chat.name}>
                   <TableCell className='font-medium'>{chat.name}</TableCell>
+                  <TableCell className='max-w-40'>
+                    <span
+                      className='block truncate font-mono text-sm'
+                      title={chat.icon}
+                    >
+                      {chat.icon || '-'}
+                    </span>
+                  </TableCell>
                   <TableCell className='max-w-md truncate font-mono text-sm'>
                     {chat.url}
                   </TableCell>

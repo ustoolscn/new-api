@@ -70,6 +70,7 @@ import {
 import {
   formatFixedPrice,
   formatGroupPrice,
+  formatVideoInputContentPrice,
   formatVideoSecondPrice,
   getVideoPriceEntries,
 } from '../lib/price'
@@ -327,12 +328,29 @@ function PriceSection(props: {
 
   if (props.model.billing_mode === 'video_seconds') {
     const entries = getVideoPriceEntries(props.model)
+    const hasInputContentPrice =
+      Number(props.model.video_price?.input_content_price) > 0
     return (
       <section>
         <SectionTitle>{t('Base Price')}</SectionTitle>
-        {entries.length > 0 ? (
+        {entries.length > 0 || hasInputContentPrice ? (
           <div className='bg-muted/20 rounded-lg border px-3 py-2.5'>
             <div className='space-y-1.5'>
+              {hasInputContentPrice && (
+                <div className='flex items-baseline justify-between gap-4'>
+                  <span className='text-muted-foreground/70 text-sm'>
+                    {t('Input content price')}
+                  </span>
+                  <span className='text-foreground font-mono text-sm font-semibold tabular-nums'>
+                    {formatVideoInputContentPrice(
+                      props.model,
+                      props.showRechargePrice,
+                      props.priceRate,
+                      props.usdExchangeRate
+                    )}
+                  </span>
+                </div>
+              )}
               {entries.map((entry) => (
                 <div
                   key={entry.resolution}
@@ -706,6 +724,8 @@ function GroupPricingSection(props: {
 
   if (props.model.billing_mode === 'video_seconds') {
     const videoEntries = getVideoPriceEntries(props.model)
+    const hasInputContentPrice =
+      Number(props.model.video_price?.input_content_price) > 0
     return (
       <section>
         <SectionTitle>{t('Pricing by Group')}</SectionTitle>
@@ -716,6 +736,11 @@ function GroupPricingSection(props: {
               <TableRow className='hover:bg-transparent'>
                 <TableHead className={thClass}>{t('Group')}</TableHead>
                 <TableHead className={thClass}>{t('Ratio')}</TableHead>
+                {hasInputContentPrice && (
+                  <TableHead className={`${thClass} text-right`}>
+                    {t('Input content price')}
+                  </TableHead>
+                )}
                 {videoEntries.map((entry) => (
                   <TableHead
                     key={entry.resolution}
@@ -737,6 +762,17 @@ function GroupPricingSection(props: {
                     <TableCell className='text-muted-foreground py-2.5 font-mono text-xs'>
                       {ratio}x
                     </TableCell>
+                    {hasInputContentPrice && (
+                      <TableCell className='py-2.5 text-right font-mono'>
+                        {formatVideoInputContentPrice(
+                          props.model,
+                          showRechargePrice,
+                          props.priceRate,
+                          props.usdExchangeRate,
+                          ratio
+                        )}
+                      </TableCell>
+                    )}
                     {videoEntries.map((entry) => (
                       <TableCell
                         key={entry.resolution}

@@ -29,19 +29,18 @@ type PriceData struct {
 }
 
 type VideoSecondsTrace struct {
-	Resolution               string
-	Duration                 float64
-	FPS                      float64
-	BaseFPS                  float64
-	FPSMultiplier            float64
-	PricePerSecond           float64
-	GeneratedVideoPrice      float64
-	InputContentCharged      bool
-	InputContentPrice        float64
-	InputVideoDuration       float64
-	InputVideoPricePerSecond float64
-	InputVideoPrice          float64
-	TotalPrice               float64
+	Resolution          string
+	Duration            float64
+	FPS                 float64
+	BaseFPS             float64
+	FPSMultiplier       float64
+	PricePerSecond      float64
+	BillableDuration    float64
+	GeneratedVideoPrice float64
+	InputContentCharged bool
+	InputContentPrice   float64
+	InputVideoDuration  float64
+	TotalPrice          float64
 }
 
 func (p *PriceData) AddOtherRatio(key string, ratio float64) {

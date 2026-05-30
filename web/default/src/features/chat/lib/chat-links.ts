@@ -25,6 +25,7 @@ export type ChatPreset = {
   name: string
   url: string
   type: ChatLinkType
+  icon?: string
 }
 
 export type RawChatConfig =
@@ -114,8 +115,29 @@ export function parseChatConfig(raw: RawChatConfig): ChatPreset[] {
         !entry ||
         typeof entry !== 'object' ||
         Array.isArray(entry) ||
-        Object.keys(entry).length !== 1
+        Object.keys(entry).length === 0
       ) {
+        return null
+      }
+
+      if (
+        typeof entry.name === 'string' &&
+        typeof entry.url === 'string' &&
+        entry.name.trim() &&
+        entry.url.trim()
+      ) {
+        const url = entry.url.trim()
+        const icon = typeof entry.icon === 'string' ? entry.icon.trim() : ''
+        return {
+          id: String(index),
+          name: entry.name.trim(),
+          url,
+          type: detectChatLinkType(url),
+          ...(icon ? { icon } : {}),
+        } satisfies ChatPreset
+      }
+
+      if (Object.keys(entry).length !== 1) {
         return null
       }
 

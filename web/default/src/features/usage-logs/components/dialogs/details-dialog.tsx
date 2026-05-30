@@ -371,6 +371,21 @@ function BillingBreakdown(props: {
         value: `${formatNumber(other.video_duration)}${t('seconds')}`,
       })
     }
+    if (other.video_input_duration != null) {
+      rows.push({
+        label: t('Input video duration'),
+        value: `${formatNumber(other.video_input_duration)}${t('seconds')}`,
+      })
+    }
+    if (
+      other.video_billable_duration != null &&
+      other.video_billable_duration !== other.video_duration
+    ) {
+      rows.push({
+        label: t('Billable duration'),
+        value: `${formatNumber(other.video_billable_duration)}${t('seconds')}`,
+      })
+    }
     if (
       other.video_fps_multiplier != null &&
       Number.isFinite(other.video_fps_multiplier) &&
@@ -392,8 +407,8 @@ function BillingBreakdown(props: {
           ? ` × ${formatNumber(other.video_fps_multiplier)}`
           : ''
       rows.push({
-        label: t('Generated video formula'),
-        value: `${other.video_resolution ? `${other.video_resolution}: ` : ''}${fmtPrice(other.video_price_per_second)}/${t('second')} × ${formatNumber(other.video_duration)}${t('seconds')}${fpsMultiplier} = ${fmtPrice(other.video_generated_price ?? other.video_total_price ?? other.model_price ?? 0)}`,
+        label: t('Video seconds formula'),
+        value: `${other.video_resolution ? `${other.video_resolution}: ` : ''}${fmtPrice(other.video_price_per_second)}/${t('second')} × ${formatNumber(other.video_billable_duration ?? other.video_duration)}${t('seconds')}${fpsMultiplier} = ${fmtPrice(other.video_generated_price ?? other.video_total_price ?? other.model_price ?? 0)}`,
       })
     }
     if (other.video_input_content_price != null) {
@@ -403,18 +418,8 @@ function BillingBreakdown(props: {
       })
     }
     if (
-      other.video_input_price_per_second != null &&
-      other.video_input_duration != null
-    ) {
-      rows.push({
-        label: t('Input video formula'),
-        value: `${fmtPrice(other.video_input_price_per_second)}/${t('second')} × ${formatNumber(other.video_input_duration)}${t('seconds')} = ${fmtPrice(other.video_input_price ?? 0)}`,
-      })
-    }
-    if (
       other.video_generated_price != null ||
-      other.video_input_content_price != null ||
-      other.video_input_price != null
+      other.video_input_content_price != null
     ) {
       const parts = [
         other.video_generated_price != null
@@ -423,7 +428,6 @@ function BillingBreakdown(props: {
         other.video_input_content_price != null
           ? fmtPrice(other.video_input_content_price)
           : null,
-        other.video_input_price != null ? fmtPrice(other.video_input_price) : null,
       ].filter(Boolean)
       if (parts.length > 1) {
         rows.push({
