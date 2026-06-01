@@ -54,9 +54,17 @@ func TestOpenAIResponsesRequestPreserveExplicitZeroValues(t *testing.T) {
 	raw := []byte(`{
 		"model":"gpt-4.1",
 		"max_output_tokens":0,
+		"max_tokens":0,
+		"max_completion_tokens":0,
 		"max_tool_calls":0,
 		"stream":false,
-		"top_p":0
+		"top_p":0,
+		"frequency_penalty":0,
+		"presence_penalty":0,
+		"n":0,
+		"seed":0,
+		"logprobs":false,
+		"top_logprobs":0
 	}`)
 
 	var req OpenAIResponsesRequest
@@ -67,7 +75,15 @@ func TestOpenAIResponsesRequestPreserveExplicitZeroValues(t *testing.T) {
 	require.NoError(t, err)
 
 	require.True(t, gjson.GetBytes(encoded, "max_output_tokens").Exists())
+	require.True(t, gjson.GetBytes(encoded, "max_tokens").Exists())
+	require.True(t, gjson.GetBytes(encoded, "max_completion_tokens").Exists())
 	require.True(t, gjson.GetBytes(encoded, "max_tool_calls").Exists())
 	require.True(t, gjson.GetBytes(encoded, "stream").Exists())
 	require.True(t, gjson.GetBytes(encoded, "top_p").Exists())
+	require.True(t, gjson.GetBytes(encoded, "frequency_penalty").Exists())
+	require.True(t, gjson.GetBytes(encoded, "presence_penalty").Exists())
+	require.True(t, gjson.GetBytes(encoded, "n").Exists())
+	require.True(t, gjson.GetBytes(encoded, "seed").Exists())
+	require.True(t, gjson.GetBytes(encoded, "logprobs").Exists())
+	require.True(t, gjson.GetBytes(encoded, "top_logprobs").Exists())
 }

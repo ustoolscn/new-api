@@ -833,18 +833,28 @@ type OpenAIResponsesRequest struct {
 	Include json.RawMessage `json:"include,omitempty"`
 	// 在后台运行推理，暂时还不支持依赖的接口
 	// Background         json.RawMessage `json:"background,omitempty"`
-	Conversation       json.RawMessage `json:"conversation,omitempty"`
-	ContextManagement  json.RawMessage `json:"context_management,omitempty"`
-	Instructions       json.RawMessage `json:"instructions,omitempty"`
-	MaxOutputTokens    *uint           `json:"max_output_tokens,omitempty"`
-	TopLogProbs        *int            `json:"top_logprobs,omitempty"`
-	Metadata           json.RawMessage `json:"metadata,omitempty"`
-	ParallelToolCalls  json.RawMessage `json:"parallel_tool_calls,omitempty"`
-	PreviousResponseID string          `json:"previous_response_id,omitempty"`
-	Reasoning          *Reasoning      `json:"reasoning,omitempty"`
+	Conversation        json.RawMessage `json:"conversation,omitempty"`
+	ContextManagement   json.RawMessage `json:"context_management,omitempty"`
+	Instructions        json.RawMessage `json:"instructions,omitempty"`
+	MaxOutputTokens     *uint           `json:"max_output_tokens,omitempty"`
+	MaxTokens           *uint           `json:"max_tokens,omitempty"`
+	MaxCompletionTokens *uint           `json:"max_completion_tokens,omitempty"`
+	FrequencyPenalty    *float64        `json:"frequency_penalty,omitempty"`
+	PresencePenalty     *float64        `json:"presence_penalty,omitempty"`
+	Stop                json.RawMessage `json:"stop,omitempty"`
+	N                   *int            `json:"n,omitempty"`
+	LogProbs            *bool           `json:"logprobs,omitempty"`
+	TopLogProbs         *int            `json:"top_logprobs,omitempty"`
+	LogitBias           json.RawMessage `json:"logit_bias,omitempty"`
+	ResponseFormat      *ResponseFormat `json:"response_format,omitempty"`
+	Seed                *float64        `json:"seed,omitempty"`
+	Metadata            json.RawMessage `json:"metadata,omitempty"`
+	ParallelToolCalls   json.RawMessage `json:"parallel_tool_calls,omitempty"`
+	PreviousResponseID  string          `json:"previous_response_id,omitempty"`
+	Reasoning           *Reasoning      `json:"reasoning,omitempty"`
 	// ServiceTier specifies upstream service level and may affect billing.
 	// This field is filtered by default and can be enabled via channel setting allow_service_tier.
-	ServiceTier string `json:"service_tier,omitempty"`
+	ServiceTier json.RawMessage `json:"service_tier,omitempty"`
 	// Store controls whether upstream may store request/response data.
 	// This field is allowed by default and can be disabled via channel setting disable_store.
 	Store                json.RawMessage `json:"store,omitempty"`

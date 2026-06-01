@@ -123,3 +123,43 @@ func TestChatCompletionsToResponsesHandlerWrapsChatResponse(t *testing.T) {
 	require.Equal(t, 10, responsesResp.Usage.InputTokens)
 	require.Equal(t, 5, responsesResp.Usage.OutputTokens)
 }
+
+func TestChatCompletionsToResponsesStreamHandlerEmitsToolCallEvents(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	recorder := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(recorder)
+	c.Request = httptest.NewRequest(http.MethodPost, "/v1/responses", nil)
+	info := &relaycommon.RelayInfo{
+		RelayMode:   relayconstant.RelayModeResponses,
+		IsStream:    true,
+		DisablePing: true,
+		ChannelMeta: &relaycommon.ChannelMeta{
+			UpstreamModelName: "deepseek-chat",
+		},
+	}
+	resp := &http.Response{
+		StatusCode: http.StatusOK,
+		Header:     make(http.Header),
+		Body: io.NopCloser(bytes.NewReader(common.StringToByteSlice(
+			"data: {\"id\":\"chatcmpl_123\",\"created\":123,\"model\":\"deepseek-chat\",\"choices\":[{\"index\":0,\"delta\":{\"tool_calls\":[{\"index\":0,\"id\":\"call_1\",\"type\":\"function\",\"function\":{\"name\":\"lookup\",\"arguments\":\"{\\\"q\\\"\"}}]}}]}\n\n" +
+				"data: {\"id\":\"chatcmpl_123\",\"created\":123,\"model\":\"deepseek-chat\",\"choices\":[{\"index\":0,\"delta\":{\"tool_calls\":[{\"index\":0,\"function\":{\"arguments\":\":\\\"hi\\\"}\"}}]},\"finish_reason\":\"tool_calls\"}],\"usage\":{\"prompt_tokens\":10,\"completion_tokens\":3,\"total_tokens\":13}}\n\n" +
+				"data: [DONE]\n\n"))),
+	}
+
+	usage, err := chatCompletionsToResponsesStreamHandler(c, info, resp)
+
+	require.Nil(t, err)
+	require.Equal(t, 10, usage.PromptTokens)
+	require.Equal(t, 3, usage.CompletionTokens)
+	body := recorder.Body.String()
+	require.Contains(t, body, "event: response.output_item.added")
+	require.Contains(t, body, `"type":"function_call"`)
+	require.Contains(t, body, `"call_id":"call_1"`)
+	require.Contains(t, body, `"name":"lookup"`)
+	require.Contains(t, body, "event: response.function_call_arguments.delta")
+	require.Contains(t, body, `\"q\"`)
+	require.Contains(t, body, "event: response.function_call_arguments.done")
+	require.Contains(t, body, `"arguments":"{\"q\":\"hi\"}"`)
+	require.Contains(t, body, "event: response.output_item.done")
+	require.Contains(t, body, "event: response.completed")
+}

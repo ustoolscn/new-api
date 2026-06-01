@@ -51,49 +51,102 @@ func ResponsesRequestToChatCompletionsRequestWithToolMap(req *dto.OpenAIResponse
 	}
 
 	out := &dto.GeneralOpenAIRequest{
-		Model:          req.Model,
-		Messages:       messages,
-		Stream:         req.Stream,
-		Temperature:    req.Temperature,
-		TopP:           req.TopP,
-		TopLogProbs:    req.TopLogProbs,
-		Tools:          tools,
-		ToolChoice:     toolChoice,
-		ResponseFormat: responseFormat,
-		User:           req.User,
-		Store:          req.Store,
-		Metadata:       req.Metadata,
+		Model:            req.Model,
+		Messages:         normalizeResponsesChatMessages(messages),
+		Stream:           req.Stream,
+		Temperature:      req.Temperature,
+		TopP:             req.TopP,
+		FrequencyPenalty: req.FrequencyPenalty,
+		PresencePenalty:  req.PresencePenalty,
+		Stop:             req.Stop,
+		N:                req.N,
+		Seed:             req.Seed,
+		TopLogProbs:      req.TopLogProbs,
+		Tools:            tools,
+		ResponseFormat:   responseFormat,
+		User:             req.User,
+		Store:            req.Store,
+		ServiceTier:      req.ServiceTier,
+		LogitBias:        req.LogitBias,
+		Metadata:         req.Metadata,
 	}
 
 	if req.MaxOutputTokens != nil {
 		out.MaxTokens = common.GetPointer(*req.MaxOutputTokens)
+	}
+	if req.MaxTokens != nil {
+		out.MaxTokens = common.GetPointer(*req.MaxTokens)
+	}
+	if req.MaxCompletionTokens != nil {
+		out.MaxCompletionTokens = common.GetPointer(*req.MaxCompletionTokens)
+	}
+	if out.ResponseFormat == nil {
+		out.ResponseFormat = req.ResponseFormat
 	}
 	if req.StreamOptions != nil {
 		out.StreamOptions = &dto.StreamOptions{
 			IncludeUsage: req.StreamOptions.IncludeUsage,
 		}
 	}
+	if req.Stream != nil && *req.Stream {
+		if out.StreamOptions == nil {
+			out.StreamOptions = &dto.StreamOptions{}
+		}
+		out.StreamOptions.IncludeUsage = true
+	}
 	if req.Reasoning != nil {
 		out.ReasoningEffort = req.Reasoning.Effort
 	}
-	if len(req.ParallelToolCalls) > 0 {
+	if len(tools) > 0 {
+		out.ToolChoice = toolChoice
+	}
+	if len(tools) > 0 && len(req.ParallelToolCalls) > 0 {
 		var parallel bool
 		if err := common.Unmarshal(req.ParallelToolCalls, &parallel); err == nil {
 			out.ParallelTooCalls = &parallel
 		}
 	}
-	if req.TopLogProbs != nil {
+	if req.LogProbs != nil {
+		out.LogProbs = req.LogProbs
+	} else if req.TopLogProbs != nil {
 		out.LogProbs = common.GetPointer(true)
 	}
 
 	return out, toolNameMap, nil
 }
 
+func normalizeResponsesChatMessages(messages []dto.Message) []dto.Message {
+	systemChunks := make([]string, 0)
+	rest := make([]dto.Message, 0, len(messages))
+	for _, message := range messages {
+		if message.Role == "system" {
+			if text := strings.TrimSpace(message.StringContent()); text != "" {
+				systemChunks = append(systemChunks, text)
+			}
+			continue
+		}
+		if message.Role == "assistant" && message.Content == nil && len(message.ToolCalls) == 0 {
+			message.Content = ""
+		}
+		rest = append(rest, message)
+	}
+	if len(systemChunks) == 0 {
+		return rest
+	}
+	out := make([]dto.Message, 0, len(rest)+1)
+	out = append(out, dto.Message{
+		Role:    "system",
+		Content: strings.Join(systemChunks, "\n\n"),
+	})
+	out = append(out, rest...)
+	return out
+}
+
 func responsesInputToChatMessages(instructions json.RawMessage, input json.RawMessage) ([]dto.Message, error) {
 	messages := make([]dto.Message, 0)
 
 	if len(instructions) > 0 {
-		if content := rawMessageToChatString(instructions); strings.TrimSpace(content) != "" {
+		if content := rawInstructionsToChatString(instructions); strings.TrimSpace(content) != "" {
 			messages = append(messages, dto.Message{Role: "system", Content: content})
 		}
 	}
@@ -286,12 +339,28 @@ func responsesInputItemToChatMessages(item map[string]any) ([]dto.Message, error
 	if role == "" {
 		return nil, nil
 	}
+	role = responsesRoleToChatRole(role)
 
 	content, err := responsesContentToChatContent(item["content"], role)
 	if err != nil {
 		return nil, err
 	}
 	return []dto.Message{{Role: role, Content: content}}, nil
+}
+
+func responsesRoleToChatRole(role string) string {
+	switch strings.TrimSpace(role) {
+	case "developer", "system":
+		return "system"
+	case "assistant":
+		return "assistant"
+	case "tool":
+		return "tool"
+	case "latest_reminder", "user", "":
+		return "user"
+	default:
+		return "user"
+	}
 }
 
 func responsesContentToChatContent(content any, role string) (any, error) {
@@ -310,6 +379,15 @@ func responsesContentToChatContent(content any, role string) (any, error) {
 	chatParts := make([]map[string]any, 0, len(parts))
 	var textOnly strings.Builder
 	nonText := false
+	appendTextOnly := func(text string) {
+		if text == "" {
+			return
+		}
+		if textOnly.Len() > 0 {
+			textOnly.WriteString("\n")
+		}
+		textOnly.WriteString(text)
+	}
 
 	for _, partAny := range parts {
 		part, ok := partAny.(map[string]any)
@@ -320,7 +398,14 @@ func responsesContentToChatContent(content any, role string) (any, error) {
 		switch partType {
 		case "input_text", "output_text", "text":
 			text := common.Interface2String(part["text"])
-			textOnly.WriteString(text)
+			appendTextOnly(text)
+			chatParts = append(chatParts, map[string]any{
+				"type": dto.ContentTypeText,
+				"text": text,
+			})
+		case "refusal":
+			text := common.Interface2String(part["refusal"])
+			appendTextOnly(text)
 			chatParts = append(chatParts, map[string]any{
 				"type": dto.ContentTypeText,
 				"text": text,
@@ -389,8 +474,8 @@ func responsesToolsToChatTools(raw json.RawMessage) ([]dto.ToolCallRequest, map[
 	if len(raw) == 0 || common.GetJsonType(raw) == "null" {
 		return nil, nil, nil
 	}
-	var tools []map[string]any
-	if err := common.Unmarshal(raw, &tools); err != nil {
+	tools, err := parseResponsesToolObjects(raw)
+	if err != nil {
 		return nil, nil, err
 	}
 	out := make([]dto.ToolCallRequest, 0, len(tools))
@@ -430,6 +515,20 @@ func responsesToolsToChatTools(raw json.RawMessage) ([]dto.ToolCallRequest, map[
 		}
 	}
 	return out, toolNameMap, nil
+}
+
+func parseResponsesToolObjects(raw json.RawMessage) ([]map[string]any, error) {
+	var items []any
+	if err := common.Unmarshal(raw, &items); err != nil {
+		return nil, err
+	}
+	tools := make([]map[string]any, 0, len(items))
+	for _, item := range items {
+		if tool, ok := item.(map[string]any); ok {
+			tools = append(tools, tool)
+		}
+	}
+	return tools, nil
 }
 
 func buildResponsesToolContext(tools []map[string]any) map[string]ResponsesToolName {
@@ -507,7 +606,7 @@ func responsesFunctionToolToChatTool(tool map[string]any, namespace string, name
 		return dto.ToolCallRequest{}, false
 	}
 	description := firstNonEmptyString(tool["description"], functionMapDescription(tool))
-	parameters := firstNonNil(tool["parameters"], tool["input_schema"], functionMapParameters(tool))
+	parameters := normalizeChatToolParameters(firstNonNil(tool["parameters"], tool["input_schema"], functionMapParameters(tool)))
 	if namespace != "" {
 		name = flattenResponsesToolName(namespace, name)
 		description = combineToolDescriptions(namespaceDescription, description)
@@ -520,6 +619,25 @@ func responsesFunctionToolToChatTool(tool map[string]any, namespace string, name
 			Parameters:  parameters,
 		},
 	}, true
+}
+
+func normalizeChatToolParameters(parameters any) map[string]any {
+	normalized := make(map[string]any)
+	if parameterMap, ok := parameters.(map[string]any); ok {
+		for key, value := range parameterMap {
+			normalized[key] = value
+		}
+	}
+	if normalized["type"] == nil {
+		normalized["type"] = "object"
+	}
+	if normalized["properties"] == nil {
+		normalized["properties"] = map[string]any{}
+	}
+	if normalized["required"] == nil {
+		normalized["required"] = []any{}
+	}
+	return normalized
 }
 
 func functionMapName(tool map[string]any) string {
@@ -682,6 +800,41 @@ func rawMessageToChatString(raw json.RawMessage) string {
 		}
 	}
 	return string(raw)
+}
+
+func rawInstructionsToChatString(raw json.RawMessage) string {
+	if len(raw) == 0 || common.GetJsonType(raw) == "null" {
+		return ""
+	}
+	if common.GetJsonType(raw) == "string" {
+		var s string
+		if err := common.Unmarshal(raw, &s); err == nil {
+			return s
+		}
+		return ""
+	}
+	if common.GetJsonType(raw) != "array" {
+		return ""
+	}
+	var parts []any
+	if err := common.Unmarshal(raw, &parts); err != nil {
+		return ""
+	}
+	texts := make([]string, 0, len(parts))
+	for _, part := range parts {
+		switch typed := part.(type) {
+		case string:
+			if typed != "" {
+				texts = append(texts, typed)
+			}
+		case map[string]any:
+			text := common.Interface2String(typed["text"])
+			if text != "" {
+				texts = append(texts, text)
+			}
+		}
+	}
+	return strings.Join(texts, "\n\n")
 }
 
 func anyToChatString(v any) string {

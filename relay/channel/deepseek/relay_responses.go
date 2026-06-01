@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"sort"
 	"strings"
 	"time"
 
@@ -69,10 +70,13 @@ func fillMissingChatUsage(c *gin.Context, info *relaycommon.RelayInfo, chatRespo
 }
 
 type streamedToolCall struct {
-	id        string
-	name      string
-	namespace string
-	arguments strings.Builder
+	id          string
+	name        string
+	namespace   string
+	added       bool
+	outputIndex int
+	itemID      string
+	arguments   strings.Builder
 }
 
 func chatCompletionsToResponsesStreamHandler(c *gin.Context, info *relaycommon.RelayInfo, resp *http.Response) (*dto.Usage, *types.NewAPIError) {
@@ -86,11 +90,72 @@ func chatCompletionsToResponsesStreamHandler(c *gin.Context, info *relaycommon.R
 		model       = info.UpstreamModelName
 		createdAt   = int(time.Now().Unix())
 		started     bool
+		nextIndex   int
+		textAdded   bool
+		textIndex   int
 		textBuilder strings.Builder
 		usage       = &dto.Usage{}
 		toolCalls   = map[int]*streamedToolCall{}
 		toolNameMap = getResponsesToolNameMap(c)
 	)
+	ensureStarted := func() {
+		if started {
+			return
+		}
+		started = true
+		sendResponsesStreamEvent(c, dto.ResponsesStreamResponse{
+			Type:     "response.created",
+			Response: buildStreamingResponsesResponse(responseID, model, createdAt, nil, nil),
+		})
+	}
+	ensureTextAdded := func() {
+		ensureStarted()
+		if textAdded {
+			return
+		}
+		textAdded = true
+		textIndex = nextIndex
+		nextIndex++
+		sendResponsesStreamEvent(c, dto.ResponsesStreamResponse{
+			Type: "response.output_item.added",
+			Item: &dto.ResponsesOutput{
+				Type:   "message",
+				ID:     responseMessageID(responseID),
+				Status: "in_progress",
+				Role:   "assistant",
+			},
+			OutputIndex: common.GetPointer(textIndex),
+		})
+	}
+	ensureToolAdded := func(index int, toolCall *streamedToolCall) {
+		ensureStarted()
+		if toolCall.added {
+			return
+		}
+		toolCall.added = true
+		toolCall.outputIndex = nextIndex
+		nextIndex++
+		if toolCall.id == "" {
+			toolCall.id = fmt.Sprintf("call_%d", index)
+		}
+		if toolCall.name == "" {
+			toolCall.name = "unknown_tool"
+		}
+		toolCall.itemID = toolCall.id
+		sendResponsesStreamEvent(c, dto.ResponsesStreamResponse{
+			Type: "response.output_item.added",
+			Item: &dto.ResponsesOutput{
+				Type:      "function_call",
+				ID:        toolCall.itemID,
+				Status:    "in_progress",
+				CallId:    toolCall.id,
+				Name:      toolCall.name,
+				Namespace: toolCall.namespace,
+				Arguments: chatStreamFunctionArgumentsRaw(""),
+			},
+			OutputIndex: common.GetPointer(toolCall.outputIndex),
+		})
+	}
 
 	helper.StreamScannerHandler(c, resp, info, func(data string, sr *helper.StreamResult) {
 		var chunk dto.ChatCompletionsStreamResponse
@@ -109,23 +174,7 @@ func chatCompletionsToResponsesStreamHandler(c *gin.Context, info *relaycommon.R
 		if chunk.Created != 0 {
 			createdAt = int(chunk.Created)
 		}
-		if !started {
-			started = true
-			sendResponsesStreamEvent(c, dto.ResponsesStreamResponse{
-				Type:     "response.created",
-				Response: buildStreamingResponsesResponse(responseID, model, createdAt, nil, nil),
-			})
-			sendResponsesStreamEvent(c, dto.ResponsesStreamResponse{
-				Type: "response.output_item.added",
-				Item: &dto.ResponsesOutput{
-					Type:   "message",
-					ID:     responseMessageID(responseID),
-					Status: "in_progress",
-					Role:   "assistant",
-				},
-				OutputIndex: common.GetPointer(0),
-			})
-		}
+		ensureStarted()
 
 		if chunk.Usage != nil && service.ValidUsage(chunk.Usage) {
 			usage = chunk.Usage
@@ -140,11 +189,12 @@ func chatCompletionsToResponsesStreamHandler(c *gin.Context, info *relaycommon.R
 				delta = choice.Delta.GetReasoningContent()
 			}
 			if delta != "" {
+				ensureTextAdded()
 				textBuilder.WriteString(delta)
 				sendResponsesStreamEvent(c, dto.ResponsesStreamResponse{
 					Type:         "response.output_text.delta",
 					Delta:        delta,
-					OutputIndex:  common.GetPointer(0),
+					OutputIndex:  common.GetPointer(textIndex),
 					ContentIndex: common.GetPointer(0),
 					ItemID:       responseMessageID(responseID),
 				})
@@ -170,8 +220,18 @@ func chatCompletionsToResponsesStreamHandler(c *gin.Context, info *relaycommon.R
 						acc.name = toolCall.Function.Name
 					}
 				}
+				if toolCall.ID != "" || toolCall.Function.Name != "" {
+					ensureToolAdded(index, acc)
+				}
 				if toolCall.Function.Arguments != "" {
+					ensureToolAdded(index, acc)
 					acc.arguments.WriteString(toolCall.Function.Arguments)
+					sendResponsesStreamEvent(c, dto.ResponsesStreamResponse{
+						Type:        "response.function_call_arguments.delta",
+						Delta:       toolCall.Function.Arguments,
+						OutputIndex: common.GetPointer(acc.outputIndex),
+						ItemID:      acc.itemID,
+					})
 				}
 			}
 		}
@@ -201,21 +261,44 @@ func chatCompletionsToResponsesStreamHandler(c *gin.Context, info *relaycommon.R
 		usage.TotalTokens = usage.PromptTokens + usage.CompletionTokens
 	}
 
-	output := streamedResponsesOutput(responseID, text, toolCalls)
-	if text != "" {
+	output := streamedResponsesOutput(responseID, text, textAdded, textIndex, toolCalls)
+	if textAdded {
 		sendResponsesStreamEvent(c, dto.ResponsesStreamResponse{
 			Type:         "response.output_text.done",
 			Delta:        text,
-			OutputIndex:  common.GetPointer(0),
+			OutputIndex:  common.GetPointer(textIndex),
 			ContentIndex: common.GetPointer(0),
 			ItemID:       responseMessageID(responseID),
 		})
+		if text != "" {
+			messageItem := streamedTextOutput(responseID, text)
+			sendResponsesStreamEvent(c, dto.ResponsesStreamResponse{
+				Type:        dto.ResponsesOutputTypeItemDone,
+				Item:        &messageItem,
+				OutputIndex: common.GetPointer(textIndex),
+			})
+		}
 	}
-	if len(output) > 0 {
+	for _, index := range sortedStreamedToolCallIndexes(toolCalls) {
+		toolCall := toolCalls[index]
+		if toolCall == nil {
+			continue
+		}
+		if !toolCall.added {
+			ensureToolAdded(index, toolCall)
+		}
+		arguments := toolCall.arguments.String()
+		sendResponsesStreamEvent(c, dto.ResponsesStreamResponse{
+			Type:        "response.function_call_arguments.done",
+			Arguments:   arguments,
+			OutputIndex: common.GetPointer(toolCall.outputIndex),
+			ItemID:      toolCall.itemID,
+		})
+		item := streamedToolCallOutput(responseID, index, toolCall)
 		sendResponsesStreamEvent(c, dto.ResponsesStreamResponse{
 			Type:        dto.ResponsesOutputTypeItemDone,
-			Item:        &output[0],
-			OutputIndex: common.GetPointer(0),
+			Item:        &item,
+			OutputIndex: common.GetPointer(toolCall.outputIndex),
 		})
 	}
 	sendResponsesStreamEvent(c, dto.ResponsesStreamResponse{
@@ -265,39 +348,77 @@ func responseStreamUsage(usage *dto.Usage) *dto.Usage {
 	return &out
 }
 
-func streamedResponsesOutput(responseID string, text string, toolCalls map[int]*streamedToolCall) []dto.ResponsesOutput {
-	output := make([]dto.ResponsesOutput, 0, 1+len(toolCalls))
-	if text != "" {
-		output = append(output, dto.ResponsesOutput{
-			Type:   "message",
-			ID:     responseMessageID(responseID),
-			Status: "completed",
-			Role:   "assistant",
-			Content: []dto.ResponsesOutputContent{
-				{
-					Type:        "output_text",
-					Text:        text,
-					Annotations: []interface{}{},
-				},
-			},
+func streamedResponsesOutput(responseID string, text string, textAdded bool, textIndex int, toolCalls map[int]*streamedToolCall) []dto.ResponsesOutput {
+	type indexedOutput struct {
+		index int
+		item  dto.ResponsesOutput
+	}
+	indexed := make([]indexedOutput, 0, 1+len(toolCalls))
+	if textAdded && text != "" {
+		indexed = append(indexed, indexedOutput{
+			index: textIndex,
+			item:  streamedTextOutput(responseID, text),
 		})
 	}
-	for index, toolCall := range toolCalls {
-		callID := toolCall.id
-		if callID == "" {
-			callID = fmt.Sprintf("call_%s_%d", responseID, index)
+	for _, index := range sortedStreamedToolCallIndexes(toolCalls) {
+		toolCall := toolCalls[index]
+		if toolCall == nil {
+			continue
 		}
-		output = append(output, dto.ResponsesOutput{
-			Type:      "function_call",
-			ID:        callID,
-			Status:    "completed",
-			CallId:    callID,
-			Name:      toolCall.name,
-			Namespace: toolCall.namespace,
-			Arguments: chatStreamFunctionArgumentsRaw(toolCall.arguments.String()),
+		indexed = append(indexed, indexedOutput{
+			index: toolCall.outputIndex,
+			item:  streamedToolCallOutput(responseID, index, toolCall),
 		})
+	}
+	sort.SliceStable(indexed, func(i, j int) bool {
+		return indexed[i].index < indexed[j].index
+	})
+	output := make([]dto.ResponsesOutput, 0, len(indexed))
+	for _, item := range indexed {
+		output = append(output, item.item)
 	}
 	return output
+}
+
+func streamedTextOutput(responseID string, text string) dto.ResponsesOutput {
+	return dto.ResponsesOutput{
+		Type:   "message",
+		ID:     responseMessageID(responseID),
+		Status: "completed",
+		Role:   "assistant",
+		Content: []dto.ResponsesOutputContent{
+			{
+				Type:        "output_text",
+				Text:        text,
+				Annotations: []interface{}{},
+			},
+		},
+	}
+}
+
+func streamedToolCallOutput(responseID string, index int, toolCall *streamedToolCall) dto.ResponsesOutput {
+	callID := toolCall.id
+	if callID == "" {
+		callID = fmt.Sprintf("call_%s_%d", responseID, index)
+	}
+	return dto.ResponsesOutput{
+		Type:      "function_call",
+		ID:        callID,
+		Status:    "completed",
+		CallId:    callID,
+		Name:      toolCall.name,
+		Namespace: toolCall.namespace,
+		Arguments: chatStreamFunctionArgumentsRaw(toolCall.arguments.String()),
+	}
+}
+
+func sortedStreamedToolCallIndexes(toolCalls map[int]*streamedToolCall) []int {
+	indexes := make([]int, 0, len(toolCalls))
+	for index := range toolCalls {
+		indexes = append(indexes, index)
+	}
+	sort.Ints(indexes)
+	return indexes
 }
 
 func getResponsesToolNameMap(c *gin.Context) map[string]service.ResponsesToolName {

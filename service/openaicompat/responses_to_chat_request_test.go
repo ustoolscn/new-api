@@ -1,6 +1,7 @@
 package openaicompat
 
 import (
+	"encoding/json"
 	"testing"
 
 	"github.com/QuantumNous/new-api/common"
@@ -136,6 +137,159 @@ func TestResponsesRequestToChatCompletionsRequestKeepsToolOutputContextValid(t *
 
 	require.Equal(t, "user", chatReq.Messages[2].Role)
 	require.Contains(t, chatReq.Messages[2].Content, "Function call output (missing): late")
+}
+
+func TestResponsesRequestToChatCompletionsRequestMapsResponsesRolesToChatRoles(t *testing.T) {
+	input := common.StringToByteSlice(`[
+		{"role":"developer","content":"developer note"},
+		{"role":"latest_reminder","content":"remember this"},
+		{"role":"unknown_role","content":"fallback"}
+	]`)
+
+	chatReq, err := ResponsesRequestToChatCompletionsRequest(&dto.OpenAIResponsesRequest{
+		Model: "deepseek-chat",
+		Input: input,
+	})
+
+	require.NoError(t, err)
+	require.Len(t, chatReq.Messages, 3)
+	require.Equal(t, "system", chatReq.Messages[0].Role)
+	require.Equal(t, "developer note", chatReq.Messages[0].Content)
+	require.Equal(t, "user", chatReq.Messages[1].Role)
+	require.Equal(t, "remember this", chatReq.Messages[1].Content)
+	require.Equal(t, "user", chatReq.Messages[2].Role)
+	require.Equal(t, "fallback", chatReq.Messages[2].Content)
+}
+
+func TestResponsesRequestToChatCompletionsRequestNormalizesInstructionsAndSystemMessages(t *testing.T) {
+	input := common.StringToByteSlice(`[
+		{"role":"developer","content":"developer note"},
+		{"role":"system","content":"system note"},
+		{"role":"user","content":[
+			{"type":"input_text","text":"hello"},
+			{"type":"refusal","refusal":"not allowed"},
+			{"type":"output_text","text":"again"}
+		]}
+	]`)
+
+	chatReq, err := ResponsesRequestToChatCompletionsRequest(&dto.OpenAIResponsesRequest{
+		Model:        "deepseek-chat",
+		Instructions: common.StringToByteSlice(`[{"text":"first instruction"},"second instruction"]`),
+		Input:        input,
+	})
+
+	require.NoError(t, err)
+	require.Len(t, chatReq.Messages, 2)
+	require.Equal(t, "system", chatReq.Messages[0].Role)
+	require.Equal(t, "first instruction\n\nsecond instruction\n\ndeveloper note\n\nsystem note", chatReq.Messages[0].Content)
+	require.Equal(t, "user", chatReq.Messages[1].Role)
+	require.Equal(t, "hello\nnot allowed\nagain", chatReq.Messages[1].Content)
+}
+
+func TestResponsesRequestToChatCompletionsRequestPassesChatCompatFields(t *testing.T) {
+	stream := true
+	maxOutputTokens := uint(99)
+	maxTokens := uint(0)
+	maxCompletionTokens := uint(12)
+	frequencyPenalty := 0.0
+	presencePenalty := 0.0
+	n := 0
+	seed := 0.0
+	logprobs := false
+
+	chatReq, err := ResponsesRequestToChatCompletionsRequest(&dto.OpenAIResponsesRequest{
+		Model:               "deepseek-chat",
+		Input:               common.StringToByteSlice(`"hello"`),
+		Stream:              &stream,
+		StreamOptions:       &dto.StreamOptions{},
+		MaxOutputTokens:     &maxOutputTokens,
+		MaxTokens:           &maxTokens,
+		MaxCompletionTokens: &maxCompletionTokens,
+		FrequencyPenalty:    &frequencyPenalty,
+		PresencePenalty:     &presencePenalty,
+		Stop:                common.StringToByteSlice(`["END"]`),
+		N:                   &n,
+		Seed:                &seed,
+		LogProbs:            &logprobs,
+		LogitBias:           common.StringToByteSlice(`{"42":1}`),
+		ResponseFormat:      &dto.ResponseFormat{Type: "json_object"},
+		ServiceTier:         common.StringToByteSlice(`"default"`),
+	})
+
+	require.NoError(t, err)
+	require.NotNil(t, chatReq.StreamOptions)
+	require.True(t, chatReq.StreamOptions.IncludeUsage)
+	require.NotNil(t, chatReq.MaxTokens)
+	require.Equal(t, uint(0), *chatReq.MaxTokens)
+	require.NotNil(t, chatReq.MaxCompletionTokens)
+	require.Equal(t, uint(12), *chatReq.MaxCompletionTokens)
+	require.NotNil(t, chatReq.FrequencyPenalty)
+	require.Equal(t, 0.0, *chatReq.FrequencyPenalty)
+	require.NotNil(t, chatReq.PresencePenalty)
+	require.Equal(t, 0.0, *chatReq.PresencePenalty)
+	require.JSONEq(t, `["END"]`, string(chatReq.Stop.(json.RawMessage)))
+	require.NotNil(t, chatReq.N)
+	require.Equal(t, 0, *chatReq.N)
+	require.NotNil(t, chatReq.Seed)
+	require.Equal(t, 0.0, *chatReq.Seed)
+	require.NotNil(t, chatReq.LogProbs)
+	require.False(t, *chatReq.LogProbs)
+	require.JSONEq(t, `{"42":1}`, string(chatReq.LogitBias))
+	require.Equal(t, "json_object", chatReq.ResponseFormat.Type)
+	require.JSONEq(t, `"default"`, string(chatReq.ServiceTier))
+}
+
+func TestResponsesRequestToChatCompletionsRequestNormalizesToolParameters(t *testing.T) {
+	chatReq, err := ResponsesRequestToChatCompletionsRequest(&dto.OpenAIResponsesRequest{
+		Model: "deepseek-chat",
+		Input: common.StringToByteSlice(`"hello"`),
+		Tools: common.StringToByteSlice(`[{
+			"type":"function",
+			"name":"lookup"
+		},{
+			"type":"namespace",
+			"name":"mcp__idea__",
+			"tools":[{"type":"function","name":"read_file","parameters":"bad schema"}]
+		}]`),
+	})
+
+	require.NoError(t, err)
+	require.Len(t, chatReq.Tools, 2)
+	for _, tool := range chatReq.Tools {
+		params, ok := tool.Function.Parameters.(map[string]any)
+		require.True(t, ok)
+		require.Equal(t, "object", params["type"])
+		require.IsType(t, map[string]any{}, params["properties"])
+		require.IsType(t, []any{}, params["required"])
+	}
+}
+
+func TestResponsesRequestToChatCompletionsRequestIgnoresUnsupportedToolShapes(t *testing.T) {
+	chatReq, err := ResponsesRequestToChatCompletionsRequest(&dto.OpenAIResponsesRequest{
+		Model: "deepseek-chat",
+		Input: common.StringToByteSlice(`"hello"`),
+		Tools: common.StringToByteSlice(`[
+			"apply_patch",
+			{"type":"custom","name":"freeform"},
+			{"type":"web_search","name":"web_search"},
+			{"type":"function","name":"lookup","parameters":{"type":"object"}}
+		]`),
+	})
+
+	require.NoError(t, err)
+	require.Len(t, chatReq.Tools, 1)
+	require.Equal(t, "lookup", chatReq.Tools[0].Function.Name)
+}
+
+func TestResponsesRequestToChatCompletionsRequestOmitsToolChoiceWithoutTools(t *testing.T) {
+	chatReq, err := ResponsesRequestToChatCompletionsRequest(&dto.OpenAIResponsesRequest{
+		Model:      "deepseek-chat",
+		Input:      common.StringToByteSlice(`"hello"`),
+		ToolChoice: common.StringToByteSlice(`{"type":"function","name":"lookup"}`),
+	})
+
+	require.NoError(t, err)
+	require.Nil(t, chatReq.ToolChoice)
 }
 
 func TestResponsesRequestToChatCompletionsRequestFlattensNestedNamespaceToolChoice(t *testing.T) {
