@@ -14,6 +14,7 @@ import (
 	"github.com/QuantumNous/new-api/relay/channel/openai"
 	relaycommon "github.com/QuantumNous/new-api/relay/common"
 	"github.com/QuantumNous/new-api/relay/constant"
+	"github.com/QuantumNous/new-api/service"
 	"github.com/QuantumNous/new-api/setting/reasoning"
 	"github.com/QuantumNous/new-api/types"
 	"github.com/gin-gonic/gin"
@@ -159,8 +160,14 @@ func (a *Adaptor) ConvertEmbeddingRequest(c *gin.Context, info *relaycommon.Rela
 }
 
 func (a *Adaptor) ConvertOpenAIResponsesRequest(c *gin.Context, info *relaycommon.RelayInfo, request dto.OpenAIResponsesRequest) (any, error) {
-	// TODO implement me
-	return nil, errors.New("not implemented")
+	chatRequest, err := service.ResponsesRequestToChatCompletionsRequest(&request)
+	if err != nil {
+		return nil, err
+	}
+	if err := applyDeepSeekV4OpenAIThinkingSuffix(info, chatRequest); err != nil {
+		return nil, err
+	}
+	return chatRequest, nil
 }
 
 func (a *Adaptor) DoRequest(c *gin.Context, info *relaycommon.RelayInfo, requestBody io.Reader) (any, error) {
@@ -173,6 +180,12 @@ func (a *Adaptor) DoResponse(c *gin.Context, resp *http.Response, info *relaycom
 		adaptor := claude.Adaptor{}
 		return adaptor.DoResponse(c, resp, info)
 	default:
+		if info.RelayMode == constant.RelayModeResponses {
+			if info.IsStream {
+				return chatCompletionsToResponsesStreamHandler(c, info, resp)
+			}
+			return chatCompletionsToResponsesHandler(c, info, resp)
+		}
 		adaptor := openai.Adaptor{}
 		return adaptor.DoResponse(c, resp, info)
 	}

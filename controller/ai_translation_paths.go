@@ -5,7 +5,7 @@ var statusTranslationPaths = []string{
 	"data.announcements.*.extra",
 	"data.api_info.*.description",
 	"data.api_info.*.route",
-	"data.chats.*.@key",
+	"data.chats.*.name",
 	"data.faq.*.answer",
 	"data.faq.*.question",
 }

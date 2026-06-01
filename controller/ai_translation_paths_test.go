@@ -47,3 +47,56 @@ func TestUserGroupsTranslationPathsTranslateDisplayKeysAndPreserveRawKeyField(t 
 		t.Fatalf("desc = %#v, want Default group", group["desc"])
 	}
 }
+
+func TestStatusTranslationPathsTranslateChatNamesAndPreserveStructuredFields(t *testing.T) {
+	payload := gin.H{
+		"success": true,
+		"message": "",
+		"data": gin.H{
+			"chats": []gin.H{
+				{
+					"name": "新客户端",
+					"url":  "https://example.com/named",
+					"icon": "OpenAI.Color",
+				},
+			},
+		},
+	}
+	translations := map[string]string{
+		"新客户端": "Named client",
+		"name": "Nom",
+		"url":  "URL",
+		"icon": "Icône",
+	}
+
+	translated := service.ApplyAITranslations(payload, statusTranslationPaths, translations)
+	root, ok := translated.(map[string]any)
+	if !ok {
+		t.Fatalf("translated payload type = %T, want map[string]any", translated)
+	}
+	data, ok := root["data"].(map[string]any)
+	if !ok {
+		t.Fatalf("data type = %T, want map[string]any", root["data"])
+	}
+	chats, ok := data["chats"].([]any)
+	if !ok || len(chats) != 1 {
+		t.Fatalf("chats = %#v, want one chat entry", data["chats"])
+	}
+
+	named, ok := chats[0].(map[string]any)
+	if !ok {
+		t.Fatalf("named chat type = %T, want map[string]any", chats[0])
+	}
+	if _, ok := named["Nom"]; ok {
+		t.Fatalf("structured field key should not be translated: %#v", named)
+	}
+	if named["name"] != "Named client" {
+		t.Fatalf("named chat name = %#v, want Named client", named["name"])
+	}
+	if named["url"] != "https://example.com/named" {
+		t.Fatalf("named chat url = %#v, want original URL", named["url"])
+	}
+	if named["icon"] != "OpenAI.Color" {
+		t.Fatalf("named chat icon = %#v, want original icon", named["icon"])
+	}
+}
