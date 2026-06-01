@@ -45,7 +45,9 @@ func buildErrorRequestSnapshot(c *gin.Context) map[string]any {
 		snapshot.BodyError = err.Error()
 	} else if len(bodyBytes) > 0 {
 		snapshot.BodyTruncated = truncated
-		if isJSONSnapshotContentType(snapshot.ContentType) {
+		if truncated {
+			snapshot.BodyPreview = string(bodyBytes)
+		} else if isJSONSnapshotContentType(snapshot.ContentType) {
 			var parsed any
 			if err := common.Unmarshal(bodyBytes, &parsed); err == nil {
 				snapshot.Body = sanitizeJSONValue(parsed)
