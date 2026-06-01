@@ -163,3 +163,81 @@ func TestChatCompletionsToResponsesStreamHandlerEmitsToolCallEvents(t *testing.T
 	require.Contains(t, body, "event: response.output_item.done")
 	require.Contains(t, body, "event: response.completed")
 }
+
+func TestChatCompletionsToResponsesStreamHandlerSeparatesReasoningEvents(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	recorder := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(recorder)
+	c.Request = httptest.NewRequest(http.MethodPost, "/v1/responses", nil)
+	info := &relaycommon.RelayInfo{
+		RelayMode:   relayconstant.RelayModeResponses,
+		IsStream:    true,
+		DisablePing: true,
+		ChannelMeta: &relaycommon.ChannelMeta{
+			UpstreamModelName: "deepseek-reasoner",
+		},
+	}
+	resp := &http.Response{
+		StatusCode: http.StatusOK,
+		Header:     make(http.Header),
+		Body: io.NopCloser(bytes.NewReader(common.StringToByteSlice(
+			"data: {\"id\":\"chatcmpl_reasoning\",\"created\":123,\"model\":\"deepseek-reasoner\",\"choices\":[{\"index\":0,\"delta\":{\"reasoning_content\":\"think \"}}]}\n\n" +
+				"data: {\"id\":\"chatcmpl_reasoning\",\"created\":123,\"model\":\"deepseek-reasoner\",\"choices\":[{\"index\":0,\"delta\":{\"reasoning_content\":\"more\"}}]}\n\n" +
+				"data: {\"id\":\"chatcmpl_reasoning\",\"created\":123,\"model\":\"deepseek-reasoner\",\"choices\":[{\"index\":0,\"delta\":{\"content\":\"answer\"},\"finish_reason\":\"stop\"}],\"usage\":{\"prompt_tokens\":10,\"completion_tokens\":4,\"total_tokens\":14}}\n\n" +
+				"data: [DONE]\n\n"))),
+	}
+
+	usage, err := chatCompletionsToResponsesStreamHandler(c, info, resp)
+
+	require.Nil(t, err)
+	require.Equal(t, 10, usage.PromptTokens)
+	require.Equal(t, 4, usage.CompletionTokens)
+	body := recorder.Body.String()
+	require.Contains(t, body, "event: response.reasoning_summary_part.added")
+	require.Contains(t, body, "event: response.reasoning_summary_text.delta")
+	require.Contains(t, body, `"delta":"think "`)
+	require.Contains(t, body, `"delta":"more"`)
+	require.Contains(t, body, "event: response.reasoning_summary_text.done")
+	require.Contains(t, body, `"text":"think more"`)
+	require.Contains(t, body, "event: response.output_text.delta")
+	require.Contains(t, body, `"delta":"answer"`)
+	require.Contains(t, body, `"type":"response.output_text.done","text":"answer"`)
+	require.NotContains(t, body, `"type":"response.output_text.delta","delta":"think "`)
+	require.Contains(t, body, `"type":"reasoning"`)
+	require.Contains(t, body, `"reasoning_content":"think more"`)
+	require.Contains(t, body, `"text":"answer"`)
+}
+
+func TestChatCompletionsToResponsesStreamHandlerSplitsInlineThinkBlock(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	recorder := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(recorder)
+	c.Request = httptest.NewRequest(http.MethodPost, "/v1/responses", nil)
+	info := &relaycommon.RelayInfo{
+		RelayMode:   relayconstant.RelayModeResponses,
+		IsStream:    true,
+		DisablePing: true,
+		ChannelMeta: &relaycommon.ChannelMeta{
+			UpstreamModelName: "deepseek-reasoner",
+		},
+	}
+	resp := &http.Response{
+		StatusCode: http.StatusOK,
+		Header:     make(http.Header),
+		Body: io.NopCloser(bytes.NewReader(common.StringToByteSlice(
+			"data: {\"id\":\"chatcmpl_think\",\"created\":123,\"model\":\"deepseek-reasoner\",\"choices\":[{\"index\":0,\"delta\":{\"content\":\"<think>hidden\"}}]}\n\n" +
+				"data: {\"id\":\"chatcmpl_think\",\"created\":123,\"model\":\"deepseek-reasoner\",\"choices\":[{\"index\":0,\"delta\":{\"content\":\"</think>\\nvisible\"},\"finish_reason\":\"stop\"}],\"usage\":{\"prompt_tokens\":10,\"completion_tokens\":4,\"total_tokens\":14}}\n\n" +
+				"data: [DONE]\n\n"))),
+	}
+
+	_, err := chatCompletionsToResponsesStreamHandler(c, info, resp)
+
+	require.Nil(t, err)
+	body := recorder.Body.String()
+	require.Contains(t, body, "event: response.reasoning_summary_text.delta")
+	require.Contains(t, body, `"delta":"hidden"`)
+	require.Contains(t, body, "event: response.output_text.delta")
+	require.Contains(t, body, `"delta":"visible"`)
+	require.NotContains(t, body, `<think>`)
+	require.NotContains(t, body, `</think>`)
+}

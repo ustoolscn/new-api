@@ -349,6 +349,9 @@ type ResponsesOutput struct {
 	Name      string                   `json:"name,omitempty"`
 	Namespace string                   `json:"namespace,omitempty"`
 	Arguments json.RawMessage          `json:"arguments,omitempty"`
+	// ReasoningContent/Summary are used by Responses reasoning output items.
+	ReasoningContent string                          `json:"reasoning_content,omitempty"`
+	Summary          []ResponsesReasoningSummaryPart `json:"summary,omitempty"`
 }
 
 // ArgumentsString returns function call arguments in the string form expected by Chat Completions.
@@ -394,6 +397,7 @@ type ResponsesStreamResponse struct {
 	Type     string                   `json:"type"`
 	Response *OpenAIResponsesResponse `json:"response,omitempty"`
 	Delta    string                   `json:"delta,omitempty"`
+	Text     string                   `json:"text,omitempty"`
 	Item     *ResponsesOutput         `json:"item,omitempty"`
 	// - response.function_call_arguments.delta
 	// - response.function_call_arguments.done

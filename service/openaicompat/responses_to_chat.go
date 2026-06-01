@@ -889,7 +889,22 @@ func ChatCompletionsResponseToResponsesResponseWithToolMap(resp *dto.OpenAITextR
 func chatChoicesToResponsesOutput(choices []dto.OpenAITextResponseChoice, responseID string, toolNameMap map[string]ResponsesToolName) []dto.ResponsesOutput {
 	output := make([]dto.ResponsesOutput, 0, len(choices))
 	for _, choice := range choices {
-		content := strings.TrimSpace(choice.Message.StringContent())
+		reasoning := chatMessageReasoningText(choice.Message)
+		if reasoning != "" {
+			output = append(output, dto.ResponsesOutput{
+				Type:             "reasoning",
+				ID:               fmt.Sprintf("rs_%s_%d", responseID, choice.Index),
+				ReasoningContent: reasoning,
+				Summary: []dto.ResponsesReasoningSummaryPart{
+					{
+						Type: "summary_text",
+						Text: reasoning,
+					},
+				},
+			})
+		}
+
+		content := strings.TrimSpace(chatMessageOutputText(choice.Message))
 		if content != "" {
 			output = append(output, dto.ResponsesOutput{
 				Type:   "message",
@@ -929,6 +944,46 @@ func chatChoicesToResponsesOutput(choices []dto.OpenAITextResponseChoice, respon
 		}
 	}
 	return output
+}
+
+func chatMessageReasoningText(message dto.Message) string {
+	if reasoning := message.GetReasoningContent(); reasoning != "" {
+		return reasoning
+	}
+	reasoning, _, ok := SplitLeadingThinkBlock(message.StringContent())
+	if !ok {
+		return ""
+	}
+	return reasoning
+}
+
+func chatMessageOutputText(message dto.Message) string {
+	content := message.StringContent()
+	_, answer, ok := SplitLeadingThinkBlock(content)
+	if !ok {
+		return content
+	}
+	return answer
+}
+
+func SplitLeadingThinkBlock(text string) (string, string, bool) {
+	leadingWsLen := len(text) - len(strings.TrimLeftFunc(text, unicode.IsSpace))
+	afterWs := text[leadingWsLen:]
+	if !strings.HasPrefix(afterWs, "<think>") {
+		return "", "", false
+	}
+	bodyStart := leadingWsLen + len("<think>")
+	closeRelative := strings.Index(text[bodyStart:], "</think>")
+	if closeRelative < 0 {
+		return "", "", false
+	}
+	closeStart := bodyStart + closeRelative
+	answerStart := closeStart + len("</think>")
+	return strings.TrimSpace(text[bodyStart:closeStart]), stripThinkAnswerSeparator(text[answerStart:]), true
+}
+
+func stripThinkAnswerSeparator(text string) string {
+	return strings.TrimLeft(text, "\r\n\t ")
 }
 
 func chatFunctionArgumentsRaw(arguments string) json.RawMessage {

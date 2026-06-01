@@ -389,3 +389,38 @@ func TestChatCompletionsResponseToResponsesResponseConvertsOutputAndUsage(t *tes
 	require.Equal(t, 15, usage.TotalTokens)
 	require.Equal(t, 3, usage.PromptTokensDetails.CachedTokens)
 }
+
+func TestChatCompletionsResponseToResponsesResponseSeparatesReasoningFromOutput(t *testing.T) {
+	reasoning := "first think"
+	chatResp := &dto.OpenAITextResponse{
+		Id:      "chatcmpl_reasoning",
+		Object:  "chat.completion",
+		Created: int64(123),
+		Model:   "deepseek-reasoner",
+		Choices: []dto.OpenAITextResponseChoice{
+			{
+				Index: 0,
+				Message: dto.Message{
+					Role:             "assistant",
+					ReasoningContent: &reasoning,
+					Content:          "<think>hidden</think>\nvisible answer",
+				},
+				FinishReason: "stop",
+			},
+		},
+	}
+
+	responsesResp, _, err := ChatCompletionsResponseToResponsesResponse(chatResp)
+
+	require.NoError(t, err)
+	require.Len(t, responsesResp.Output, 2)
+	require.Equal(t, "reasoning", responsesResp.Output[0].Type)
+	require.Equal(t, "first think", responsesResp.Output[0].ReasoningContent)
+	require.Len(t, responsesResp.Output[0].Summary, 1)
+	require.Equal(t, "summary_text", responsesResp.Output[0].Summary[0].Type)
+	require.Equal(t, "first think", responsesResp.Output[0].Summary[0].Text)
+	require.Equal(t, "message", responsesResp.Output[1].Type)
+	require.Equal(t, "visible answer", responsesResp.Output[1].Content[0].Text)
+	require.NotContains(t, responsesResp.Output[1].Content[0].Text, "hidden")
+	require.NotContains(t, responsesResp.Output[1].Content[0].Text, "<think>")
+}

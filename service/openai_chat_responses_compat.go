@@ -34,3 +34,7 @@ func ChatCompletionsResponseToResponsesResponseWithToolMap(resp *dto.OpenAITextR
 func ExtractOutputTextFromResponses(resp *dto.OpenAIResponsesResponse) string {
 	return openaicompat.ExtractOutputTextFromResponses(resp)
 }
+
+func SplitLeadingThinkBlock(text string) (string, string, bool) {
+	return openaicompat.SplitLeadingThinkBlock(text)
+}

@@ -7,6 +7,7 @@ import (
 	"sort"
 	"strings"
 	"time"
+	"unicode"
 
 	"github.com/QuantumNous/new-api/common"
 	"github.com/QuantumNous/new-api/dto"
@@ -79,6 +80,22 @@ type streamedToolCall struct {
 	arguments   strings.Builder
 }
 
+type inlineThinkMode int
+
+const (
+	inlineThinkModeDetecting inlineThinkMode = iota
+	inlineThinkModeReasoning
+	inlineThinkModeText
+)
+
+type thinkPrefixDecision int
+
+const (
+	thinkPrefixNeedMore thinkPrefixDecision = iota
+	thinkPrefixReasoning
+	thinkPrefixText
+)
+
 func chatCompletionsToResponsesStreamHandler(c *gin.Context, info *relaycommon.RelayInfo, resp *http.Response) (*dto.Usage, *types.NewAPIError) {
 	if resp == nil || resp.Body == nil {
 		logger.LogError(c, "invalid response or response body")
@@ -86,17 +103,24 @@ func chatCompletionsToResponsesStreamHandler(c *gin.Context, info *relaycommon.R
 	}
 
 	var (
-		responseID  string
-		model       = info.UpstreamModelName
-		createdAt   = int(time.Now().Unix())
-		started     bool
-		nextIndex   int
-		textAdded   bool
-		textIndex   int
-		textBuilder strings.Builder
-		usage       = &dto.Usage{}
-		toolCalls   = map[int]*streamedToolCall{}
-		toolNameMap = getResponsesToolNameMap(c)
+		responseID        string
+		model             = info.UpstreamModelName
+		createdAt         = int(time.Now().Unix())
+		started           bool
+		nextIndex         int
+		textAdded         bool
+		textIndex         int
+		textBuilder       strings.Builder
+		reasoningAdded    bool
+		reasoningDone     bool
+		reasoningIndex    int
+		reasoningItemID   string
+		reasoningBuilder  strings.Builder
+		inlineThinkMode   = inlineThinkModeDetecting
+		inlineThinkBuffer strings.Builder
+		usage             = &dto.Usage{}
+		toolCalls         = map[int]*streamedToolCall{}
+		toolNameMap       = getResponsesToolNameMap(c)
 	)
 	ensureStarted := func() {
 		if started {
@@ -126,6 +150,151 @@ func chatCompletionsToResponsesStreamHandler(c *gin.Context, info *relaycommon.R
 			},
 			OutputIndex: common.GetPointer(textIndex),
 		})
+	}
+	ensureReasoningAdded := func() {
+		ensureStarted()
+		if reasoningAdded {
+			return
+		}
+		reasoningAdded = true
+		reasoningIndex = nextIndex
+		nextIndex++
+		reasoningItemID = responseReasoningID(responseID)
+		sendResponsesStreamEvent(c, dto.ResponsesStreamResponse{
+			Type: "response.output_item.added",
+			Item: &dto.ResponsesOutput{
+				Type:             "reasoning",
+				ID:               reasoningItemID,
+				Status:           "in_progress",
+				ReasoningContent: "",
+			},
+			OutputIndex: common.GetPointer(reasoningIndex),
+		})
+		sendResponsesStreamEvent(c, dto.ResponsesStreamResponse{
+			Type:         "response.reasoning_summary_part.added",
+			OutputIndex:  common.GetPointer(reasoningIndex),
+			SummaryIndex: common.GetPointer(0),
+			ItemID:       reasoningItemID,
+			Part: &dto.ResponsesReasoningSummaryPart{
+				Type: "summary_text",
+				Text: "",
+			},
+		})
+	}
+	sendReasoningDelta := func(delta string) {
+		if delta == "" {
+			return
+		}
+		ensureReasoningAdded()
+		reasoningBuilder.WriteString(delta)
+		sendResponsesStreamEvent(c, dto.ResponsesStreamResponse{
+			Type:         "response.reasoning_summary_text.delta",
+			Delta:        delta,
+			OutputIndex:  common.GetPointer(reasoningIndex),
+			SummaryIndex: common.GetPointer(0),
+			ItemID:       reasoningItemID,
+		})
+	}
+	finalizeReasoning := func() {
+		if !reasoningAdded || reasoningDone {
+			return
+		}
+		reasoningDone = true
+		reasoning := reasoningBuilder.String()
+		sendResponsesStreamEvent(c, dto.ResponsesStreamResponse{
+			Type:         "response.reasoning_summary_text.done",
+			Text:         reasoning,
+			OutputIndex:  common.GetPointer(reasoningIndex),
+			SummaryIndex: common.GetPointer(0),
+			ItemID:       reasoningItemID,
+		})
+		sendResponsesStreamEvent(c, dto.ResponsesStreamResponse{
+			Type:         "response.reasoning_summary_part.done",
+			OutputIndex:  common.GetPointer(reasoningIndex),
+			SummaryIndex: common.GetPointer(0),
+			ItemID:       reasoningItemID,
+			Part: &dto.ResponsesReasoningSummaryPart{
+				Type: "summary_text",
+				Text: reasoning,
+			},
+		})
+		reasoningItem := streamedReasoningOutput(reasoningItemID, reasoning)
+		sendResponsesStreamEvent(c, dto.ResponsesStreamResponse{
+			Type:        dto.ResponsesOutputTypeItemDone,
+			Item:        &reasoningItem,
+			OutputIndex: common.GetPointer(reasoningIndex),
+		})
+	}
+	sendTextDelta := func(delta string) {
+		if delta == "" {
+			return
+		}
+		finalizeReasoning()
+		ensureTextAdded()
+		textBuilder.WriteString(delta)
+		sendResponsesStreamEvent(c, dto.ResponsesStreamResponse{
+			Type:         "response.output_text.delta",
+			Delta:        delta,
+			OutputIndex:  common.GetPointer(textIndex),
+			ContentIndex: common.GetPointer(0),
+			ItemID:       responseMessageID(responseID),
+		})
+	}
+	drainCompleteInlineThink := func() {
+		reasoning, answer, ok := service.SplitLeadingThinkBlock(inlineThinkBuffer.String())
+		if !ok {
+			return
+		}
+		inlineThinkMode = inlineThinkModeText
+		inlineThinkBuffer.Reset()
+		sendReasoningDelta(reasoning)
+		finalizeReasoning()
+		sendTextDelta(answer)
+	}
+	pushContentDelta := func(delta string) {
+		switch inlineThinkMode {
+		case inlineThinkModeText:
+			sendTextDelta(delta)
+		case inlineThinkModeDetecting:
+			inlineThinkBuffer.WriteString(delta)
+			switch leadingThinkPrefixDecision(inlineThinkBuffer.String()) {
+			case thinkPrefixNeedMore:
+			case thinkPrefixReasoning:
+				inlineThinkMode = inlineThinkModeReasoning
+				drainCompleteInlineThink()
+			case thinkPrefixText:
+				inlineThinkMode = inlineThinkModeText
+				text := inlineThinkBuffer.String()
+				inlineThinkBuffer.Reset()
+				sendTextDelta(text)
+			}
+		case inlineThinkModeReasoning:
+			inlineThinkBuffer.WriteString(delta)
+			drainCompleteInlineThink()
+		}
+	}
+	flushInlineThinkAtBoundary := func() {
+		switch inlineThinkMode {
+		case inlineThinkModeText:
+		case inlineThinkModeDetecting:
+			inlineThinkMode = inlineThinkModeText
+			text := inlineThinkBuffer.String()
+			inlineThinkBuffer.Reset()
+			sendTextDelta(text)
+		case inlineThinkModeReasoning:
+			buffered := inlineThinkBuffer.String()
+			inlineThinkBuffer.Reset()
+			inlineThinkMode = inlineThinkModeText
+			if reasoning, answer, ok := service.SplitLeadingThinkBlock(buffered); ok {
+				sendReasoningDelta(reasoning)
+				finalizeReasoning()
+				sendTextDelta(answer)
+				return
+			}
+			reasoning := stripLeadingThinkOpenTag(buffered)
+			sendReasoningDelta(reasoning)
+			finalizeReasoning()
+		}
 	}
 	ensureToolAdded := func(index int, toolCall *streamedToolCall) {
 		ensureStarted()
@@ -184,22 +353,15 @@ func chatCompletionsToResponsesStreamHandler(c *gin.Context, info *relaycommon.R
 		}
 
 		for _, choice := range chunk.Choices {
-			delta := choice.Delta.GetContentString()
-			if delta == "" {
-				delta = choice.Delta.GetReasoningContent()
+			if reasoningDelta := choice.Delta.GetReasoningContent(); reasoningDelta != "" {
+				sendReasoningDelta(reasoningDelta)
 			}
-			if delta != "" {
-				ensureTextAdded()
-				textBuilder.WriteString(delta)
-				sendResponsesStreamEvent(c, dto.ResponsesStreamResponse{
-					Type:         "response.output_text.delta",
-					Delta:        delta,
-					OutputIndex:  common.GetPointer(textIndex),
-					ContentIndex: common.GetPointer(0),
-					ItemID:       responseMessageID(responseID),
-				})
+			if delta := choice.Delta.GetContentString(); delta != "" {
+				pushContentDelta(delta)
 			}
 			for _, toolCall := range choice.Delta.ToolCalls {
+				flushInlineThinkAtBoundary()
+				finalizeReasoning()
 				index := 0
 				if toolCall.Index != nil {
 					index = *toolCall.Index
@@ -250,9 +412,12 @@ func chatCompletionsToResponsesStreamHandler(c *gin.Context, info *relaycommon.R
 		})
 	}
 
+	flushInlineThinkAtBoundary()
 	text := textBuilder.String()
-	if usage.CompletionTokens == 0 && text != "" {
-		usage.CompletionTokens = service.CountTextToken(text, info.UpstreamModelName)
+	reasoning := reasoningBuilder.String()
+	completionText := text + reasoning
+	if usage.CompletionTokens == 0 && completionText != "" {
+		usage.CompletionTokens = service.CountTextToken(completionText, info.UpstreamModelName)
 	}
 	if usage.PromptTokens == 0 && usage.CompletionTokens != 0 {
 		usage.PromptTokens = info.GetEstimatePromptTokens()
@@ -261,11 +426,12 @@ func chatCompletionsToResponsesStreamHandler(c *gin.Context, info *relaycommon.R
 		usage.TotalTokens = usage.PromptTokens + usage.CompletionTokens
 	}
 
-	output := streamedResponsesOutput(responseID, text, textAdded, textIndex, toolCalls)
+	output := streamedResponsesOutput(responseID, text, textAdded, textIndex, reasoning, reasoningAdded, reasoningIndex, reasoningItemID, toolCalls)
+	finalizeReasoning()
 	if textAdded {
 		sendResponsesStreamEvent(c, dto.ResponsesStreamResponse{
 			Type:         "response.output_text.done",
-			Delta:        text,
+			Text:         text,
 			OutputIndex:  common.GetPointer(textIndex),
 			ContentIndex: common.GetPointer(0),
 			ItemID:       responseMessageID(responseID),
@@ -348,12 +514,18 @@ func responseStreamUsage(usage *dto.Usage) *dto.Usage {
 	return &out
 }
 
-func streamedResponsesOutput(responseID string, text string, textAdded bool, textIndex int, toolCalls map[int]*streamedToolCall) []dto.ResponsesOutput {
+func streamedResponsesOutput(responseID string, text string, textAdded bool, textIndex int, reasoning string, reasoningAdded bool, reasoningIndex int, reasoningItemID string, toolCalls map[int]*streamedToolCall) []dto.ResponsesOutput {
 	type indexedOutput struct {
 		index int
 		item  dto.ResponsesOutput
 	}
-	indexed := make([]indexedOutput, 0, 1+len(toolCalls))
+	indexed := make([]indexedOutput, 0, 2+len(toolCalls))
+	if reasoningAdded {
+		indexed = append(indexed, indexedOutput{
+			index: reasoningIndex,
+			item:  streamedReasoningOutput(reasoningItemID, reasoning),
+		})
+	}
 	if textAdded && text != "" {
 		indexed = append(indexed, indexedOutput{
 			index: textIndex,
@@ -378,6 +550,20 @@ func streamedResponsesOutput(responseID string, text string, textAdded bool, tex
 		output = append(output, item.item)
 	}
 	return output
+}
+
+func streamedReasoningOutput(itemID string, reasoning string) dto.ResponsesOutput {
+	return dto.ResponsesOutput{
+		Type:             "reasoning",
+		ID:               itemID,
+		ReasoningContent: reasoning,
+		Summary: []dto.ResponsesReasoningSummaryPart{
+			{
+				Type: "summary_text",
+				Text: reasoning,
+			},
+		},
+	}
 }
 
 func streamedTextOutput(responseID string, text string) dto.ResponsesOutput {
@@ -436,6 +622,38 @@ func getResponsesToolNameMap(c *gin.Context) map[string]service.ResponsesToolNam
 func chatStreamFunctionArgumentsRaw(arguments string) []byte {
 	raw, _ := common.Marshal(arguments)
 	return raw
+}
+
+func leadingThinkPrefixDecision(buffer string) thinkPrefixDecision {
+	trimmed := strings.TrimLeftFunc(buffer, unicode.IsSpace)
+	if trimmed == "" {
+		return thinkPrefixNeedMore
+	}
+	if strings.HasPrefix(trimmed, "<think>") {
+		return thinkPrefixReasoning
+	}
+	if strings.HasPrefix("<think>", trimmed) {
+		return thinkPrefixNeedMore
+	}
+	return thinkPrefixText
+}
+
+func stripLeadingThinkOpenTag(text string) string {
+	trimmed := strings.TrimLeftFunc(text, unicode.IsSpace)
+	return strings.TrimSpace(strings.TrimPrefix(trimmed, "<think>"))
+}
+
+func responseReasoningID(responseID string) string {
+	if responseID == "" {
+		return "rs"
+	}
+	if strings.HasPrefix(responseID, "resp_") {
+		return "rs_" + strings.TrimPrefix(responseID, "resp_")
+	}
+	if strings.HasPrefix(responseID, "chatcmpl_") {
+		return "rs_" + strings.TrimPrefix(responseID, "chatcmpl_")
+	}
+	return "rs_" + responseID
 }
 
 func responseMessageID(responseID string) string {
