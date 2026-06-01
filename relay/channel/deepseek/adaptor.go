@@ -23,6 +23,8 @@ import (
 type Adaptor struct {
 }
 
+const responsesToolNameMapKey = "deepseek_responses_tool_name_map"
+
 func (a *Adaptor) ConvertGeminiRequest(*gin.Context, *relaycommon.RelayInfo, *dto.GeminiChatRequest) (any, error) {
 	//TODO implement me
 	return nil, errors.New("not implemented")
@@ -160,9 +162,12 @@ func (a *Adaptor) ConvertEmbeddingRequest(c *gin.Context, info *relaycommon.Rela
 }
 
 func (a *Adaptor) ConvertOpenAIResponsesRequest(c *gin.Context, info *relaycommon.RelayInfo, request dto.OpenAIResponsesRequest) (any, error) {
-	chatRequest, err := service.ResponsesRequestToChatCompletionsRequest(&request)
+	chatRequest, toolNameMap, err := service.ResponsesRequestToChatCompletionsRequestWithToolMap(&request)
 	if err != nil {
 		return nil, err
+	}
+	if c != nil && len(toolNameMap) > 0 {
+		c.Set(responsesToolNameMapKey, toolNameMap)
 	}
 	if err := applyDeepSeekV4OpenAIThinkingSuffix(info, chatRequest); err != nil {
 		return nil, err

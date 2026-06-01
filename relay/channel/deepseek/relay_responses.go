@@ -35,7 +35,7 @@ func chatCompletionsToResponsesHandler(c *gin.Context, info *relaycommon.RelayIn
 	}
 
 	fillMissingChatUsage(c, info, &chatResponse)
-	responsesResponse, usage, err := service.ChatCompletionsResponseToResponsesResponse(&chatResponse)
+	responsesResponse, usage, err := service.ChatCompletionsResponseToResponsesResponseWithToolMap(&chatResponse, getResponsesToolNameMap(c))
 	if err != nil {
 		return nil, types.NewOpenAIError(err, types.ErrorCodeBadResponseBody, http.StatusInternalServerError)
 	}
@@ -71,6 +71,7 @@ func fillMissingChatUsage(c *gin.Context, info *relaycommon.RelayInfo, chatRespo
 type streamedToolCall struct {
 	id        string
 	name      string
+	namespace string
 	arguments strings.Builder
 }
 
@@ -88,6 +89,7 @@ func chatCompletionsToResponsesStreamHandler(c *gin.Context, info *relaycommon.R
 		textBuilder strings.Builder
 		usage       = &dto.Usage{}
 		toolCalls   = map[int]*streamedToolCall{}
+		toolNameMap = getResponsesToolNameMap(c)
 	)
 
 	helper.StreamScannerHandler(c, resp, info, func(data string, sr *helper.StreamResult) {
@@ -161,7 +163,12 @@ func chatCompletionsToResponsesStreamHandler(c *gin.Context, info *relaycommon.R
 					acc.id = toolCall.ID
 				}
 				if toolCall.Function.Name != "" {
-					acc.name = toolCall.Function.Name
+					if nameInfo, ok := toolNameMap[toolCall.Function.Name]; ok && nameInfo.Name != "" {
+						acc.name = nameInfo.Name
+						acc.namespace = nameInfo.Namespace
+					} else {
+						acc.name = toolCall.Function.Name
+					}
 				}
 				if toolCall.Function.Arguments != "" {
 					acc.arguments.WriteString(toolCall.Function.Arguments)
@@ -286,10 +293,23 @@ func streamedResponsesOutput(responseID string, text string, toolCalls map[int]*
 			Status:    "completed",
 			CallId:    callID,
 			Name:      toolCall.name,
+			Namespace: toolCall.namespace,
 			Arguments: chatStreamFunctionArgumentsRaw(toolCall.arguments.String()),
 		})
 	}
 	return output
+}
+
+func getResponsesToolNameMap(c *gin.Context) map[string]service.ResponsesToolName {
+	if c == nil {
+		return nil
+	}
+	value, exists := c.Get(responsesToolNameMapKey)
+	if !exists {
+		return nil
+	}
+	toolNameMap, _ := value.(map[string]service.ResponsesToolName)
+	return toolNameMap
 }
 
 func chatStreamFunctionArgumentsRaw(arguments string) []byte {

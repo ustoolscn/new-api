@@ -57,9 +57,8 @@ func TestResponsesRequestToChatCompletionsRequestConvertsCoreFields(t *testing.T
 	require.Equal(t, "be concise", chatReq.Messages[0].Content)
 	require.Equal(t, "user", chatReq.Messages[1].Role)
 	require.IsType(t, []map[string]any{}, chatReq.Messages[1].Content)
-	require.Equal(t, "tool", chatReq.Messages[2].Role)
-	require.Equal(t, "call_1", chatReq.Messages[2].ToolCallId)
-	require.Equal(t, "42", chatReq.Messages[2].Content)
+	require.Equal(t, "user", chatReq.Messages[2].Role)
+	require.Contains(t, chatReq.Messages[2].Content, "Function call output (call_1): 42")
 
 	require.Len(t, chatReq.Tools, 1)
 	require.Equal(t, "function", chatReq.Tools[0].Type)
@@ -74,8 +73,114 @@ func TestResponsesRequestToChatCompletionsRequestConvertsCoreFields(t *testing.T
 	require.Equal(t, "lookup", function["name"])
 }
 
+func TestResponsesRequestToChatCompletionsRequestFlattensNamespaceTools(t *testing.T) {
+	tools := common.StringToByteSlice(`[{
+		"type":"namespace",
+		"name":"mcp__idea__",
+		"description":"IDE tools",
+		"tools":[{
+			"type":"function",
+			"name":"read_file",
+			"description":"Read a file",
+			"parameters":{"type":"object","properties":{"path":{"type":"string"}}}
+		}]
+	}]`)
+
+	chatReq, toolMap, err := ResponsesRequestToChatCompletionsRequestWithToolMap(&dto.OpenAIResponsesRequest{
+		Model: "deepseek-chat",
+		Input: common.StringToByteSlice(`"hello"`),
+		Tools: tools,
+	})
+
+	require.NoError(t, err)
+	require.Len(t, chatReq.Tools, 1)
+	require.Equal(t, "function", chatReq.Tools[0].Type)
+	require.Equal(t, "mcp__idea__read_file", chatReq.Tools[0].Function.Name)
+	require.Contains(t, chatReq.Tools[0].Function.Description, "IDE tools")
+	require.Contains(t, chatReq.Tools[0].Function.Description, "Read a file")
+	require.Equal(t, ResponsesToolName{
+		Namespace: "mcp__idea__",
+		Name:      "read_file",
+	}, toolMap["mcp__idea__read_file"])
+}
+
+func TestResponsesRequestToChatCompletionsRequestKeepsToolOutputContextValid(t *testing.T) {
+	input := common.StringToByteSlice(`[
+		{"type":"function_call","call_id":"call_a","name":"lookup","arguments":{"q":"a"}},
+		{"type":"function_call","call_id":"call_b","name":"lookup","arguments":"{\"q\":\"b\"}"},
+		{"type":"function_call_output","call_id":"call_a","output":{"ok":true}},
+		{"type":"function_call_output","call_id":"missing","output":"late"}
+	]`)
+
+	chatReq, err := ResponsesRequestToChatCompletionsRequest(&dto.OpenAIResponsesRequest{
+		Model: "deepseek-chat",
+		Input: input,
+	})
+
+	require.NoError(t, err)
+	require.Len(t, chatReq.Messages, 3)
+	require.Equal(t, "assistant", chatReq.Messages[0].Role)
+
+	var toolCalls []dto.ToolCallRequest
+	require.NoError(t, common.Unmarshal(chatReq.Messages[0].ToolCalls, &toolCalls))
+	require.Len(t, toolCalls, 2)
+	require.Equal(t, "call_a", toolCalls[0].ID)
+	require.Equal(t, "lookup", toolCalls[0].Function.Name)
+	require.JSONEq(t, `{"q":"a"}`, toolCalls[0].Function.Arguments)
+	require.Equal(t, "call_b", toolCalls[1].ID)
+	require.JSONEq(t, `{"q":"b"}`, toolCalls[1].Function.Arguments)
+
+	require.Equal(t, "tool", chatReq.Messages[1].Role)
+	require.Equal(t, "call_a", chatReq.Messages[1].ToolCallId)
+	require.JSONEq(t, `{"ok":true}`, chatReq.Messages[1].Content.(string))
+
+	require.Equal(t, "user", chatReq.Messages[2].Role)
+	require.Contains(t, chatReq.Messages[2].Content, "Function call output (missing): late")
+}
+
+func TestResponsesRequestToChatCompletionsRequestFlattensNestedNamespaceToolChoice(t *testing.T) {
+	chatReq, err := ResponsesRequestToChatCompletionsRequest(&dto.OpenAIResponsesRequest{
+		Model: "deepseek-chat",
+		Input: common.StringToByteSlice(`"hello"`),
+		Tools: common.StringToByteSlice(`[{
+			"type":"namespace",
+			"name":"mcp__idea__",
+			"tools":[{"type":"function","name":"read_file","parameters":{"type":"object"}}]
+		}]`),
+		ToolChoice: common.StringToByteSlice(`{
+			"type":"function",
+			"function":{"namespace":"mcp__idea__","name":"read_file"}
+		}`),
+	})
+
+	require.NoError(t, err)
+	choice, ok := chatReq.ToolChoice.(map[string]any)
+	require.True(t, ok)
+	function, ok := choice["function"].(map[string]any)
+	require.True(t, ok)
+	require.Equal(t, "mcp__idea__read_file", function["name"])
+}
+
+func TestResponsesRequestToChatCompletionsRequestSkipsNamespaceToolNameCollision(t *testing.T) {
+	chatReq, toolMap, err := ResponsesRequestToChatCompletionsRequestWithToolMap(&dto.OpenAIResponsesRequest{
+		Model: "deepseek-chat",
+		Input: common.StringToByteSlice(`"hello"`),
+		Tools: common.StringToByteSlice(`[
+			{"type":"function","name":"mcp__idea__read_file","parameters":{"type":"object"}},
+			{"type":"namespace","name":"mcp__idea__","tools":[
+				{"type":"function","name":"read_file","parameters":{"type":"object"}}
+			]}
+		]`),
+	})
+
+	require.NoError(t, err)
+	require.Len(t, chatReq.Tools, 1)
+	require.Equal(t, "mcp__idea__read_file", chatReq.Tools[0].Function.Name)
+	require.NotContains(t, toolMap, "mcp__idea__read_file")
+}
+
 func TestChatCompletionsResponseToResponsesResponseConvertsOutputAndUsage(t *testing.T) {
-	toolCallsRaw := common.StringToByteSlice(`[{"id":"call_1","type":"function","function":{"name":"lookup","arguments":"{\"q\":\"hi\"}"}}]`)
+	toolCallsRaw := common.StringToByteSlice(`[{"id":"call_1","type":"function","function":{"name":"mcp__idea__lookup","arguments":"{\"q\":\"hi\"}"}}]`)
 	chatResp := &dto.OpenAITextResponse{
 		Id:      "chatcmpl_123",
 		Object:  "chat.completion",
@@ -100,7 +205,12 @@ func TestChatCompletionsResponseToResponsesResponseConvertsOutputAndUsage(t *tes
 		},
 	}
 
-	responsesResp, usage, err := ChatCompletionsResponseToResponsesResponse(chatResp)
+	responsesResp, usage, err := ChatCompletionsResponseToResponsesResponseWithToolMap(chatResp, map[string]ResponsesToolName{
+		"mcp__idea__lookup": {
+			Namespace: "mcp__idea__",
+			Name:      "lookup",
+		},
+	})
 
 	require.NoError(t, err)
 	require.Equal(t, "chatcmpl_123", responsesResp.ID)
@@ -115,6 +225,7 @@ func TestChatCompletionsResponseToResponsesResponseConvertsOutputAndUsage(t *tes
 	require.Equal(t, "function_call", responsesResp.Output[1].Type)
 	require.Equal(t, "call_1", responsesResp.Output[1].CallId)
 	require.Equal(t, "lookup", responsesResp.Output[1].Name)
+	require.Equal(t, "mcp__idea__", responsesResp.Output[1].Namespace)
 	require.Equal(t, 10, responsesResp.Usage.InputTokens)
 	require.Equal(t, 5, responsesResp.Usage.OutputTokens)
 	require.Equal(t, 15, responsesResp.Usage.TotalTokens)

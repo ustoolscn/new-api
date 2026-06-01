@@ -11,6 +11,7 @@ import (
 	"github.com/QuantumNous/new-api/dto"
 	relaycommon "github.com/QuantumNous/new-api/relay/common"
 	relayconstant "github.com/QuantumNous/new-api/relay/constant"
+	"github.com/QuantumNous/new-api/service"
 	"github.com/gin-gonic/gin"
 	"github.com/stretchr/testify/require"
 )
@@ -41,6 +42,44 @@ func TestConvertOpenAIResponsesRequestUsesChatCompletionsCompat(t *testing.T) {
 	url, err := adaptor.GetRequestURL(info)
 	require.NoError(t, err)
 	require.Equal(t, "https://api.deepseek.com/v1/chat/completions", url)
+}
+
+func TestConvertOpenAIResponsesRequestFlattensNamespaceTools(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	recorder := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(recorder)
+	adaptor := &Adaptor{}
+	info := &relaycommon.RelayInfo{
+		RelayMode: relayconstant.RelayModeResponses,
+		ChannelMeta: &relaycommon.ChannelMeta{
+			ChannelBaseUrl:    "https://api.deepseek.com",
+			UpstreamModelName: "deepseek-chat",
+		},
+	}
+
+	converted, err := adaptor.ConvertOpenAIResponsesRequest(c, info, dto.OpenAIResponsesRequest{
+		Model: "deepseek-chat",
+		Input: common.StringToByteSlice(`"hello"`),
+		Tools: common.StringToByteSlice(`[{
+			"type":"namespace",
+			"name":"mcp__idea__",
+			"tools":[{"type":"function","name":"read_file","parameters":{"type":"object"}}]
+		}]`),
+	})
+
+	require.NoError(t, err)
+	chatReq, ok := converted.(*dto.GeneralOpenAIRequest)
+	require.True(t, ok)
+	require.Len(t, chatReq.Tools, 1)
+	require.Equal(t, "mcp__idea__read_file", chatReq.Tools[0].Function.Name)
+
+	value, exists := c.Get(responsesToolNameMapKey)
+	require.True(t, exists)
+	toolNameMap := value.(map[string]service.ResponsesToolName)
+	require.Equal(t, service.ResponsesToolName{
+		Namespace: "mcp__idea__",
+		Name:      "read_file",
+	}, toolNameMap["mcp__idea__read_file"])
 }
 
 func TestChatCompletionsToResponsesHandlerWrapsChatResponse(t *testing.T) {
