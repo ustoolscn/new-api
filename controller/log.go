@@ -104,7 +104,8 @@ func GetLogsStat(c *gin.Context) {
 	modelName := c.Query("model_name")
 	channel, _ := strconv.Atoi(c.Query("channel"))
 	group := c.Query("group")
-	stat, err := model.SumUsedQuota(logType, startTimestamp, endTimestamp, modelName, username, tokenName, channel, group)
+	requestId := c.Query("request_id")
+	stat, err := model.SumUsedQuota(logType, startTimestamp, endTimestamp, modelName, username, tokenName, channel, group, requestId)
 	if err != nil {
 		common.ApiError(c, err)
 		return
@@ -114,9 +115,14 @@ func GetLogsStat(c *gin.Context) {
 		"success": true,
 		"message": "",
 		"data": gin.H{
-			"quota": stat.Quota,
-			"rpm":   stat.Rpm,
-			"tpm":   stat.Tpm,
+			"quota":             stat.Quota,
+			"rpm":               stat.Rpm,
+			"tpm":               stat.Tpm,
+			"input_tokens":      stat.InputTokens,
+			"prompt_tokens":     stat.PromptTokens,
+			"cache_tokens":      stat.CacheTokens,
+			"completion_tokens": stat.CompletionTokens,
+			"model_stats":       stat.ModelStats,
 		},
 	})
 	return
@@ -131,7 +137,8 @@ func GetLogsSelfStat(c *gin.Context) {
 	modelName := c.Query("model_name")
 	channel, _ := strconv.Atoi(c.Query("channel"))
 	group := c.Query("group")
-	quotaNum, err := model.SumUsedQuota(logType, startTimestamp, endTimestamp, modelName, username, tokenName, channel, group)
+	requestId := c.Query("request_id")
+	quotaNum, err := model.SumUsedQuota(logType, startTimestamp, endTimestamp, modelName, username, tokenName, channel, group, requestId)
 	if err != nil {
 		common.ApiError(c, err)
 		return
@@ -141,9 +148,14 @@ func GetLogsSelfStat(c *gin.Context) {
 		"success": true,
 		"message": "",
 		"data": gin.H{
-			"quota": quotaNum.Quota,
-			"rpm":   quotaNum.Rpm,
-			"tpm":   quotaNum.Tpm,
+			"quota":             quotaNum.Quota,
+			"rpm":               quotaNum.Rpm,
+			"tpm":               quotaNum.Tpm,
+			"input_tokens":      quotaNum.InputTokens,
+			"prompt_tokens":     quotaNum.PromptTokens,
+			"cache_tokens":      quotaNum.CacheTokens,
+			"completion_tokens": quotaNum.CompletionTokens,
+			"model_stats":       quotaNum.ModelStats,
 			//"token": tokenNum,
 		},
 	})

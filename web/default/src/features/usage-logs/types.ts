@@ -239,6 +239,20 @@ export interface LogStatistics {
   quota: number
   rpm: number
   tpm: number
+  input_tokens: number
+  prompt_tokens: number
+  cache_tokens: number
+  completion_tokens: number
+  model_stats?: ModelTokenStatistics[]
+}
+
+export interface ModelTokenStatistics {
+  model_name: string
+  quota: number
+  input_tokens: number
+  prompt_tokens: number
+  cache_tokens: number
+  completion_tokens: number
 }
 
 // ============================================================================

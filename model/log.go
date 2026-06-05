@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"sort"
 	"strings"
 	"time"
 
@@ -418,26 +419,78 @@ func GetUserLogs(userId int, logType int, startTimestamp int64, endTimestamp int
 }
 
 type Stat struct {
-	Quota int `json:"quota"`
-	Rpm   int `json:"rpm"`
-	Tpm   int `json:"tpm"`
+	Quota            int              `json:"quota"`
+	Rpm              int              `json:"rpm"`
+	Tpm              int              `json:"tpm"`
+	InputTokens      int              `json:"input_tokens"`
+	PromptTokens     int              `json:"prompt_tokens"`
+	CacheTokens      int              `json:"cache_tokens"`
+	CompletionTokens int              `json:"completion_tokens"`
+	ModelStats       []ModelTokenStat `json:"model_stats" gorm:"-"`
 }
 
-func SumUsedQuota(logType int, startTimestamp int64, endTimestamp int64, modelName string, username string, tokenName string, channel int, group string) (stat Stat, err error) {
-	tx := LOG_DB.Table("logs").Select("sum(quota) quota")
+type ModelTokenStat struct {
+	ModelName        string `json:"model_name"`
+	Quota            int    `json:"quota"`
+	InputTokens      int    `json:"input_tokens"`
+	PromptTokens     int    `json:"prompt_tokens"`
+	CacheTokens      int    `json:"cache_tokens"`
+	CompletionTokens int    `json:"completion_tokens"`
+	cacheReadTokens  int    `gorm:"-"`
+}
 
-	// 为rpm和tpm创建单独的查询
-	rpmTpmQuery := LOG_DB.Table("logs").Select("count(*) rpm, sum(prompt_tokens) + sum(completion_tokens) tpm")
+type logOtherTokenUsage struct {
+	CacheTokens           int `json:"cache_tokens"`
+	CacheCreationTokens   int `json:"cache_creation_tokens"`
+	CacheCreationTokens5m int `json:"cache_creation_tokens_5m"`
+	CacheCreationTokens1h int `json:"cache_creation_tokens_1h"`
+}
 
-	if tx, err = applyExplicitLogTextFilter(tx, "username", username); err != nil {
-		return stat, err
+type cacheTokenStats struct {
+	Read  int
+	Total int
+}
+
+func cacheTokenStatsFromLogOther(other string) cacheTokenStats {
+	if other == "" {
+		return cacheTokenStats{}
 	}
-	if rpmTpmQuery, err = applyExplicitLogTextFilter(rpmTpmQuery, "username", username); err != nil {
-		return stat, err
+	var usage logOtherTokenUsage
+	if err := common.UnmarshalJsonStr(other, &usage); err != nil {
+		return cacheTokenStats{}
+	}
+	cacheWriteTokens := usage.CacheCreationTokens
+	if usage.CacheCreationTokens5m > 0 || usage.CacheCreationTokens1h > 0 {
+		cacheWriteTokens = usage.CacheCreationTokens5m + usage.CacheCreationTokens1h
+	}
+	return cacheTokenStats{
+		Read:  usage.CacheTokens,
+		Total: usage.CacheTokens + cacheWriteTokens,
+	}
+}
+
+func cacheTokensFromLogOther(other string) int {
+	return cacheTokenStatsFromLogOther(other).Total
+}
+
+func visibleInputTokens(promptTokens int, cacheReadTokens int) int {
+	inputTokens := promptTokens - cacheReadTokens
+	if inputTokens < 0 {
+		return 0
+	}
+	return inputTokens
+}
+
+func applyLogStatFilters(tx *gorm.DB, startTimestamp int64, endTimestamp int64, modelName string, username string, tokenName string, channel int, group string, requestId string) (*gorm.DB, error) {
+	var err error
+	if tx, err = applyExplicitLogTextFilter(tx, "username", username); err != nil {
+		return nil, err
 	}
 	if tokenName != "" {
 		tx = tx.Where("token_name = ?", tokenName)
-		rpmTpmQuery = rpmTpmQuery.Where("token_name = ?", tokenName)
+	}
+	if requestId != "" {
+		tx = tx.Where("request_id = ?", requestId)
 	}
 	if startTimestamp != 0 {
 		tx = tx.Where("created_at >= ?", startTimestamp)
@@ -446,22 +499,119 @@ func SumUsedQuota(logType int, startTimestamp int64, endTimestamp int64, modelNa
 		tx = tx.Where("created_at <= ?", endTimestamp)
 	}
 	if tx, err = applyExplicitLogTextFilter(tx, "model_name", modelName); err != nil {
-		return stat, err
-	}
-	if rpmTpmQuery, err = applyExplicitLogTextFilter(rpmTpmQuery, "model_name", modelName); err != nil {
-		return stat, err
+		return nil, err
 	}
 	if channel != 0 {
 		tx = tx.Where("channel_id = ?", channel)
-		rpmTpmQuery = rpmTpmQuery.Where("channel_id = ?", channel)
 	}
 	if group != "" {
 		tx = tx.Where(logGroupCol+" = ?", group)
-		rpmTpmQuery = rpmTpmQuery.Where(logGroupCol+" = ?", group)
+	}
+	return tx.Where("type = ?", LogTypeConsume), nil
+}
+
+func applyCacheTokenCandidateFilter(tx *gorm.DB) *gorm.DB {
+	return tx.Where(
+		"(other LIKE ? OR other LIKE ? OR other LIKE ? OR other LIKE ?)",
+		`%"cache_tokens"%`,
+		`%"cache_creation_tokens"%`,
+		`%"cache_creation_tokens_5m"%`,
+		`%"cache_creation_tokens_1h"%`,
+	)
+}
+
+func sumCacheTokenStatsFromLogQuery(tx *gorm.DB, modelStats map[string]*ModelTokenStat) (cacheTokenStats, error) {
+	var stats cacheTokenStats
+	var logs []Log
+	err := applyCacheTokenCandidateFilter(tx).
+		Select("id", "model_name", "other").
+		FindInBatches(&logs, 1000, func(_ *gorm.DB, _ int) error {
+			for _, log := range logs {
+				logCacheStats := cacheTokenStatsFromLogOther(log.Other)
+				stats.Read += logCacheStats.Read
+				stats.Total += logCacheStats.Total
+				if modelStats == nil {
+					continue
+				}
+				modelStat, ok := modelStats[log.ModelName]
+				if !ok {
+					modelStat = &ModelTokenStat{ModelName: log.ModelName}
+					modelStats[log.ModelName] = modelStat
+				}
+				modelStat.CacheTokens += logCacheStats.Total
+				modelStat.cacheReadTokens += logCacheStats.Read
+			}
+			return nil
+		}).Error
+	return stats, err
+}
+
+func collectModelTokenStatsFromLogQuery(tx *gorm.DB) (map[string]*ModelTokenStat, error) {
+	var rows []ModelTokenStat
+	if err := tx.
+		Select("model_name, COALESCE(SUM(quota), 0) AS quota, COALESCE(SUM(prompt_tokens), 0) AS prompt_tokens, COALESCE(SUM(completion_tokens), 0) AS completion_tokens").
+		Group("model_name").
+		Scan(&rows).Error; err != nil {
+		return nil, err
 	}
 
-	tx = tx.Where("type = ?", LogTypeConsume)
-	rpmTpmQuery = rpmTpmQuery.Where("type = ?", LogTypeConsume)
+	modelStats := make(map[string]*ModelTokenStat, len(rows))
+	for i := range rows {
+		rows[i].InputTokens = visibleInputTokens(rows[i].PromptTokens, 0)
+		modelStats[rows[i].ModelName] = &rows[i]
+	}
+	return modelStats, nil
+}
+
+func modelTokenStatsMapToSortedSlice(modelStats map[string]*ModelTokenStat) []ModelTokenStat {
+	items := make([]ModelTokenStat, 0, len(modelStats))
+	for _, item := range modelStats {
+		item.InputTokens = visibleInputTokens(item.PromptTokens, item.cacheReadTokens)
+		item.cacheReadTokens = 0
+		items = append(items, *item)
+	}
+	sort.Slice(items, func(i, j int) bool {
+		leftTotal := items[i].Quota
+		rightTotal := items[j].Quota
+		if leftTotal == rightTotal {
+			return items[i].ModelName < items[j].ModelName
+		}
+		return leftTotal > rightTotal
+	})
+	return items
+}
+
+func SumUsedQuota(logType int, startTimestamp int64, endTimestamp int64, modelName string, username string, tokenName string, channel int, group string, requestId string) (stat Stat, err error) {
+	tx, err := applyLogStatFilters(
+		LOG_DB.Table("logs").Select("COALESCE(SUM(quota), 0) AS quota, COALESCE(SUM(prompt_tokens), 0) AS prompt_tokens, COALESCE(SUM(completion_tokens), 0) AS completion_tokens"),
+		startTimestamp,
+		endTimestamp,
+		modelName,
+		username,
+		tokenName,
+		channel,
+		group,
+		requestId,
+	)
+	if err != nil {
+		return stat, err
+	}
+
+	// 为rpm和tpm创建单独的查询
+	rpmTpmQuery, err := applyLogStatFilters(
+		LOG_DB.Table("logs").Select("COUNT(*) AS rpm, COALESCE(SUM(prompt_tokens), 0) + COALESCE(SUM(completion_tokens), 0) AS tpm"),
+		startTimestamp,
+		endTimestamp,
+		modelName,
+		username,
+		tokenName,
+		channel,
+		group,
+		requestId,
+	)
+	if err != nil {
+		return stat, err
+	}
 
 	// 只统计最近60秒的rpm和tpm
 	rpmTpmQuery = rpmTpmQuery.Where("created_at >= ?", time.Now().Add(-60*time.Second).Unix())
@@ -471,10 +621,54 @@ func SumUsedQuota(logType int, startTimestamp int64, endTimestamp int64, modelNa
 		common.SysError("failed to query log stat: " + err.Error())
 		return stat, errors.New("查询统计数据失败")
 	}
+	stat.InputTokens = visibleInputTokens(stat.PromptTokens, 0)
 	if err := rpmTpmQuery.Scan(&stat).Error; err != nil {
 		common.SysError("failed to query rpm/tpm stat: " + err.Error())
 		return stat, errors.New("查询统计数据失败")
 	}
+
+	modelStatsQuery, err := applyLogStatFilters(
+		LOG_DB.Table("logs"),
+		startTimestamp,
+		endTimestamp,
+		modelName,
+		username,
+		tokenName,
+		channel,
+		group,
+		requestId,
+	)
+	if err != nil {
+		return stat, err
+	}
+	modelStats, err := collectModelTokenStatsFromLogQuery(modelStatsQuery)
+	if err != nil {
+		common.SysError("failed to query log model token stat: " + err.Error())
+		return stat, errors.New("查询统计数据失败")
+	}
+
+	cacheQuery, err := applyLogStatFilters(
+		LOG_DB.Model(&Log{}),
+		startTimestamp,
+		endTimestamp,
+		modelName,
+		username,
+		tokenName,
+		channel,
+		group,
+		requestId,
+	)
+	if err != nil {
+		return stat, err
+	}
+	cacheStats, err := sumCacheTokenStatsFromLogQuery(cacheQuery, modelStats)
+	if err != nil {
+		common.SysError("failed to query log cache token stat: " + err.Error())
+		return stat, errors.New("查询统计数据失败")
+	}
+	stat.CacheTokens = cacheStats.Total
+	stat.InputTokens = visibleInputTokens(stat.PromptTokens, cacheStats.Read)
+	stat.ModelStats = modelTokenStatsMapToSortedSlice(modelStats)
 
 	return stat, nil
 }
