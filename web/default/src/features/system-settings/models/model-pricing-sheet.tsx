@@ -16,28 +16,26 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 
 For commercial licensing, please contact support@quantumnous.com
 */
-import { useEffect, useMemo, useState } from 'react'
-import * as z from 'zod'
+import {
+  forwardRef,
+  useCallback,
+  useEffect,
+  useImperativeHandle,
+  useMemo,
+  useState,
+} from 'react'
 import { useForm } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
-import { AlertTriangle, ChevronDown, Plus, Trash2 } from 'lucide-react'
+import { AlertTriangle, Save } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 import { cn } from '@/lib/utils'
 import { Alert, AlertDescription } from '@/components/ui/alert'
-import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import {
-  Collapsible,
-  CollapsibleContent,
-  CollapsibleTrigger,
-} from '@/components/ui/collapsible'
-import {
   Field,
-  FieldContent,
   FieldDescription,
   FieldGroup,
   FieldLabel,
-  FieldTitle,
 } from '@/components/ui/field'
 import {
   Form,
@@ -58,92 +56,46 @@ import {
   Sheet,
   SheetContent,
   SheetDescription,
-  SheetFooter,
   SheetHeader,
   SheetTitle,
 } from '@/components/ui/sheet'
-import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from '@/components/ui/table'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
+import { sideDrawerContentClassName } from '@/components/drawer-layout'
 import {
-  sideDrawerContentClassName,
-  sideDrawerFooterClassName,
-} from '@/components/drawer-layout'
-import { combineBillingExpr } from '@/features/pricing/lib/billing-expr'
+  EMPTY_LANE_ENABLED,
+  EMPTY_LANE_PRICES,
+  buildPreviewRows,
+  createInitialLaneState,
+  createInitialVideoRows,
+  createModelPricingSchema,
+  hasValue,
+  laneConfigs,
+  numericDraftRegex,
+  ratioFieldByLane,
+  toNumberOrNull,
+  videoRowsToConfig,
+  type LaneKey,
+  type ModelPricingFormValues,
+  type ModelRatioData,
+  type PricingMode,
+  type VideoPriceRow,
+} from './model-pricing-core'
 import {
-  SettingsControlGroup,
-  SettingsSwitchField,
-} from '../components/settings-form-layout'
+  PriceInput,
+  PriceLane,
+  VideoPricingEditor,
+} from './model-pricing-inputs'
 import { formatPricingNumber } from './pricing-format'
 import { TieredPricingEditor } from './tiered-pricing-editor'
 
-const createModelPricingSchema = (t: (key: string) => string) =>
-  z.object({
-    name: z.string().min(1, t('Model name is required')),
-    price: z.string().optional(),
-    ratio: z.string().optional(),
-    cacheRatio: z.string().optional(),
-    createCacheRatio: z.string().optional(),
-    completionRatio: z.string().optional(),
-    imageRatio: z.string().optional(),
-    audioRatio: z.string().optional(),
-    audioCompletionRatio: z.string().optional(),
-  })
-
-type ModelPricingFormValues = z.infer<
-  ReturnType<typeof createModelPricingSchema>
->
-
-type PricingMode = 'per-token' | 'per-request' | 'tiered_expr' | 'video_seconds'
-type LaneKey =
-  | 'completion'
-  | 'cache'
-  | 'createCache'
-  | 'image'
-  | 'audioInput'
-  | 'audioOutput'
-
-export type ModelRatioData = {
-  name: string
-  price?: string
-  ratio?: string
-  cacheRatio?: string
-  createCacheRatio?: string
-  completionRatio?: string
-  imageRatio?: string
-  audioRatio?: string
-  audioCompletionRatio?: string
-  billingMode?: PricingMode
-  billingExpr?: string
-  requestRuleExpr?: string
-  videoPrice?: VideoPricingConfig
-}
-
-export type VideoPricingConfig = {
-  base_fps?: number
-  input_content_price?: number
-  prices?: Record<string, number>
-}
-
-type VideoPriceRow = {
-  id: number
-  resolution: string
-  price: string
-}
+export type { ModelRatioData } from './model-pricing-core'
 
 type ModelPricingSheetProps = {
   open: boolean
   onOpenChange: (open: boolean) => void
-  onSave: (data: ModelRatioData) => void
-  onCancel?: () => void
   editData?: ModelRatioData | null
-  selectedTargetCount?: number
+  onSave?: () => void | Promise<void>
+  isSaving?: boolean
 }
 
 type ModelPricingEditorPanelProps = Omit<
@@ -153,328 +105,17 @@ type ModelPricingEditorPanelProps = Omit<
   className?: string
 }
 
-type PreviewRow = {
-  key: string
-  label: string
-  value: string
-  multiline?: boolean
+export type ModelPricingEditorPanelHandle = {
+  commitDraft: () => Promise<ModelRatioData | null>
 }
 
-const numericDraftRegex = /^(\d+(\.\d*)?|\.\d*)?$/
-
-const EMPTY_LANE_PRICES: Record<LaneKey, string> = {
-  completion: '',
-  cache: '',
-  createCache: '',
-  image: '',
-  audioInput: '',
-  audioOutput: '',
-}
-
-const EMPTY_LANE_ENABLED: Record<LaneKey, boolean> = {
-  completion: false,
-  cache: false,
-  createCache: false,
-  image: false,
-  audioInput: false,
-  audioOutput: false,
-}
-
-const ratioFieldByLane: Record<LaneKey, keyof ModelPricingFormValues> = {
-  completion: 'completionRatio',
-  cache: 'cacheRatio',
-  createCache: 'createCacheRatio',
-  image: 'imageRatio',
-  audioInput: 'audioRatio',
-  audioOutput: 'audioCompletionRatio',
-}
-
-const laneConfigs: Array<{
-  key: LaneKey
-  titleKey: string
-  descriptionKey: string
-  placeholder: string
-}> = [
-  {
-    key: 'completion',
-    titleKey: 'Completion price',
-    descriptionKey: 'Output token price for generated tokens.',
-    placeholder: '15',
-  },
-  {
-    key: 'cache',
-    titleKey: 'Cache read price',
-    descriptionKey: 'Token price for cache reads.',
-    placeholder: '0.3',
-  },
-  {
-    key: 'createCache',
-    titleKey: 'Cache write price',
-    descriptionKey: 'Token price for creating cache entries.',
-    placeholder: '3.75',
-  },
-  {
-    key: 'image',
-    titleKey: 'Image input price',
-    descriptionKey: 'Token price for image input.',
-    placeholder: '2.5',
-  },
-  {
-    key: 'audioInput',
-    titleKey: 'Audio input price',
-    descriptionKey: 'Token price for audio input.',
-    placeholder: '3.81',
-  },
-  {
-    key: 'audioOutput',
-    titleKey: 'Audio output price',
-    descriptionKey: 'Token price for audio output.',
-    placeholder: '15.11',
-  },
-]
-
-function hasValue(value: unknown): boolean {
-  return (
-    value !== '' && value !== null && value !== undefined && value !== false
-  )
-}
-
-function toNumberOrNull(value: unknown): number | null {
-  if (!hasValue(value) && value !== 0) return null
-  const num = Number(value)
-  return Number.isFinite(num) ? num : null
-}
-
-function ratioToBasePrice(ratio: unknown): string {
-  const num = toNumberOrNull(ratio)
-  if (num === null) return ''
-  return formatPricingNumber(num * 2)
-}
-
-function deriveLanePrice(
-  ratio: unknown,
-  denominator: unknown,
-  fallback = ''
-): string {
-  const ratioNumber = toNumberOrNull(ratio)
-  const denominatorNumber = toNumberOrNull(denominator)
-  if (ratioNumber === null || denominatorNumber === null) return fallback
-  return formatPricingNumber(ratioNumber * denominatorNumber)
-}
-
-function createInitialLaneState(data?: ModelRatioData | null) {
-  if (!data) {
-    return {
-      promptPrice: '',
-      prices: { ...EMPTY_LANE_PRICES },
-      enabled: { ...EMPTY_LANE_ENABLED },
-    }
-  }
-
-  const promptPrice = ratioToBasePrice(data.ratio)
-  const audioInputPrice = deriveLanePrice(data.audioRatio, promptPrice)
-  const prices: Record<LaneKey, string> = {
-    completion: deriveLanePrice(data.completionRatio, promptPrice),
-    cache: deriveLanePrice(data.cacheRatio, promptPrice),
-    createCache: deriveLanePrice(data.createCacheRatio, promptPrice),
-    image: deriveLanePrice(data.imageRatio, promptPrice),
-    audioInput: audioInputPrice,
-    audioOutput: deriveLanePrice(data.audioCompletionRatio, audioInputPrice),
-  }
-
-  return {
-    promptPrice,
-    prices,
-    enabled: {
-      completion: hasValue(data.completionRatio),
-      cache: hasValue(data.cacheRatio),
-      createCache: hasValue(data.createCacheRatio),
-      image: hasValue(data.imageRatio),
-      audioInput: hasValue(data.audioRatio),
-      audioOutput: hasValue(data.audioCompletionRatio),
-    },
-  }
-}
-
-function getModeLabel(mode: PricingMode) {
-  if (mode === 'per-request') return 'Per-request'
-  if (mode === 'tiered_expr') return 'Expression'
-  if (mode === 'video_seconds') return 'Video per-second'
-  return 'Per-token'
-}
-
-function getModeBadgeVariant(
-  mode: PricingMode
-): 'default' | 'secondary' | 'outline' {
-  if (mode === 'per-request') return 'secondary'
-  if (mode === 'tiered_expr') return 'default'
-  if (mode === 'video_seconds') return 'secondary'
-  return 'outline'
-}
-
-function createInitialVideoRows(data?: ModelRatioData | null): {
-  baseFps: string
-  inputContentPrice: string
-  rows: VideoPriceRow[]
-} {
-  const config = data?.videoPrice
-  const prices = config?.prices || {}
-  const entries = Object.entries(prices)
-  if (entries.length === 0) {
-    return {
-      baseFps: formatNumber(config?.base_fps || 24),
-      inputContentPrice: formatNumber(config?.input_content_price),
-      rows: [
-        { id: 1, resolution: '720p', price: '' },
-        { id: 2, resolution: '1080p', price: '' },
-      ],
-    }
-  }
-  return {
-    baseFps: formatNumber(config?.base_fps || 24),
-    inputContentPrice: formatNumber(config?.input_content_price),
-    rows: entries.map(([resolution, price], index) => ({
-      id: index + 1,
-      resolution,
-      price: formatNumber(price),
-    })),
-  }
-}
-
-const formatNumber = formatPricingNumber
-
-function videoRowsToConfig(
-  baseFps: string,
-  inputContentPrice: string,
-  rows: VideoPriceRow[]
-): VideoPricingConfig {
-  const prices: Record<string, number> = {}
-  rows.forEach((row) => {
-    const resolution = row.resolution.trim()
-    const price = toNumberOrNull(row.price)
-    if (!resolution || price === null) return
-    prices[resolution] = price
-  })
-  const config: VideoPricingConfig = {
-    base_fps: toNumberOrNull(baseFps) || 24,
-    prices,
-  }
-  const contentPrice = toNumberOrNull(inputContentPrice)
-  if (contentPrice !== null && contentPrice > 0) {
-    config.input_content_price = contentPrice
-  }
-  return config
-}
-
-function buildPreviewRows(
-  values: ModelPricingFormValues,
-  mode: PricingMode,
-  billingExpr: string,
-  requestRuleExpr: string,
-  promptPrice: string,
-  lanePrices: Record<LaneKey, string>,
-  laneEnabled: Record<LaneKey, boolean>,
-  t: (key: string) => string
-): PreviewRow[] {
-  if (mode === 'tiered_expr') {
-    const effectiveExpr = combineBillingExpr(billingExpr, requestRuleExpr)
-    return [
-      { key: 'mode', label: 'BillingMode', value: 'tiered_expr' },
-      {
-        key: 'expr',
-        label: t('Expression'),
-        value: effectiveExpr || t('Empty'),
-        multiline: true,
-      },
-    ]
-  }
-
-  if (mode === 'video_seconds') {
-    return [
-      { key: 'mode', label: 'BillingMode', value: 'video_seconds' },
-      {
-        key: 'video',
-        label: t('Video pricing'),
-        value: t('Configured by resolution price per second.'),
-      },
-    ]
-  }
-
-  if (mode === 'per-request') {
-    return [
-      {
-        key: 'price',
-        label: 'ModelPrice',
-        value: values.price || t('Empty'),
-      },
-    ]
-  }
-
-  return [
-    {
-      key: 'inputPrice',
-      label: t('Input price'),
-      value: promptPrice ? `$${promptPrice}` : t('Empty'),
-    },
-    {
-      key: 'completion',
-      label: t('Completion price'),
-      value:
-        laneEnabled.completion && lanePrices.completion
-          ? `$${lanePrices.completion}`
-          : t('Empty'),
-    },
-    {
-      key: 'cache',
-      label: t('Cache read price'),
-      value:
-        laneEnabled.cache && lanePrices.cache
-          ? `$${lanePrices.cache}`
-          : t('Empty'),
-    },
-    {
-      key: 'createCache',
-      label: t('Cache write price'),
-      value:
-        laneEnabled.createCache && lanePrices.createCache
-          ? `$${lanePrices.createCache}`
-          : t('Empty'),
-    },
-    {
-      key: 'image',
-      label: t('Image input price'),
-      value:
-        laneEnabled.image && lanePrices.image
-          ? `$${lanePrices.image}`
-          : t('Empty'),
-    },
-    {
-      key: 'audio',
-      label: t('Audio input price'),
-      value:
-        laneEnabled.audioInput && lanePrices.audioInput
-          ? `$${lanePrices.audioInput}`
-          : t('Empty'),
-    },
-    {
-      key: 'audioCompletion',
-      label: t('Audio output price'),
-      value:
-        laneEnabled.audioOutput && lanePrices.audioOutput
-          ? `$${lanePrices.audioOutput}`
-          : t('Empty'),
-    },
-  ]
-}
-
-export function ModelPricingSheet({
-  open,
-  onOpenChange,
-  onSave,
-  onCancel,
-  editData,
-  selectedTargetCount = 0,
-}: ModelPricingSheetProps) {
+export const ModelPricingSheet = forwardRef<
+  ModelPricingEditorPanelHandle,
+  ModelPricingSheetProps
+>(function ModelPricingSheet(
+  { open, onOpenChange, editData, onSave, isSaving },
+  ref
+) {
   const { t } = useTranslation()
   const title = editData ? t('Edit model pricing') : t('Add model pricing')
   const description = editData?.name || t('New model')
@@ -490,27 +131,24 @@ export function ModelPricingSheet({
           <SheetDescription>{description}</SheetDescription>
         </SheetHeader>
         <ModelPricingEditorPanel
-          onSave={onSave}
+          ref={ref}
           editData={editData}
-          selectedTargetCount={selectedTargetCount}
-          onCancel={() => {
-            onCancel?.()
-            onOpenChange(false)
-          }}
+          onSave={onSave}
+          isSaving={isSaving}
           className='h-full rounded-none border-0'
         />
       </SheetContent>
     </Sheet>
   )
-}
+})
 
-export function ModelPricingEditorPanel({
-  onSave,
-  editData,
-  selectedTargetCount = 0,
-  onCancel,
-  className,
-}: ModelPricingEditorPanelProps) {
+export const ModelPricingEditorPanel = forwardRef<
+  ModelPricingEditorPanelHandle,
+  ModelPricingEditorPanelProps
+>(function ModelPricingEditorPanel(
+  { editData, className, onSave, isSaving },
+  ref
+) {
   const { t } = useTranslation()
   const [pricingMode, setPricingMode] = useState<PricingMode>('per-token')
   const [promptPrice, setPromptPrice] = useState('')
@@ -526,7 +164,6 @@ export function ModelPricingEditorPanel({
   const [videoInputContentPrice, setVideoInputContentPrice] = useState('')
   const [videoRows, setVideoRows] = useState<VideoPriceRow[]>([])
   const [nextVideoRowId, setNextVideoRowId] = useState(3)
-  const [previewOpen, setPreviewOpen] = useState(true)
   const isEditMode = !!editData
 
   const form = useForm<ModelPricingFormValues>({
@@ -565,9 +202,9 @@ export function ModelPricingEditorPanel({
           ? 'tiered_expr'
           : editData.billingMode === 'video_seconds'
             ? 'video_seconds'
-          : editData.price
-            ? 'per-request'
-            : 'per-token'
+            : editData.price
+              ? 'per-request'
+              : 'per-token'
       )
       setBillingExpr(editData.billingExpr || '')
       setRequestRuleExpr(editData.requestRuleExpr || '')
@@ -595,7 +232,6 @@ export function ModelPricingEditorPanel({
     setVideoInputContentPrice(nextVideoState.inputContentPrice)
     setVideoRows(nextVideoState.rows)
     setNextVideoRowId(nextVideoState.rows.length + 1)
-    setPreviewOpen(true)
   }, [editData, form])
 
   const setFormValue = (field: keyof ModelPricingFormValues, value: string) => {
@@ -717,7 +353,9 @@ export function ModelPricingEditorPanel({
       setBillingExpr('tier("base", p * 0 + c * 0)')
     }
     if (nextMode === 'video_seconds' && videoRows.length === 0) {
-      setVideoRows(createInitialVideoRows(editData).rows)
+      const nextVideoState = createInitialVideoRows(editData)
+      setVideoRows(nextVideoState.rows)
+      setNextVideoRowId(nextVideoState.rows.length + 1)
     }
   }
 
@@ -791,7 +429,7 @@ export function ModelPricingEditorPanel({
     return nextWarnings
   }, [editData, laneEnabled, lanePrices, pricingMode, promptPrice, t])
 
-  const handleSubmit = (values: ModelPricingFormValues) => {
+  const validatePricingValues = useCallback(() => {
     if (
       pricingMode === 'per-token' &&
       toNumberOrNull(promptPrice) === null &&
@@ -802,7 +440,7 @@ export function ModelPricingEditorPanel({
       form.setError('ratio', {
         message: t('Input price is required before saving dependent prices.'),
       })
-      return
+      return false
     }
 
     if (
@@ -813,40 +451,65 @@ export function ModelPricingEditorPanel({
       form.setError('audioRatio', {
         message: t('Audio output price requires an audio input price.'),
       })
-      return
+      return false
     }
 
-    const data: ModelRatioData = {
-      name: values.name.trim(),
-      billingMode: pricingMode,
-      price: values.price || '',
-      ratio: values.ratio || '',
-      cacheRatio: values.cacheRatio || '',
-      createCacheRatio: values.createCacheRatio || '',
-      completionRatio: values.completionRatio || '',
-      imageRatio: values.imageRatio || '',
-      audioRatio: values.audioRatio || '',
-      audioCompletionRatio: values.audioCompletionRatio || '',
-    }
+    return true
+  }, [form, laneEnabled, lanePrices, pricingMode, promptPrice, t])
 
-    if (pricingMode === 'tiered_expr') {
-      data.billingExpr = billingExpr
-      data.requestRuleExpr = requestRuleExpr
-    }
-    if (pricingMode === 'video_seconds') {
-      data.videoPrice = videoRowsToConfig(
-        videoBaseFps,
-        videoInputContentPrice,
-        videoRows
-      )
-    }
+  const buildSubmitData = useCallback(
+    (values: ModelPricingFormValues) => {
+      const data: ModelRatioData = {
+        name: values.name.trim(),
+        billingMode: pricingMode,
+        price: values.price || '',
+        ratio: values.ratio || '',
+        cacheRatio: values.cacheRatio || '',
+        createCacheRatio: values.createCacheRatio || '',
+        completionRatio: values.completionRatio || '',
+        imageRatio: values.imageRatio || '',
+        audioRatio: values.audioRatio || '',
+        audioCompletionRatio: values.audioCompletionRatio || '',
+      }
 
-    onSave(data)
-    form.reset()
-    onCancel?.()
-  }
+      if (pricingMode === 'tiered_expr') {
+        data.billingExpr = billingExpr
+        data.requestRuleExpr = requestRuleExpr
+      }
 
-  const activeName = watchedValues.name || editData?.name || t('New model')
+      if (pricingMode === 'video_seconds') {
+        data.videoPrice = videoRowsToConfig(
+          videoBaseFps,
+          videoInputContentPrice,
+          videoRows
+        )
+      }
+
+      return data
+    },
+    [
+      billingExpr,
+      pricingMode,
+      requestRuleExpr,
+      videoBaseFps,
+      videoInputContentPrice,
+      videoRows,
+    ]
+  )
+
+  useImperativeHandle(
+    ref,
+    () => ({
+      commitDraft: async () => {
+        const isValid = await form.trigger()
+        if (!isValid || !validatePricingValues()) return null
+        return buildSubmitData(form.getValues())
+      },
+    }),
+    [form, validatePricingValues, buildSubmitData]
+  )
+
+  const showActions = Boolean(onSave)
 
   return (
     <div
@@ -861,479 +524,239 @@ export function ModelPricingEditorPanel({
             <h3 className='truncate text-base font-medium'>
               {isEditMode ? t('Edit model pricing') : t('Add model pricing')}
             </h3>
-            <p className='text-muted-foreground truncate text-sm'>
-              {activeName}
-            </p>
           </div>
-          <Badge variant={getModeBadgeVariant(pricingMode)}>
-            {t(getModeLabel(pricingMode))}
-          </Badge>
         </div>
       </div>
 
       <Form {...form}>
         <form
-          onSubmit={form.handleSubmit(handleSubmit)}
+          onSubmit={(event) => event.preventDefault()}
           className='flex min-h-0 flex-1 flex-col'
           autoComplete='off'
         >
-          <div className='min-h-0 flex-1 overflow-y-auto p-4'>
-            <FieldGroup>
-              {warnings.length > 0 && (
-                <Alert variant='destructive'>
-                  <AlertTriangle data-icon='inline-start' />
-                  <AlertDescription>
-                    <div className='flex flex-col gap-1'>
-                      {warnings.map((warning) => (
-                        <span key={warning}>{warning}</span>
-                      ))}
-                    </div>
-                  </AlertDescription>
-                </Alert>
-              )}
-
-              <FormField
-                control={form.control}
-                name='name'
-                render={({ field }) => (
-                  <FormItem>
-                    <FormLabel>{t('Model name')}</FormLabel>
-                    <FormControl>
-                      <Input
-                        placeholder={t('gpt-4')}
-                        {...field}
-                        disabled={isEditMode}
-                      />
-                    </FormControl>
-                    <FormDescription>
-                      {t('The exact model identifier as used in API requests.')}
-                    </FormDescription>
-                    <FormMessage />
-                  </FormItem>
-                )}
-              />
-
-              <Tabs value={pricingMode} onValueChange={handleModeChange}>
-                <TabsList className='grid w-full grid-cols-4'>
-                  <TabsTrigger value='per-token'>{t('Per-token')}</TabsTrigger>
-                  <TabsTrigger value='per-request'>
-                    {t('Per-request')}
-                  </TabsTrigger>
-                  <TabsTrigger value='tiered_expr'>
-                    {t('Expression')}
-                  </TabsTrigger>
-                  <TabsTrigger value='video_seconds'>
-                    {t('Video per-second')}
-                  </TabsTrigger>
-                </TabsList>
-
-                <TabsContent value='per-token' className='flex flex-col gap-5'>
-                  <FieldGroup>
-                    <Field>
-                      <FieldLabel>{t('Input price')}</FieldLabel>
-                      <PriceInput
-                        value={promptPrice}
-                        placeholder='3'
-                        onChange={handlePromptPriceChange}
-                      />
-                      <FieldDescription>
-                        {t('USD price per 1M input tokens.')}
-                      </FieldDescription>
-                    </Field>
-
-                    <div className='grid gap-3 sm:grid-cols-2'>
-                      {laneConfigs.map((lane) => {
-                        const disabled =
-                          lane.key === 'audioOutput' &&
-                          (!laneEnabled.audioInput ||
-                            !hasValue(lanePrices.audioInput))
-                        return (
-                          <PriceLane
-                            key={lane.key}
-                            title={t(lane.titleKey)}
-                            description={t(lane.descriptionKey)}
-                            placeholder={lane.placeholder}
-                            value={lanePrices[lane.key]}
-                            enabled={laneEnabled[lane.key]}
-                            disabled={disabled}
-                            onEnabledChange={(checked) =>
-                              handleLaneToggle(lane.key, checked)
-                            }
-                            onChange={(value) =>
-                              handleLanePriceChange(lane.key, value)
-                            }
-                          />
-                        )
-                      })}
-                    </div>
-                  </FieldGroup>
-                </TabsContent>
-
-                <TabsContent
-                  value='per-request'
-                  className='flex flex-col gap-5'
-                >
-                  <FormField
-                    control={form.control}
-                    name='price'
-                    render={({ field }) => (
-                      <FormItem>
-                        <FormLabel>{t('Fixed price')}</FormLabel>
-                        <FormControl>
-                          <InputGroup>
-                            <InputGroupAddon>$</InputGroupAddon>
-                            <InputGroupInput
-                              inputMode='decimal'
-                              placeholder='0.01'
-                              {...field}
-                              onChange={(event) => {
-                                const value = event.target.value
-                                if (numericDraftRegex.test(value)) {
-                                  field.onChange(value)
-                                }
-                              }}
-                            />
-                            <InputGroupAddon align='inline-end'>
-                              {t('per request')}
-                            </InputGroupAddon>
-                          </InputGroup>
-                        </FormControl>
-                        <FormDescription>
-                          {t(
-                            'Cost in USD per request, regardless of tokens used.'
-                          )}
-                        </FormDescription>
-                        <FormMessage />
-                      </FormItem>
-                    )}
-                  />
-                </TabsContent>
-
-                <TabsContent
-                  value='tiered_expr'
-                  className='flex flex-col gap-5'
-                >
-                  <TieredPricingEditor
-                    modelName={watchedValues.name}
-                    billingExpr={billingExpr}
-                    requestRuleExpr={requestRuleExpr}
-                    onBillingExprChange={setBillingExpr}
-                    onRequestRuleExprChange={setRequestRuleExpr}
-                  />
-                </TabsContent>
-
-                <TabsContent
-                  value='video_seconds'
-                  className='flex flex-col gap-5'
-                >
-                  <VideoPricingEditor
-                    baseFps={videoBaseFps}
-                    inputContentPrice={videoInputContentPrice}
-                    rows={videoRows}
-                    onBaseFpsChange={setVideoBaseFps}
-                    onInputContentPriceChange={setVideoInputContentPrice}
-                    onRowsChange={(rows) => {
-                      setVideoRows(rows)
-                      setNextVideoRowId(
-                        rows.reduce((max, row) => Math.max(max, row.id), 0) +
-                          1
-                      )
-                    }}
-                    nextRowId={nextVideoRowId}
-                    onNextRowIdChange={setNextVideoRowId}
-                  />
-                </TabsContent>
-              </Tabs>
-
-              <Collapsible open={previewOpen} onOpenChange={setPreviewOpen}>
-                <CollapsibleTrigger
-                  render={
-                    <Button
-                      type='button'
-                      variant='outline'
-                      className='flex w-full justify-between'
-                    />
-                  }
-                >
-                  <span>{t('Save preview')}</span>
-                  <ChevronDown
-                    className={cn(
-                      'transition-transform',
-                      previewOpen && 'rotate-180'
-                    )}
-                  />
-                </CollapsibleTrigger>
-                <CollapsibleContent className='pt-3'>
-                  <div className='rounded-lg border'>
-                    {previewRows.map((row) => (
-                      <div
-                        key={row.key}
-                        className='grid grid-cols-[140px_1fr] gap-3 border-b px-3 py-2 text-sm last:border-b-0'
-                      >
-                        <span className='text-muted-foreground text-xs'>
-                          {row.label}
-                        </span>
-                        <span
-                          className={cn(
-                            'min-w-0',
-                            row.multiline
-                              ? 'font-mono text-xs leading-5 break-words whitespace-pre-wrap'
-                              : 'truncate'
-                          )}
-                        >
-                          {row.value}
-                        </span>
+          <div className='min-h-0 flex-1 overflow-y-auto p-4 pb-6'>
+            <div className='grid items-start gap-4 xl:grid-cols-[minmax(0,1fr)_minmax(220px,260px)]'>
+              <FieldGroup>
+                {warnings.length > 0 && (
+                  <Alert variant='destructive'>
+                    <AlertTriangle data-icon='inline-start' />
+                    <AlertDescription>
+                      <div className='flex flex-col gap-1'>
+                        {warnings.map((warning) => (
+                          <span key={warning}>{warning}</span>
+                        ))}
                       </div>
-                    ))}
-                  </div>
-                </CollapsibleContent>
-              </Collapsible>
-            </FieldGroup>
-          </div>
+                    </AlertDescription>
+                  </Alert>
+                )}
 
-          <SheetFooter
-            className={sideDrawerFooterClassName(
-              'grid-cols-1 sm:items-center sm:justify-between'
-            )}
-          >
-            <div className='text-muted-foreground text-xs'>
-              {selectedTargetCount > 0
-                ? t('{{count}} selected targets available for bulk copy.', {
-                    count: selectedTargetCount,
-                  })
-                : t('Changes are written to the settings draft on save.')}
+                <FormField
+                  control={form.control}
+                  name='name'
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>{t('Model name')}</FormLabel>
+                      <FormControl>
+                        <Input
+                          placeholder={t('gpt-4')}
+                          {...field}
+                          disabled={isEditMode}
+                        />
+                      </FormControl>
+                      <FormDescription>
+                        {t(
+                          'The exact model identifier as used in API requests.'
+                        )}
+                      </FormDescription>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+
+                <Tabs
+                  value={pricingMode}
+                  onValueChange={handleModeChange}
+                  className='gap-4'
+                >
+                  <TabsList className='grid w-full grid-cols-4'>
+                    <TabsTrigger value='per-token'>
+                      {t('Per-token')}
+                    </TabsTrigger>
+                    <TabsTrigger value='per-request'>
+                      {t('Per-request')}
+                    </TabsTrigger>
+                    <TabsTrigger value='tiered_expr'>
+                      {t('Expression')}
+                    </TabsTrigger>
+                    <TabsTrigger value='video_seconds'>
+                      {t('Video per-second')}
+                    </TabsTrigger>
+                  </TabsList>
+
+                  <TabsContent value='per-token' className='pt-0'>
+                    <FieldGroup className='gap-5'>
+                      <Field>
+                        <FieldLabel>{t('Input price')}</FieldLabel>
+                        <PriceInput
+                          value={promptPrice}
+                          placeholder='3'
+                          onChange={handlePromptPriceChange}
+                        />
+                        <FieldDescription>
+                          {t('USD price per 1M input tokens.')}
+                        </FieldDescription>
+                      </Field>
+
+                      <div className='grid gap-3 sm:grid-cols-[repeat(auto-fit,minmax(400px,1fr))]'>
+                        {laneConfigs.map((lane) => {
+                          const disabled =
+                            lane.key === 'audioOutput' &&
+                            (!laneEnabled.audioInput ||
+                              !hasValue(lanePrices.audioInput))
+                          return (
+                            <PriceLane
+                              key={lane.key}
+                              title={t(lane.titleKey)}
+                              description={t(lane.descriptionKey)}
+                              placeholder={lane.placeholder}
+                              value={lanePrices[lane.key]}
+                              enabled={laneEnabled[lane.key]}
+                              disabled={disabled}
+                              onEnabledChange={(checked) =>
+                                handleLaneToggle(lane.key, checked)
+                              }
+                              onChange={(value) =>
+                                handleLanePriceChange(lane.key, value)
+                              }
+                            />
+                          )
+                        })}
+                      </div>
+                    </FieldGroup>
+                  </TabsContent>
+
+                  <TabsContent value='per-request' className='pt-0'>
+                    <FieldGroup className='gap-5'>
+                      <FormField
+                        control={form.control}
+                        name='price'
+                        render={({ field }) => (
+                          <FormItem className='contents'>
+                            <Field>
+                              <FieldLabel>{t('Fixed price')}</FieldLabel>
+                              <FormControl>
+                                <InputGroup>
+                                  <InputGroupAddon>$</InputGroupAddon>
+                                  <InputGroupInput
+                                    inputMode='decimal'
+                                    placeholder='0.01'
+                                    {...field}
+                                    onChange={(event) => {
+                                      const value = event.target.value
+                                      if (numericDraftRegex.test(value)) {
+                                        field.onChange(value)
+                                      }
+                                    }}
+                                  />
+                                  <InputGroupAddon align='inline-end'>
+                                    {t('per request')}
+                                  </InputGroupAddon>
+                                </InputGroup>
+                              </FormControl>
+                              <FieldDescription>
+                                {t(
+                                  'Cost in USD per request, regardless of tokens used.'
+                                )}
+                              </FieldDescription>
+                              <FormMessage />
+                            </Field>
+                          </FormItem>
+                        )}
+                      />
+                    </FieldGroup>
+                  </TabsContent>
+
+                  <TabsContent value='tiered_expr' className='pt-0'>
+                    <FieldGroup className='gap-5'>
+                      <TieredPricingEditor
+                        modelName={watchedValues.name}
+                        billingExpr={billingExpr}
+                        requestRuleExpr={requestRuleExpr}
+                        onBillingExprChange={setBillingExpr}
+                        onRequestRuleExprChange={setRequestRuleExpr}
+                      />
+                    </FieldGroup>
+                  </TabsContent>
+
+                  <TabsContent value='video_seconds' className='pt-0'>
+                    <VideoPricingEditor
+                      baseFps={videoBaseFps}
+                      inputContentPrice={videoInputContentPrice}
+                      rows={videoRows}
+                      onBaseFpsChange={setVideoBaseFps}
+                      onInputContentPriceChange={setVideoInputContentPrice}
+                      onRowsChange={(rows) => {
+                        setVideoRows(rows)
+                        setNextVideoRowId(
+                          Math.max(
+                            nextVideoRowId,
+                            ...rows.map((row) => row.id + 1),
+                            1
+                          )
+                        )
+                      }}
+                      nextRowId={nextVideoRowId}
+                      onNextRowIdChange={setNextVideoRowId}
+                    />
+                  </TabsContent>
+                </Tabs>
+              </FieldGroup>
+
+              <aside className='bg-muted/20 sticky top-0 rounded-lg border'>
+                <div className='border-b px-3 py-2'>
+                  <div className='text-sm font-medium'>{t('Preview')}</div>
+                </div>
+                <div className='divide-y'>
+                  {previewRows.map((row) => (
+                    <div key={row.key} className='grid gap-1 px-3 py-2.5'>
+                      <span className='text-muted-foreground text-xs'>
+                        {row.label}
+                      </span>
+                      <span
+                        className={cn(
+                          'min-w-0 text-sm',
+                          row.multiline
+                            ? 'font-mono text-xs leading-5 break-words whitespace-pre-wrap'
+                            : 'truncate'
+                        )}
+                      >
+                        {row.value}
+                      </span>
+                    </div>
+                  ))}
+                </div>
+              </aside>
             </div>
-            <div className='flex justify-end gap-2'>
-              <Button type='button' variant='outline' onClick={onCancel}>
-                {t('Cancel')}
-              </Button>
-              <Button type='submit'>
-                {isEditMode ? t('Update') : t('Add')}
-              </Button>
+          </div>
+          {showActions && (
+            <div className='bg-background/95 supports-[backdrop-filter]:bg-background/80 shrink-0 border-t p-3 backdrop-blur'>
+              <div className='flex flex-col-reverse gap-2 sm:flex-row sm:justify-end'>
+                {onSave && (
+                  <Button
+                    type='button'
+                    onClick={onSave}
+                    disabled={isSaving}
+                    className='w-full sm:w-auto'
+                  >
+                    <Save data-icon='inline-start' />
+                    {isSaving ? t('Saving...') : t('Save model prices')}
+                  </Button>
+                )}
+              </div>
             </div>
-          </SheetFooter>
+          )}
         </form>
       </Form>
     </div>
   )
-}
-
-function PriceInput(props: {
-  value: string
-  placeholder?: string
-  disabled?: boolean
-  onChange: (value: string) => void
-}) {
-  return (
-    <InputGroup>
-      <InputGroupAddon>$</InputGroupAddon>
-      <InputGroupInput
-        inputMode='decimal'
-        value={props.value}
-        placeholder={props.placeholder}
-        disabled={props.disabled}
-        onChange={(event) => props.onChange(event.target.value)}
-      />
-      <InputGroupAddon align='inline-end'>$/1M</InputGroupAddon>
-    </InputGroup>
-  )
-}
-
-function PriceLane(props: {
-  title: string
-  description: string
-  placeholder: string
-  value: string
-  enabled: boolean
-  disabled?: boolean
-  onEnabledChange: (checked: boolean) => void
-  onChange: (value: string) => void
-}) {
-  const { t } = useTranslation()
-  const effectiveDisabled = props.disabled || !props.enabled
-
-  return (
-    <SettingsControlGroup
-      className={cn('space-y-3', effectiveDisabled && 'opacity-75')}
-      data-disabled={effectiveDisabled || undefined}
-    >
-      <SettingsSwitchField
-        checked={props.enabled}
-        disabled={props.disabled}
-        onCheckedChange={props.onEnabledChange}
-        label={props.title}
-        description={props.description}
-        aria-label={props.title}
-      />
-      <PriceInput
-        value={props.value}
-        placeholder={props.placeholder}
-        disabled={effectiveDisabled}
-        onChange={props.onChange}
-      />
-      <p className='text-muted-foreground text-xs'>
-        {props.enabled
-          ? t('USD price per 1M tokens.')
-          : t('Disabled lanes are omitted on save.')}
-      </p>
-    </SettingsControlGroup>
-  )
-}
-
-function VideoPricingEditor(props: {
-  baseFps: string
-  inputContentPrice: string
-  rows: VideoPriceRow[]
-  nextRowId: number
-  onBaseFpsChange: (value: string) => void
-  onInputContentPriceChange: (value: string) => void
-  onRowsChange: (rows: VideoPriceRow[]) => void
-  onNextRowIdChange: (value: number) => void
-}) {
-  const { t } = useTranslation()
-
-  const updateRow = (
-    id: number,
-    field: 'resolution' | 'price',
-    value: string
-  ) => {
-    props.onRowsChange(
-      props.rows.map((row) =>
-        row.id === id ? { ...row, [field]: value } : row
-      )
-    )
-  }
-
-  const addRow = () => {
-    props.onRowsChange([
-      ...props.rows,
-      { id: props.nextRowId, resolution: '', price: '' },
-    ])
-    props.onNextRowIdChange(props.nextRowId + 1)
-  }
-
-  const removeRow = (id: number) => {
-    props.onRowsChange(props.rows.filter((row) => row.id !== id))
-  }
-
-  return (
-    <FieldGroup>
-      <Field>
-        <FieldLabel>{t('Base FPS')}</FieldLabel>
-        <Input
-          inputMode='decimal'
-          value={props.baseFps}
-          placeholder='24'
-          onChange={(event) => {
-            const value = event.target.value
-            if (numericDraftRegex.test(value)) {
-              props.onBaseFpsChange(value)
-            }
-          }}
-        />
-        <FieldDescription>
-          {t('Requests with higher FPS are multiplied by fps / base fps.')}
-        </FieldDescription>
-      </Field>
-
-      <Field>
-        <FieldLabel>{t('Input content price')}</FieldLabel>
-        <InputGroup>
-          <InputGroupAddon>$</InputGroupAddon>
-          <InputGroupInput
-            inputMode='decimal'
-            value={props.inputContentPrice}
-            placeholder='0'
-            onChange={(event) => {
-              const value = event.target.value
-              if (numericDraftRegex.test(value)) {
-                props.onInputContentPriceChange(value)
-              }
-            }}
-          />
-          <InputGroupAddon align='inline-end'>
-            {t('per request')}
-          </InputGroupAddon>
-        </InputGroup>
-        <FieldDescription>
-          {t('Flat USD charge when the request includes input content.')}
-        </FieldDescription>
-      </Field>
-
-      <Field>
-        <div className='flex items-center justify-between gap-3'>
-          <FieldContent>
-            <FieldTitle>{t('Resolution prices')}</FieldTitle>
-            <FieldDescription>
-              {t(
-                'Configure USD price per video second. When input video is present, billable seconds are input video seconds plus output video seconds.'
-              )}
-            </FieldDescription>
-          </FieldContent>
-          <Button type='button' variant='outline' size='sm' onClick={addRow}>
-            <Plus data-icon='inline-start' />
-            {t('Add')}
-          </Button>
-        </div>
-        <div className='overflow-hidden rounded-md border'>
-          <Table>
-            <TableHeader>
-              <TableRow>
-                <TableHead>{t('Resolution')}</TableHead>
-                <TableHead>{t('Price per second')}</TableHead>
-                <TableHead className='w-16 text-right'>
-                  {t('Actions')}
-                </TableHead>
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {props.rows.map((row) => (
-                <TableRow key={row.id}>
-                  <TableCell>
-                    <Input
-                      value={row.resolution}
-                      placeholder='720p'
-                      onChange={(event) =>
-                        updateRow(row.id, 'resolution', event.target.value)
-                      }
-                    />
-                  </TableCell>
-                  <TableCell>
-                    <InputGroup>
-                      <InputGroupAddon>$</InputGroupAddon>
-                      <InputGroupInput
-                        inputMode='decimal'
-                        value={row.price}
-                        placeholder='1'
-                        onChange={(event) => {
-                          const value = event.target.value
-                          if (numericDraftRegex.test(value)) {
-                            updateRow(row.id, 'price', value)
-                          }
-                        }}
-                      />
-                      <InputGroupAddon align='inline-end'>
-                        {t('/ sec')}
-                      </InputGroupAddon>
-                    </InputGroup>
-                  </TableCell>
-                  <TableCell className='text-right'>
-                    <Button
-                      type='button'
-                      variant='ghost'
-                      size='icon'
-                      onClick={() => removeRow(row.id)}
-                      aria-label={t('Delete')}
-                    >
-                      <Trash2 className='text-destructive h-4 w-4' />
-                    </Button>
-                  </TableCell>
-                </TableRow>
-              ))}
-            </TableBody>
-          </Table>
-        </div>
-      </Field>
-    </FieldGroup>
-  )
-}
+})
