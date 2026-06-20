@@ -94,6 +94,7 @@ Keep this index current. Whenever directories, major modules, routing boundaries
 ### Operational Index
 
 - Environment variables are loaded from `.env` via `godotenv.Overload(".env")` in `main.go`; application code reads them primarily through `common.InitEnv()`, `common.GetEnvOrDefault*`, direct `os.Getenv`, and frontend `VITE_` variables.
+- Playground image attachments upload through `/pg/upload-image`, which forwards multipart files to the configured image host using `IMAGE_HOST_UPLOAD_URL`, `IMAGE_HOST_AUTH_HEADER`, `IMAGE_HOST_AUTH_VALUE`, `IMAGE_HOST_FIELD_NAME`, and `IMAGE_HOST_RESPONSE_URL_PATH`; defaults mirror the sibling `imageweb` gallery upload.
 - Database support must remain SQLite, MySQL, and PostgreSQL compatible. Check `model/main.go` for DB selection, migration, quoting, and boolean compatibility helpers.
 - Redis is optional. `REDIS_CONN_STRING` enables Redis; memory cache can also be enabled independently with `MEMORY_CACHE_ENABLED`.
 - Background jobs include option sync, quota data updates, channel tests, channel upstream model updates, Codex credential refresh, subscription quota reset, Midjourney/task polling, and optional batch updates.

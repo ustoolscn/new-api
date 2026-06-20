@@ -18,8 +18,15 @@ For commercial licensing, please contact support@quantumnous.com
 */
 import { useCallback, useEffect, useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
+import { Trash2 } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 import { toast } from 'sonner'
+import { Button } from '@/components/ui/button'
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipTrigger,
+} from '@/components/ui/tooltip'
 import { getUserModels, getUserGroups } from './api'
 import { PlaygroundChat } from './components/playground-chat'
 import { PlaygroundInput } from './components/playground-input'
@@ -36,6 +43,7 @@ export function Playground() {
     models,
     groups,
     updateMessages,
+    clearMessages,
     setModels,
     setGroups,
     updateConfig,
@@ -51,10 +59,12 @@ export function Playground() {
   const [editingMessageKey, setEditingMessageKey] = useState<string | null>(
     null
   )
+  const failedModelsMessage = t('Failed to load playground models')
+  const failedGroupsMessage = t('Failed to load playground groups')
 
   // Load models
   const { data: modelsData, isLoading: isLoadingModels } = useQuery({
-    queryKey: ['playground-models'],
+    queryKey: ['playground-models', failedModelsMessage],
     queryFn: async () => {
       try {
         return await getUserModels()
@@ -62,7 +72,7 @@ export function Playground() {
         toast.error(
           error instanceof Error
             ? error.message
-            : t('Failed to load playground models')
+            : failedModelsMessage
         )
         return []
       }
@@ -71,7 +81,7 @@ export function Playground() {
 
   // Load groups
   const { data: groupsData } = useQuery({
-    queryKey: ['playground-groups'],
+    queryKey: ['playground-groups', failedGroupsMessage],
     queryFn: async () => {
       try {
         return await getUserGroups()
@@ -79,7 +89,7 @@ export function Playground() {
         toast.error(
           error instanceof Error
             ? error.message
-            : t('Failed to load playground groups')
+            : failedGroupsMessage
         )
         return []
       }
@@ -114,8 +124,8 @@ export function Playground() {
     }
   }, [groupsData, setGroups, config.group, updateConfig])
 
-  const handleSendMessage = (text: string) => {
-    const userMessage = createUserMessage(text)
+  const handleSendMessage = (text: string, imageUrls: string[] = []) => {
+    const userMessage = createUserMessage(text, imageUrls)
     const assistantMessage = createLoadingAssistantMessage()
 
     const newMessages = [...messages, userMessage, assistantMessage]
@@ -188,8 +198,42 @@ export function Playground() {
     updateMessages(newMessages)
   }
 
+  const handleClearMessages = useCallback(() => {
+    if (messages.length === 0) return
+    stopGeneration()
+    setEditingMessageKey(null)
+    clearMessages()
+    toast.success(t('Chat cleared'))
+  }, [messages.length, stopGeneration, clearMessages, t])
+
+  const hasMessages = messages.length > 0
+
   return (
     <div className='relative flex size-full flex-col overflow-hidden'>
+      <div className='mx-auto flex w-full max-w-4xl justify-end px-4 pt-3'>
+        <Tooltip>
+          <TooltipTrigger
+            render={
+              <Button
+                aria-label={t('Clear chat')}
+                className='size-8'
+                disabled={!hasMessages}
+                onClick={handleClearMessages}
+                size='icon'
+                title={t('Clear chat')}
+                type='button'
+                variant='outline'
+              />
+            }
+          >
+            <Trash2 size={16} />
+          </TooltipTrigger>
+          <TooltipContent>
+            <p>{t('Clear chat')}</p>
+          </TooltipContent>
+        </Tooltip>
+      </div>
+
       {/* Full-width scroll container: scrolling works even over side whitespace */}
       <div className='flex flex-1 flex-col overflow-hidden'>
         <PlaygroundChat

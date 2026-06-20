@@ -173,7 +173,8 @@ export function PlaygroundChat({
                               const showMessageContent =
                                 (message.from === MESSAGE_ROLES.USER ||
                                   !message.isReasoningStreaming) &&
-                                !!version.content
+                                (!!version.content ||
+                                  !!message.imageUrls?.length)
 
                               // Extract visible content (remove <think> tags for assistant messages)
                               const displayContent = isAssistant
@@ -256,7 +257,30 @@ export function PlaygroundChat({
                                             getMessageContentStyles()
                                           )}
                                         >
-                                          <Response>{displayContent}</Response>
+                                          {displayContent && (
+                                            <Response>{displayContent}</Response>
+                                          )}
+                                          {message.imageUrls?.length ? (
+                                            <div className='mt-2 flex flex-wrap gap-2'>
+                                              {message.imageUrls.map(
+                                                (imageUrl, imageIndex) => (
+                                                  <a
+                                                    className='border-border bg-muted block size-32 overflow-hidden rounded-lg border'
+                                                    href={imageUrl}
+                                                    key={`${message.key}-image-${imageIndex}`}
+                                                    rel='noreferrer'
+                                                    target='_blank'
+                                                  >
+                                                    <img
+                                                      alt=''
+                                                      className='size-full object-cover'
+                                                      src={imageUrl}
+                                                    />
+                                                  </a>
+                                                )
+                                              )}
+                                            </div>
+                                          ) : null}
                                         </MessageContent>
                                         {actions}
                                       </>

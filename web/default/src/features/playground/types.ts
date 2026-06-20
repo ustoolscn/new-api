@@ -30,6 +30,7 @@ export interface Message {
   key: string
   from: MessageRole
   versions: MessageVersion[]
+  imageUrls?: string[]
   sources?: { href: string; title: string }[]
   reasoning?: {
     content: string

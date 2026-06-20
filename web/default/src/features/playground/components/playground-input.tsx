@@ -16,30 +16,16 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 
 For commercial licensing, please contact support@quantumnous.com
 */
-import { useState } from 'react'
+import { useRef, useState, type ChangeEvent } from 'react'
 import {
-  PaperclipIcon,
-  FileIcon,
   ImageIcon,
-  ScreenShareIcon,
-  CameraIcon,
-  GlobeIcon,
   SendIcon,
   SquareIcon,
-  BarChartIcon,
-  BoxIcon,
-  NotepadTextIcon,
-  CodeSquareIcon,
-  GraduationCapIcon,
+  Loader2,
+  XIcon,
 } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 import { toast } from 'sonner'
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuTrigger,
-} from '@/components/ui/dropdown-menu'
 import {
   PromptInput,
   PromptInputButton,
@@ -48,12 +34,12 @@ import {
   PromptInputTools,
   type PromptInputMessage,
 } from '@/components/ai-elements/prompt-input'
-import { Suggestion, Suggestions } from '@/components/ai-elements/suggestion'
 import { ModelGroupSelector } from '@/components/model-group-selector'
+import { uploadPlaygroundImage } from '../api'
 import type { ModelOption, GroupOption } from '../types'
 
 interface PlaygroundInputProps {
-  onSubmit: (text: string) => void
+  onSubmit: (text: string, imageUrls?: string[]) => void
   onStop?: () => void
   disabled?: boolean
   isGenerating?: boolean
@@ -66,14 +52,12 @@ interface PlaygroundInputProps {
   onGroupChange: (value: string) => void
 }
 
-const suggestions = [
-  { icon: BarChartIcon, text: 'Analyze data', color: '#76d0eb' },
-  { icon: BoxIcon, text: 'Surprise me', color: '#76d0eb' },
-  { icon: NotepadTextIcon, text: 'Summarize text', color: '#ea8444' },
-  { icon: CodeSquareIcon, text: 'Code', color: '#6c71ff' },
-  { icon: GraduationCapIcon, text: 'Get advice', color: '#76d0eb' },
-  { icon: null, text: 'More' },
-]
+interface UploadedImage {
+  id: string
+  name: string
+  url: string
+  thumbnailUrl?: string
+}
 
 export function PlaygroundInput({
   onSubmit,
@@ -90,29 +74,61 @@ export function PlaygroundInput({
 }: PlaygroundInputProps) {
   const { t } = useTranslation()
   const [text, setText] = useState('')
+  const [uploadedImages, setUploadedImages] = useState<UploadedImage[]>([])
+  const [isUploadingImage, setIsUploadingImage] = useState(false)
+  const fileInputRef = useRef<HTMLInputElement | null>(null)
 
   const isModelSelectDisabled =
     disabled || isModelLoading || models.length === 0
   const isGroupSelectDisabled = disabled || groups.length === 0
 
   const handleSubmit = (message: PromptInputMessage) => {
-    if (!message.text?.trim() || disabled) return
-    onSubmit(message.text)
+    const messageText = message.text?.trim() || ''
+    if ((!messageText && uploadedImages.length === 0) || disabled) return
+    onSubmit(
+      messageText,
+      uploadedImages.map((image) => image.url)
+    )
     setText('')
+    setUploadedImages([])
   }
 
-  const handleFileAction = (action: string) => {
-    toast.info(t('Feature in development'), {
-      description: action,
-    })
-  }
+  const handleImageUpload = async (
+    event: ChangeEvent<HTMLInputElement>
+  ) => {
+    const files = Array.from(event.target.files || [])
+    event.target.value = ''
+    const imageFiles = files.filter((file) => file.type.startsWith('image/'))
 
-  const handleSuggestionClick = (suggestion: string) => {
-    onSubmit(suggestion)
+    if (files.length > 0 && imageFiles.length === 0) {
+      toast.error(t('No files match the accepted types.'))
+      return
+    }
+    if (imageFiles.length === 0) return
+
+    setIsUploadingImage(true)
+    try {
+      const uploaded = await Promise.all(
+        imageFiles.map((file) => uploadPlaygroundImage(file))
+      )
+      setUploadedImages((prev) => [
+        ...prev,
+        ...uploaded.map((image, index) => ({
+          id: `${Date.now()}-${index}-${image.url}`,
+          name: image.filename || imageFiles[index]?.name || t('Image'),
+          url: image.url,
+          thumbnailUrl: image.thumbnail_url,
+        })),
+      ])
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : t('Request failed'))
+    } finally {
+      setIsUploadingImage(false)
+    }
   }
 
   return (
-    <div className='grid shrink-0 gap-4 px-1 md:pb-4'>
+    <div className='grid shrink-0 px-1 md:pb-4'>
       <PromptInput groupClassName='rounded-xl' onSubmit={handleSubmit}>
         <PromptInputTextarea
           autoComplete='off'
@@ -126,59 +142,59 @@ export function PlaygroundInput({
           value={text}
         />
 
+        {uploadedImages.length > 0 && (
+          <div className='flex gap-2 overflow-x-auto px-3 pb-2'>
+            {uploadedImages.map((image) => (
+              <div
+                className='border-border bg-muted relative size-16 shrink-0 overflow-hidden rounded-lg border'
+                key={image.id}
+              >
+                <img
+                  alt={image.name || t('Image')}
+                  className='size-full object-cover'
+                  src={image.thumbnailUrl || image.url}
+                />
+                <button
+                  aria-label={t('Remove attachment')}
+                  className='bg-background/90 text-foreground absolute top-1 right-1 flex size-5 items-center justify-center rounded-full shadow-sm'
+                  onClick={() =>
+                    setUploadedImages((prev) =>
+                      prev.filter((item) => item.id !== image.id)
+                    )
+                  }
+                  type='button'
+                >
+                  <XIcon size={12} />
+                </button>
+              </div>
+            ))}
+          </div>
+        )}
+
         <PromptInputFooter className='p-2.5'>
           <PromptInputTools>
-            <DropdownMenu>
-              <DropdownMenuTrigger
-                render={
-                  <PromptInputButton
-                    className='border font-medium'
-                    disabled={disabled}
-                    variant='outline'
-                  />
-                }
-              >
-                <PaperclipIcon size={16} />
-                <span className='hidden sm:inline'>{t('Attach')}</span>
-                <span className='sr-only sm:hidden'>{t('Attach')}</span>
-              </DropdownMenuTrigger>
-              <DropdownMenuContent align='start'>
-                <DropdownMenuItem
-                  onClick={() => handleFileAction('upload-file')}
-                >
-                  <FileIcon className='mr-2' size={16} />
-                  {t('Upload file')}
-                </DropdownMenuItem>
-                <DropdownMenuItem
-                  onClick={() => handleFileAction('upload-photo')}
-                >
-                  <ImageIcon className='mr-2' size={16} />
-                  {t('Upload photo')}
-                </DropdownMenuItem>
-                <DropdownMenuItem
-                  onClick={() => handleFileAction('take-screenshot')}
-                >
-                  <ScreenShareIcon className='mr-2' size={16} />
-                  {t('Take screenshot')}
-                </DropdownMenuItem>
-                <DropdownMenuItem
-                  onClick={() => handleFileAction('take-photo')}
-                >
-                  <CameraIcon className='mr-2' size={16} />
-                  {t('Take photo')}
-                </DropdownMenuItem>
-              </DropdownMenuContent>
-            </DropdownMenu>
-
+            <input
+              accept='image/*'
+              className='sr-only'
+              multiple
+              onChange={handleImageUpload}
+              ref={fileInputRef}
+              type='file'
+            />
             <PromptInputButton
               className='border font-medium'
-              disabled={disabled}
-              onClick={() => toast.info(t('Search feature in development'))}
+              disabled={disabled || isUploadingImage}
+              onClick={() => fileInputRef.current?.click()}
+              type='button'
               variant='outline'
             >
-              <GlobeIcon size={16} />
-              <span className='hidden sm:inline'>{t('Search')}</span>
-              <span className='sr-only sm:hidden'>{t('Search')}</span>
+              {isUploadingImage ? (
+                <Loader2 className='animate-spin' size={16} />
+              ) : (
+                <ImageIcon size={16} />
+              )}
+              <span className='hidden sm:inline'>{t('Upload photo')}</span>
+              <span className='sr-only sm:hidden'>{t('Upload photo')}</span>
             </PromptInputButton>
           </PromptInputTools>
 
@@ -206,7 +222,11 @@ export function PlaygroundInput({
             ) : (
               <PromptInputButton
                 className='text-foreground font-medium'
-                disabled={disabled || !text.trim()}
+                disabled={
+                  disabled ||
+                  isUploadingImage ||
+                  (!text.trim() && uploadedImages.length === 0)
+                }
                 type='submit'
                 variant='secondary'
               >
@@ -218,22 +238,6 @@ export function PlaygroundInput({
           </div>
         </PromptInputFooter>
       </PromptInput>
-
-      <Suggestions>
-        {suggestions.map(({ icon: Icon, text, color }) => (
-          <Suggestion
-            className={`text-xs font-normal sm:text-sm ${
-              text === 'More' ? 'hidden sm:flex' : ''
-            }`}
-            key={text}
-            onClick={() => handleSuggestionClick(text)}
-            suggestion={text}
-          >
-            {Icon && <Icon size={16} style={{ color }} />}
-            {text}
-          </Suggestion>
-        ))}
-      </Suggestions>
     </div>
   )
 }

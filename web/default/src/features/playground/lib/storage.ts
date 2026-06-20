@@ -119,6 +119,18 @@ export function saveMessages(messages: Message[]): void {
 }
 
 /**
+ * Clear only stored playground messages
+ */
+export function clearStoredMessages(): void {
+  try {
+    localStorage.removeItem(STORAGE_KEYS.MESSAGES)
+  } catch (error) {
+    // eslint-disable-next-line no-console
+    console.error('Failed to clear messages:', error)
+  }
+}
+
+/**
  * Clear all playground data
  */
 export function clearPlaygroundData(): void {

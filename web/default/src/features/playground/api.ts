@@ -25,6 +25,17 @@ import type {
   GroupOption,
 } from './types'
 
+export interface UploadedPlaygroundImage {
+  url: string
+  thumbnail_url?: string
+  first_frame_url?: string
+  last_frame_url?: string
+  filename?: string
+  original_size?: number
+  compressed_size?: number
+  compression_ratio?: number
+}
+
 /**
  * Send chat completion request (non-streaming)
  */
@@ -35,6 +46,40 @@ export async function sendChatCompletion(
     skipErrorHandler: true,
   } as Record<string, unknown>)
   return res.data
+}
+
+/**
+ * Upload an image to the configured gallery before sending it to the model.
+ */
+export async function uploadPlaygroundImage(
+  file: File
+): Promise<UploadedPlaygroundImage> {
+  const form = new FormData()
+  form.append('file', file)
+
+  const res = await api.post(API_ENDPOINTS.IMAGE_UPLOAD, form, {
+    skipErrorHandler: true,
+  } as Record<string, unknown>)
+  const response = res.data as {
+    success?: boolean
+    message?: string
+    url?: string
+    data?: UploadedPlaygroundImage
+  }
+
+  if (!response?.success) {
+    throw new Error(response?.message || 'Request failed')
+  }
+
+  const url = response.data?.url || response.url
+  if (!url) {
+    throw new Error('Request failed')
+  }
+
+  return {
+    ...response.data,
+    url,
+  }
 }
 
 /**

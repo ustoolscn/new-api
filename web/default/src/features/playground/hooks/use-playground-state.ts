@@ -25,6 +25,7 @@ import {
   saveParameterEnabled,
   loadMessages,
   saveMessages,
+  clearStoredMessages,
 } from '../lib'
 import type {
   Message,
@@ -97,8 +98,9 @@ export function usePlaygroundState() {
 
   // Clear all messages
   const clearMessages = useCallback(() => {
-    updateMessages([])
-  }, [updateMessages])
+    setMessages([])
+    clearStoredMessages()
+  }, [])
 
   // Reset config to defaults
   const resetConfig = useCallback(() => {
