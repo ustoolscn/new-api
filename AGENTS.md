@@ -60,7 +60,7 @@ Keep this index current. Whenever directories, major modules, routing boundaries
 - `controller/` — HTTP handlers and request orchestration for users, tokens, channels, relay, billing, tasks, subscriptions, pricing, model sync, OAuth callbacks, and admin operations.
 - `service/` — business logic for quota, billing, relay conversion helpers, token counting, notifications, tasks, payments, subscriptions, channel selection, compatibility transforms, and external calls.
 - `model/` — GORM models, migrations, DB initialization, cache-backed lookups, setup state, users, channels, tokens, logs, pricing, subscriptions, vendors, and options.
-- `relay/` — provider relay core plus channel adaptors. `relay/channel/` contains provider-specific implementations such as OpenAI, Claude, Gemini, AWS, Azure, Ali, Ollama, and others.
+- `relay/` — provider relay core plus channel adaptors. `relay/channel/` contains provider-specific implementations such as OpenAI, Claude, Gemini, AWS, Azure, Ali, Ollama, and others; `relay/channel/openai_compat/` contains shared OpenAI-compatible request/response bridging helpers.
 - `middleware/` — Gin middleware for auth, logging, CORS, rate limiting, request IDs, distribution, cache, and context handling.
 - `dto/` — request/response DTOs for OpenAI, Claude, Gemini, audio, images, rerank, realtime, tasks, pricing, channels, and related APIs.
 - `setting/` — runtime configuration domains: operation, system, model, ratio, billing, performance, console, payment, reasoning, and config registry.

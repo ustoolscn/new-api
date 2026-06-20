@@ -12,9 +12,9 @@ import (
 	"github.com/QuantumNous/new-api/relay/channel"
 	"github.com/QuantumNous/new-api/relay/channel/claude"
 	"github.com/QuantumNous/new-api/relay/channel/openai"
+	openaicompat "github.com/QuantumNous/new-api/relay/channel/openai_compat"
 	relaycommon "github.com/QuantumNous/new-api/relay/common"
 	"github.com/QuantumNous/new-api/relay/constant"
-	"github.com/QuantumNous/new-api/service"
 	"github.com/QuantumNous/new-api/setting/reasoning"
 	"github.com/QuantumNous/new-api/types"
 	"github.com/gin-gonic/gin"
@@ -23,7 +23,7 @@ import (
 type Adaptor struct {
 }
 
-const responsesToolNameMapKey = "deepseek_responses_tool_name_map"
+const responsesToolNameMapKey = openaicompat.ResponsesToolNameMapKey
 
 func (a *Adaptor) ConvertGeminiRequest(*gin.Context, *relaycommon.RelayInfo, *dto.GeminiChatRequest) (any, error) {
 	//TODO implement me
@@ -162,12 +162,9 @@ func (a *Adaptor) ConvertEmbeddingRequest(c *gin.Context, info *relaycommon.Rela
 }
 
 func (a *Adaptor) ConvertOpenAIResponsesRequest(c *gin.Context, info *relaycommon.RelayInfo, request dto.OpenAIResponsesRequest) (any, error) {
-	chatRequest, toolNameMap, err := service.ResponsesRequestToChatCompletionsRequestWithToolMap(&request)
+	chatRequest, err := openaicompat.ConvertResponsesRequestToChat(c, request)
 	if err != nil {
 		return nil, err
-	}
-	if c != nil && len(toolNameMap) > 0 {
-		c.Set(responsesToolNameMapKey, toolNameMap)
 	}
 	if err := applyDeepSeekV4OpenAIThinkingSuffix(info, chatRequest); err != nil {
 		return nil, err
@@ -187,9 +184,9 @@ func (a *Adaptor) DoResponse(c *gin.Context, resp *http.Response, info *relaycom
 	default:
 		if info.RelayMode == constant.RelayModeResponses {
 			if info.IsStream {
-				return chatCompletionsToResponsesStreamHandler(c, info, resp)
+				return openaicompat.ChatCompletionsToResponsesStreamHandler(c, info, resp)
 			}
-			return chatCompletionsToResponsesHandler(c, info, resp)
+			return openaicompat.ChatCompletionsToResponsesHandler(c, info, resp)
 		}
 		adaptor := openai.Adaptor{}
 		return adaptor.DoResponse(c, resp, info)
@@ -202,4 +199,12 @@ func (a *Adaptor) GetModelList() []string {
 
 func (a *Adaptor) GetChannelName() string {
 	return ChannelName
+}
+
+func chatCompletionsToResponsesHandler(c *gin.Context, info *relaycommon.RelayInfo, resp *http.Response) (*dto.Usage, *types.NewAPIError) {
+	return openaicompat.ChatCompletionsToResponsesHandler(c, info, resp)
+}
+
+func chatCompletionsToResponsesStreamHandler(c *gin.Context, info *relaycommon.RelayInfo, resp *http.Response) (*dto.Usage, *types.NewAPIError) {
+	return openaicompat.ChatCompletionsToResponsesStreamHandler(c, info, resp)
 }
