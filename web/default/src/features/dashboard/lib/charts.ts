@@ -46,9 +46,8 @@ const THEME_CHART_COLOR_VARIABLES = [
   '--chart-5',
 ] as const
 
-function getThemeChartColors(themeKey?: string): string[] {
+function getThemeChartColors(): string[] {
   if (typeof document === 'undefined') return []
-  void themeKey
 
   const bodyStyle = window.getComputedStyle(document.body)
   const rootStyle = window.getComputedStyle(document.documentElement)
@@ -60,8 +59,8 @@ function getThemeChartColors(themeKey?: string): string[] {
   }).filter(Boolean)
 }
 
-function getVChartDefaultColors(domainLength: number, themeKey?: string) {
-  const themeColors = getThemeChartColors(themeKey)
+export function getDashboardChartColors(domainLength: number): string[] {
+  const themeColors = getThemeChartColors()
   if (themeColors.length > 0) {
     return Array.from(
       { length: Math.max(domainLength, themeColors.length) },
@@ -74,7 +73,9 @@ function getVChartDefaultColors(domainLength: number, themeKey?: string) {
       (item) => !item.maxDomainLength || domainLength <= item.maxDomainLength
     ) ?? vchartDefaultDataScheme[vchartDefaultDataScheme.length - 1]
 
-  return scheme.scheme
+  return scheme.scheme.filter(
+    (color): color is string => typeof color === 'string'
+  )
 }
 
 function renderQuotaCompat(rawQuota: number, digits = 4): string {
@@ -98,7 +99,6 @@ export function processChartData(
   data: QuotaDataItem[],
   timeGranularity: TimeGranularity = 'day',
   t?: TFunction,
-  themeKey?: string,
   chartCornerRadius?: number
 ): ProcessedChartData {
   const tt: TFunction = t ?? ((x) => x)
@@ -311,10 +311,7 @@ export function processChartData(
   const sortedTimes = Array.from(timeModelMap.keys()).sort()
   const sortedModels = [...allModels].sort()
   const modelColorDomain = Array.from(new Set([...sortedModels, otherLabel]))
-  const modelColorRange = getVChartDefaultColors(
-    modelColorDomain.length,
-    themeKey
-  )
+  const modelColorRange = getDashboardChartColors(modelColorDomain.length)
   const otherColor = modelColorRange[modelColorDomain.indexOf(otherLabel)]
   const otherTooltipColor =
     typeof otherColor === 'string' ? otherColor : '#FF8A00'
@@ -947,7 +944,7 @@ export function processChartData(
   }
 }
 
-const USER_COLOR_FALLBACKS = [
+const USER_COLORS = [
   '#5B8FF9',
   '#5AD8A6',
   '#F6BD16',
@@ -965,19 +962,14 @@ export function processUserChartData(
   timeGranularity: TimeGranularity = 'day',
   t?: TFunction,
   limit = 10,
-  themeKey?: string
+  _themeKey?: string
 ): ProcessedUserChartData {
   const tt: TFunction = t ?? ((x) => x)
   const { config } = getCurrencyDisplay()
   const quotaPerUnit = config.quotaPerUnit
-  const themeUserColors = getThemeChartColors(themeKey)
-  const userColorRange =
-    themeUserColors.length > 0
-      ? Array.from(
-          { length: Math.max(limit, themeUserColors.length) },
-          (_, index) => themeUserColors[index % themeUserColors.length]
-        )
-      : USER_COLOR_FALLBACKS
+  const userColorRange = getDashboardChartColors(
+    Math.max(limit, USER_COLORS.length)
+  )
 
   const formatVal = (raw: number) => renderQuotaCompat(raw, 2)
   const formatTokens = (value: number) =>

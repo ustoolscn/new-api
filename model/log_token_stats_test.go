@@ -107,7 +107,7 @@ func TestSumUsedQuotaSummarizesTokensAndCacheTokens(t *testing.T) {
 		}
 	}
 
-	stat, err := SumUsedQuota(LogTypeConsume, 0, 0, "gpt-test", "alice", "primary", 0, "", "")
+	stat, err := SumUsedQuota(LogTypeConsume, 0, 0, "gpt-test", "alice", "primary", 0, "", "", "")
 	if err != nil {
 		t.Fatalf("SumUsedQuota() error = %v", err)
 	}
@@ -174,7 +174,7 @@ func TestSumUsedQuotaGroupsTokenStatsByModelName(t *testing.T) {
 		}
 	}
 
-	stat, err := SumUsedQuota(LogTypeConsume, 0, 0, "", "alice", "", 0, "", "")
+	stat, err := SumUsedQuota(LogTypeConsume, 0, 0, "", "alice", "", 0, "", "", "")
 	if err != nil {
 		t.Fatalf("SumUsedQuota() error = %v", err)
 	}

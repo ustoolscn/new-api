@@ -21,14 +21,7 @@ import { Pencil, Plus, Search, Trash2 } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
-import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from '@/components/ui/table'
+import { StaticDataTable } from '@/components/data-table'
 import { safeJsonParseWithValidation } from '../utils/json-parser'
 import { isObjectRecord } from '../utils/json-validators'
 import { RateLimitDialog, type RateLimitEntryData } from './rate-limit-dialog'
@@ -194,77 +187,84 @@ export function RateLimitVisualEditor({
         </Button>
       </div>
 
-      {filteredRateLimits.length === 0 ? (
-        <div className='text-muted-foreground rounded-lg border border-dashed p-8 text-center'>
-          {searchText
+      <StaticDataTable
+        data={filteredRateLimits}
+        getRowKey={(limit) => limit.groupName}
+        emptyContent={
+          searchText
             ? t('No groups match your search')
             : t(
                 'No group-based rate limits configured. Click "Add group" to get started.'
-              )}
-        </div>
-      ) : (
-        <div className='rounded-md border'>
-          <Table>
-            <TableHeader>
-              <TableRow>
-                <TableHead>{t('Group Name')}</TableHead>
-                <TableHead className='text-right'>
-                  {t('Max Requests (incl. failures)')}
-                </TableHead>
-                <TableHead className='text-right'>{t('Max Success')}</TableHead>
-                <TableHead className='text-right'>
-                  {t('Max concurrent requests')}
-                </TableHead>
-                <TableHead className='text-right'>{t('Actions')}</TableHead>
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {filteredRateLimits.map((limit) => (
-                <TableRow key={limit.groupName}>
-                  <TableCell className='font-medium'>
-                    {limit.groupName}
-                  </TableCell>
-                  <TableCell className='text-right'>
-                    <span className='font-mono'>
-                      {renderOptionalNumber(limit.maxRequests, true)}
-                    </span>
-                  </TableCell>
-                  <TableCell className='text-right'>
-                    <span className='font-mono'>
-                      {renderOptionalNumber(limit.maxSuccess)}
-                    </span>
-                  </TableCell>
-                  <TableCell className='text-right'>
-                    <span className='font-mono'>
-                      {renderOptionalNumber(limit.maxConcurrent, true)}
-                    </span>
-                  </TableCell>
-                  <TableCell className='text-right'>
-                    <div className='flex justify-end gap-2'>
-                      <Button
-                        type='button'
-                        variant='ghost'
-                        size='sm'
-                        onClick={() => handleEdit(limit)}
-                      >
-                        <Pencil className='h-4 w-4' />
-                      </Button>
-                      <Button
-                        type='button'
-                        variant='ghost'
-                        size='sm'
-                        onClick={() => handleDelete(limit.groupName)}
-                      >
-                        <Trash2 className='h-4 w-4' />
-                      </Button>
-                    </div>
-                  </TableCell>
-                </TableRow>
-              ))}
-            </TableBody>
-          </Table>
-        </div>
-      )}
+              )
+        }
+        columns={[
+          {
+            id: 'group',
+            header: t('Group Name'),
+            cellClassName: 'font-medium',
+            cell: (limit) => limit.groupName,
+          },
+          {
+            id: 'max-requests',
+            header: t('Max Requests (incl. failures)'),
+            className: 'text-right',
+            cellClassName: 'text-right',
+            cell: (limit) => (
+              <span className='font-mono'>
+                {renderOptionalNumber(limit.maxRequests, true)}
+              </span>
+            ),
+          },
+          {
+            id: 'max-success',
+            header: t('Max Success'),
+            className: 'text-right',
+            cellClassName: 'text-right',
+            cell: (limit) => (
+              <span className='font-mono'>
+                {renderOptionalNumber(limit.maxSuccess)}
+              </span>
+            ),
+          },
+          {
+            id: 'max-concurrent',
+            header: t('Max concurrent requests'),
+            className: 'text-right',
+            cellClassName: 'text-right',
+            cell: (limit) => (
+              <span className='font-mono'>
+                {renderOptionalNumber(limit.maxConcurrent, true)}
+              </span>
+            ),
+          },
+          {
+            id: 'actions',
+            header: t('Actions'),
+            className: 'text-right',
+            cellClassName: 'text-right',
+            cell: (limit) => (
+              <div className='flex justify-end gap-2'>
+                <Button
+                  type='button'
+                  variant='ghost'
+                  size='sm'
+                  onClick={() => handleEdit(limit)}
+                >
+                  <Pencil className='h-4 w-4' />
+                </Button>
+                <Button
+                  type='button'
+                  variant='ghost'
+                  size='sm'
+                  onClick={() => handleDelete(limit.groupName)}
+                >
+                  <Trash2 className='h-4 w-4' />
+                </Button>
+              </div>
+            ),
+          },
+        ]}
+      />
 
       <RateLimitDialog
         open={dialogOpen}

@@ -114,17 +114,9 @@ export function ConsumptionDistributionChart(
         props.loading ? [] : props.data,
         timeGranularity,
         t,
-        customization.preset,
         chartRadius
       ),
-    [
-      props.data,
-      props.loading,
-      timeGranularity,
-      t,
-      customization.preset,
-      chartRadius,
-    ]
+    [props.data, props.loading, timeGranularity, t, chartRadius]
   )
   const spec =
     metric === 'tokens'
