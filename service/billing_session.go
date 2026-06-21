@@ -49,9 +49,15 @@ func (s *BillingSession) Settle(actualQuota int) error {
 		s.settled = true
 		return nil
 	}
+	overflowSettled := false
 	// 1) 调整资金来源（仅在尚未提交时执行，防止重复调用）
 	if !s.fundingSettled {
-		if err := s.funding.Settle(delta); err != nil {
+		if handled, err := s.settleSubscriptionOverflowToWallet(delta); handled || err != nil {
+			if err != nil {
+				return err
+			}
+			overflowSettled = true
+		} else if err := s.funding.Settle(delta); err != nil {
 			return err
 		}
 		s.fundingSettled = true
@@ -71,7 +77,7 @@ func (s *BillingSession) Settle(actualQuota int) error {
 		}
 	}
 	// 3) 更新 relayInfo 上的订阅 PostDelta（用于日志）
-	if s.funding.Source() == BillingSourceSubscription {
+	if s.funding.Source() == BillingSourceSubscription && !overflowSettled {
 		s.relayInfo.SubscriptionPostDelta += int64(delta)
 	}
 	s.settled = true
@@ -147,6 +153,51 @@ func (s *BillingSession) needsRefundLocked() bool {
 // GetPreConsumedQuota 返回实际预扣的额度。
 func (s *BillingSession) GetPreConsumedQuota() int {
 	return s.preConsumedQuota
+}
+
+func (s *BillingSession) settleSubscriptionOverflowToWallet(delta int) (bool, error) {
+	if delta <= 0 || s.funding.Source() != BillingSourceSubscription {
+		return false, nil
+	}
+	if common.NormalizeBillingPreference(s.relayInfo.UserSetting.BillingPreference) != "subscription_first" {
+		return false, nil
+	}
+	allowOverflow, err := model.UserActiveSubscriptionsAllowWalletOverflow(s.relayInfo.UserId)
+	if err != nil {
+		return true, err
+	}
+	if !allowOverflow {
+		return false, nil
+	}
+	remaining := int(s.relayInfo.SubscriptionAmountTotal - s.relayInfo.SubscriptionAmountUsedAfterPreConsume - s.relayInfo.SubscriptionPostDelta)
+	if s.relayInfo.SubscriptionAmountTotal <= 0 || remaining >= delta {
+		return false, nil
+	}
+	if remaining < 0 {
+		remaining = 0
+	}
+	if remaining > 0 {
+		if err := s.funding.Settle(remaining); err != nil {
+			return true, err
+		}
+		s.relayInfo.SubscriptionPostDelta += int64(remaining)
+	}
+	walletDelta := delta - remaining
+	if walletDelta <= 0 {
+		return true, nil
+	}
+	wallet := &WalletFunding{userId: s.relayInfo.UserId}
+	if err := wallet.PreConsume(walletDelta); err != nil {
+		if remaining > 0 {
+			if rollbackErr := s.funding.Settle(-remaining); rollbackErr != nil {
+				common.SysLog("error rolling back subscription overflow settlement: " + rollbackErr.Error())
+			}
+			s.relayInfo.SubscriptionPostDelta -= int64(remaining)
+		}
+		return true, err
+	}
+	s.relayInfo.BillingSource = BillingSourceWallet
+	return true, nil
 }
 
 func (s *BillingSession) Reserve(targetQuota int) error {

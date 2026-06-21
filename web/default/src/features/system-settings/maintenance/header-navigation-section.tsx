@@ -17,10 +17,11 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 For commercial licensing, please contact support@quantumnous.com
 */
 import { useEffect, useMemo } from 'react'
-import * as z from 'zod'
 import { useForm } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
 import { useTranslation } from 'react-i18next'
+import * as z from 'zod'
+
 import {
   Form,
   FormControl,
@@ -32,6 +33,7 @@ import {
 } from '@/components/ui/form'
 import { Input } from '@/components/ui/input'
 import { Switch } from '@/components/ui/switch'
+
 import {
   SettingsControlChildren,
   SettingsForm,
@@ -50,6 +52,7 @@ import {
 
 const headerNavSchema = z.object({
   home: z.boolean(),
+  hiCodex: z.boolean(),
   console: z.boolean(),
   pricingEnabled: z.boolean(),
   pricingRequireAuth: z.boolean(),
@@ -93,6 +96,10 @@ const toFormValues = (
 ): HeaderNavFormValues => ({
   home:
     config.home === undefined ? HEADER_NAV_DEFAULT.home : Boolean(config.home),
+  hiCodex:
+    config.hiCodex === undefined
+      ? HEADER_NAV_DEFAULT.hiCodex
+      : Boolean(config.hiCodex),
   console:
     config.console === undefined
       ? HEADER_NAV_DEFAULT.console
@@ -154,6 +161,7 @@ export function HeaderNavigationSection({
     const payload: HeaderNavModulesConfig = {
       ...config,
       home: values.home,
+      hiCodex: values.hiCodex,
       console: values.console,
       docs: values.docs,
       about: values.about,
@@ -218,6 +226,11 @@ export function HeaderNavigationSection({
       key: 'home',
       title: t('Home'),
       description: t('Landing page with system overview.'),
+    },
+    {
+      key: 'hiCodex',
+      title: t('Hi Codex'),
+      description: t('Codex desktop helper introduction and download page.'),
     },
     {
       key: 'console',

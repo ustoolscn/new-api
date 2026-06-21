@@ -9,8 +9,10 @@ import (
 	"time"
 
 	"github.com/QuantumNous/new-api/common"
+	"github.com/QuantumNous/new-api/dto"
 	"github.com/QuantumNous/new-api/model"
 	relaycommon "github.com/QuantumNous/new-api/relay/common"
+	"github.com/gin-gonic/gin"
 	"github.com/glebarez/sqlite"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -43,7 +45,9 @@ func TestMain(m *testing.M) {
 		&model.Log{},
 		&model.Channel{},
 		&model.TopUp{},
+		&model.SubscriptionPlan{},
 		&model.UserSubscription{},
+		&model.SubscriptionPreConsumeRecord{},
 	); err != nil {
 		panic("failed to migrate: " + err.Error())
 	}
@@ -64,6 +68,8 @@ func truncate(t *testing.T) {
 		model.DB.Exec("DELETE FROM logs")
 		model.DB.Exec("DELETE FROM channels")
 		model.DB.Exec("DELETE FROM top_ups")
+		model.DB.Exec("DELETE FROM subscription_pre_consume_records")
+		model.DB.Exec("DELETE FROM subscription_plans")
 		model.DB.Exec("DELETE FROM user_subscriptions")
 	})
 }
@@ -90,14 +96,27 @@ func seedToken(t *testing.T, id int, userId int, key string, remainQuota int) {
 
 func seedSubscription(t *testing.T, id int, userId int, amountTotal int64, amountUsed int64) {
 	t.Helper()
+	plan := &model.SubscriptionPlan{
+		Id:            id,
+		Title:         "test plan",
+		PriceAmount:   1,
+		Currency:      "USD",
+		DurationUnit:  model.SubscriptionDurationMonth,
+		DurationValue: 1,
+		Enabled:       true,
+		TotalAmount:   amountTotal,
+	}
+	require.NoError(t, model.DB.Create(plan).Error)
 	sub := &model.UserSubscription{
-		Id:          id,
-		UserId:      userId,
-		AmountTotal: amountTotal,
-		AmountUsed:  amountUsed,
-		Status:      "active",
-		StartTime:   time.Now().Unix(),
-		EndTime:     time.Now().Add(30 * 24 * time.Hour).Unix(),
+		Id:                  id,
+		UserId:              userId,
+		PlanId:              id,
+		AmountTotal:         amountTotal,
+		AmountUsed:          amountUsed,
+		Status:              "active",
+		StartTime:           time.Now().Unix(),
+		EndTime:             time.Now().Add(30 * 24 * time.Hour).Unix(),
+		AllowWalletOverflow: true,
 	}
 	require.NoError(t, model.DB.Create(sub).Error)
 }
@@ -165,6 +184,13 @@ func getSubscriptionUsed(t *testing.T, id int) int64 {
 	var sub model.UserSubscription
 	require.NoError(t, model.DB.Select("amount_used").Where("id = ?", id).First(&sub).Error)
 	return sub.AmountUsed
+}
+
+func getSubscriptionPreConsumeRecordCount(t *testing.T) int64 {
+	t.Helper()
+	var count int64
+	require.NoError(t, model.DB.Model(&model.SubscriptionPreConsumeRecord{}).Count(&count).Error)
+	return count
 }
 
 func getLastLog(t *testing.T) *model.Log {
@@ -713,4 +739,40 @@ func TestSettle_NonPerCallBilling_AppliesAdaptorAdjustment(t *testing.T) {
 	log := getLastLog(t)
 	require.NotNil(t, log)
 	assert.Equal(t, model.LogTypeRefund, log.Type)
+}
+
+func TestBillingSession_SubscriptionFirstSettleFallsBackToWalletWhenSubscriptionExhausted(t *testing.T) {
+	truncate(t)
+
+	const userID, subID = 40, 40
+	const initialWalletQuota = 1000
+	const subTotal int64 = 100
+	const subUsed int64 = 20
+	const preConsumed = 50
+	const actualQuota = 120
+
+	seedUser(t, userID, initialWalletQuota)
+	seedSubscription(t, subID, userID, subTotal, subUsed)
+
+	ginCtx, _ := gin.CreateTestContext(nil)
+	relayInfo := &relaycommon.RelayInfo{
+		RequestId:             "billing-fallback-request",
+		UserId:                userID,
+		OriginModelName:       "test-model",
+		IsPlayground:          true,
+		UserSetting:           dto.UserSetting{BillingPreference: "subscription_first"},
+		FinalPreConsumedQuota: 0,
+	}
+
+	session, apiErr := NewBillingSession(ginCtx, relayInfo, preConsumed)
+	require.Nil(t, apiErr)
+	require.Equal(t, BillingSourceSubscription, relayInfo.BillingSource)
+	require.Equal(t, subUsed+preConsumed, getSubscriptionUsed(t, subID))
+	require.Equal(t, initialWalletQuota, getUserQuota(t, userID))
+
+	require.NoError(t, session.Settle(actualQuota))
+
+	assert.Equal(t, subTotal, getSubscriptionUsed(t, subID))
+	assert.Equal(t, initialWalletQuota-(actualQuota-int(subTotal-subUsed)), getUserQuota(t, userID))
+	assert.Equal(t, int64(1), getSubscriptionPreConsumeRecordCount(t))
 }
