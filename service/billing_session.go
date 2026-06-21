@@ -162,13 +162,6 @@ func (s *BillingSession) settleSubscriptionOverflowToWallet(delta int) (bool, er
 	if common.NormalizeBillingPreference(s.relayInfo.UserSetting.BillingPreference) != "subscription_first" {
 		return false, nil
 	}
-	allowOverflow, err := model.UserActiveSubscriptionsAllowWalletOverflow(s.relayInfo.UserId)
-	if err != nil {
-		return true, err
-	}
-	if !allowOverflow {
-		return false, nil
-	}
 	remaining := int(s.relayInfo.SubscriptionAmountTotal - s.relayInfo.SubscriptionAmountUsedAfterPreConsume - s.relayInfo.SubscriptionPostDelta)
 	if s.relayInfo.SubscriptionAmountTotal <= 0 || remaining >= delta {
 		return false, nil
@@ -476,15 +469,7 @@ func NewBillingSession(c *gin.Context, relayInfo *relaycommon.RelayInfo, preCons
 		session, apiErr := trySubscription()
 		if apiErr != nil {
 			if apiErr.GetErrorCode() == types.ErrorCodeInsufficientUserQuota {
-				// 仅当用户的活跃订阅允许钱包回退时才回退到钱包，否则返回订阅额度不足错误
-				allowOverflow, overflowErr := model.UserActiveSubscriptionsAllowWalletOverflow(relayInfo.UserId)
-				if overflowErr != nil {
-					return nil, types.NewError(overflowErr, types.ErrorCodeQueryDataError, types.ErrOptionWithSkipRetry())
-				}
-				if allowOverflow {
-					return tryWallet()
-				}
-				return nil, apiErr
+				return tryWallet()
 			}
 			return nil, apiErr
 		}

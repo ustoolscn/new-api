@@ -96,6 +96,11 @@ func seedToken(t *testing.T, id int, userId int, key string, remainQuota int) {
 
 func seedSubscription(t *testing.T, id int, userId int, amountTotal int64, amountUsed int64) {
 	t.Helper()
+	seedSubscriptionWithOverflow(t, id, userId, amountTotal, amountUsed, true)
+}
+
+func seedSubscriptionWithOverflow(t *testing.T, id int, userId int, amountTotal int64, amountUsed int64, allowWalletOverflow bool) {
+	t.Helper()
 	plan := &model.SubscriptionPlan{
 		Id:            id,
 		Title:         "test plan",
@@ -116,7 +121,7 @@ func seedSubscription(t *testing.T, id int, userId int, amountTotal int64, amoun
 		Status:              "active",
 		StartTime:           time.Now().Unix(),
 		EndTime:             time.Now().Add(30 * 24 * time.Hour).Unix(),
-		AllowWalletOverflow: true,
+		AllowWalletOverflow: allowWalletOverflow,
 	}
 	require.NoError(t, model.DB.Create(sub).Error)
 }
@@ -774,5 +779,67 @@ func TestBillingSession_SubscriptionFirstSettleFallsBackToWalletWhenSubscription
 
 	assert.Equal(t, subTotal, getSubscriptionUsed(t, subID))
 	assert.Equal(t, initialWalletQuota-(actualQuota-int(subTotal-subUsed)), getUserQuota(t, userID))
+	assert.Equal(t, int64(1), getSubscriptionPreConsumeRecordCount(t))
+}
+
+func TestBillingSession_SubscriptionFirstFallsBackToWalletWhenNoSingleSubscriptionCanCoverCharge(t *testing.T) {
+	truncate(t)
+
+	const userID = 41
+	const initialWalletQuota = 500
+	const preConsumed = 100
+
+	seedUser(t, userID, initialWalletQuota)
+	seedSubscriptionWithOverflow(t, 41, userID, 100, 90, false)
+	seedSubscriptionWithOverflow(t, 42, userID, 100, 80, false)
+
+	ginCtx, _ := gin.CreateTestContext(nil)
+	relayInfo := &relaycommon.RelayInfo{
+		RequestId:             "billing-initial-fallback-request",
+		UserId:                userID,
+		OriginModelName:       "test-model",
+		IsPlayground:          true,
+		UserSetting:           dto.UserSetting{BillingPreference: "subscription_first"},
+		FinalPreConsumedQuota: 0,
+	}
+
+	session, apiErr := NewBillingSession(ginCtx, relayInfo, preConsumed)
+	require.Nil(t, apiErr)
+	require.NotNil(t, session)
+
+	assert.Equal(t, BillingSourceWallet, relayInfo.BillingSource)
+	assert.Equal(t, initialWalletQuota-preConsumed, getUserQuota(t, userID))
+	assert.Equal(t, int64(0), getSubscriptionPreConsumeRecordCount(t))
+}
+
+func TestBillingSession_SubscriptionFirstUsesSubscriptionWhenAnySingleSubscriptionCanCoverCharge(t *testing.T) {
+	truncate(t)
+
+	const userID = 42
+	const initialWalletQuota = 500
+	const preConsumed = 100
+
+	seedUser(t, userID, initialWalletQuota)
+	seedSubscriptionWithOverflow(t, 43, userID, 100, 90, false)
+	seedSubscriptionWithOverflow(t, 44, userID, 200, 50, false)
+
+	ginCtx, _ := gin.CreateTestContext(nil)
+	relayInfo := &relaycommon.RelayInfo{
+		RequestId:             "billing-subscription-fit-request",
+		UserId:                userID,
+		OriginModelName:       "test-model",
+		IsPlayground:          true,
+		UserSetting:           dto.UserSetting{BillingPreference: "subscription_first"},
+		FinalPreConsumedQuota: 0,
+	}
+
+	session, apiErr := NewBillingSession(ginCtx, relayInfo, preConsumed)
+	require.Nil(t, apiErr)
+	require.NotNil(t, session)
+
+	assert.Equal(t, BillingSourceSubscription, relayInfo.BillingSource)
+	assert.Equal(t, initialWalletQuota, getUserQuota(t, userID))
+	assert.Equal(t, int64(90), getSubscriptionUsed(t, 43))
+	assert.Equal(t, int64(150), getSubscriptionUsed(t, 44))
 	assert.Equal(t, int64(1), getSubscriptionPreConsumeRecordCount(t))
 }
