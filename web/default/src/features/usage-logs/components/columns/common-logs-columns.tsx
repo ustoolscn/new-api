@@ -104,6 +104,7 @@ function splitQuotaDisplay(value: string): { prefix: string; amount: string } {
 function buildDetailSegments(
   log: UsageLog,
   other: LogOtherData | null,
+  isAdmin: boolean,
   t: (key: string, opts?: Record<string, unknown>) => string
 ): DetailSegment[] {
   // Audit (type=3) and login (type=7) logs: render localized content from the
@@ -139,7 +140,9 @@ function buildDetailSegments(
   if (!other) return []
 
   const segments: DetailSegment[] = []
-  const moderation = other.moderation || other.admin_info?.moderation
+  const moderation = isAdmin
+    ? other.moderation || other.admin_info?.moderation
+    : undefined
   if (moderation) {
     const action = moderation.action || (moderation.flagged ? 'warn' : 'pass')
     const actionLabel =
@@ -863,7 +866,7 @@ export function useCommonLogsColumns(isAdmin: boolean): ColumnDef<UsageLog>[] {
         const log = row.original
         const other = parseLogOther(log.other)
 
-        const segments = buildDetailSegments(log, other, t)
+        const segments = buildDetailSegments(log, other, isAdmin, t)
         const primary = segments[0]
         const hasMore = segments.length > 1
 

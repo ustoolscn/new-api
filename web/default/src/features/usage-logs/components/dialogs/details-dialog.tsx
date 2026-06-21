@@ -603,7 +603,9 @@ export function DetailsDialog(props: DetailsDialogProps) {
     props.isAdmin && adminInfo?.request_snapshot
       ? adminInfo.request_snapshot
       : null
-  const moderation = other?.moderation || adminInfo?.moderation
+  const moderation = props.isAdmin
+    ? other?.moderation || adminInfo?.moderation
+    : undefined
   const moderationError =
     props.isAdmin && (adminInfo?.moderation_error || other?.moderation_error)
       ? adminInfo?.moderation_error || other?.moderation_error
