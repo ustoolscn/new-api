@@ -1,9 +1,12 @@
 package helper
 
 import (
+	"encoding/base64"
 	"errors"
 	"fmt"
+	"io"
 	"math"
+	"mime/multipart"
 	"net/url"
 	"strconv"
 	"strings"
@@ -168,6 +171,10 @@ func GetAndValidOpenAIImageRequest(c *gin.Context, relayMode int) (*dto.ImageReq
 			if imageValue := formData.Get("image"); imageValue != "" {
 				imageRequest.Image, _ = common.Marshal(imageValue)
 			}
+			imageRequest.Files, err = multipartImageFileMetas(form)
+			if err != nil {
+				return nil, err
+			}
 
 			if imageRequest.Model == "gpt-image-1" {
 				if imageRequest.Quality == "" {
@@ -235,6 +242,68 @@ func GetAndValidOpenAIImageRequest(c *gin.Context, relayMode int) (*dto.ImageReq
 	}
 
 	return imageRequest, nil
+}
+
+func multipartImageFileMetas(form *multipart.Form) ([]*types.FileMeta, error) {
+	if form == nil || form.File == nil {
+		return nil, nil
+	}
+	imageFiles := make([]*multipart.FileHeader, 0)
+	imageFiles = append(imageFiles, form.File["image"]...)
+	imageFiles = append(imageFiles, form.File["image[]"]...)
+	for fieldName, files := range form.File {
+		if fieldName != "image[]" && strings.HasPrefix(fieldName, "image[") {
+			imageFiles = append(imageFiles, files...)
+		}
+	}
+	if len(imageFiles) == 0 {
+		return nil, nil
+	}
+
+	files := make([]*types.FileMeta, 0, len(imageFiles))
+	for index, fileHeader := range imageFiles {
+		file, err := fileHeader.Open()
+		if err != nil {
+			return nil, fmt.Errorf("failed to open image file %d for moderation: %w", index, err)
+		}
+		data, readErr := io.ReadAll(file)
+		closeErr := file.Close()
+		if readErr != nil {
+			return nil, fmt.Errorf("failed to read image file %d for moderation: %w", index, readErr)
+		}
+		if closeErr != nil {
+			return nil, fmt.Errorf("failed to close image file %d for moderation: %w", index, closeErr)
+		}
+		if len(data) == 0 {
+			continue
+		}
+		source := types.NewBase64FileSource(base64.StdEncoding.EncodeToString(data), detectMultipartImageMimeType(fileHeader))
+		files = append(files, types.NewImageFileMeta(source, "auto"))
+	}
+	return files, nil
+}
+
+func detectMultipartImageMimeType(fileHeader *multipart.FileHeader) string {
+	if fileHeader == nil {
+		return "image/png"
+	}
+	if contentTypes := fileHeader.Header.Values("Content-Type"); len(contentTypes) > 0 {
+		contentType := strings.TrimSpace(contentTypes[0])
+		if strings.HasPrefix(strings.ToLower(contentType), "image/") {
+			return contentType
+		}
+	}
+	filename := strings.ToLower(fileHeader.Filename)
+	switch {
+	case strings.HasSuffix(filename, ".jpg"), strings.HasSuffix(filename, ".jpeg"):
+		return "image/jpeg"
+	case strings.HasSuffix(filename, ".webp"):
+		return "image/webp"
+	case strings.HasSuffix(filename, ".gif"):
+		return "image/gif"
+	default:
+		return "image/png"
+	}
 }
 
 func GetAndValidateClaudeRequest(c *gin.Context) (textRequest *dto.ClaudeRequest, err error) {

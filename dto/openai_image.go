@@ -37,6 +37,7 @@ type ImageRequest struct {
 	Image            json.RawMessage `json:"image,omitempty"`
 	// 用匿名参数接收额外参数
 	Extra map[string]json.RawMessage `json:"-"`
+	Files []*types.FileMeta          `json:"-"`
 }
 
 func (i *ImageRequest) UnmarshalJSON(data []byte) error {
@@ -157,6 +158,7 @@ func (i *ImageRequest) GetTokenCountMeta() *types.TokenCountMeta {
 	// set OtherRatio("n") (e.g. Ali/Bailian).
 	return &types.TokenCountMeta{
 		CombineText:     i.Prompt,
+		Files:           i.Files,
 		MaxTokens:       1584,
 		ImagePriceRatio: sizeRatio * qualityRatio,
 	}

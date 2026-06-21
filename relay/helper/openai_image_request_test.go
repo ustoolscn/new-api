@@ -51,6 +51,12 @@ func TestGetAndValidOpenAIImageRequestMultipartStream(t *testing.T) {
 		require.True(t, *req.Stream)
 		require.True(t, req.IsStream(c))
 
+		meta := req.GetTokenCountMeta()
+		require.Len(t, meta.Files, 1)
+		require.Equal(t, "image", string(meta.Files[0].FileType))
+		require.False(t, meta.Files[0].Source.IsURL())
+		require.Contains(t, meta.Files[0].Source.GetIdentifier(), "base64:")
+
 		bodyAfterValidation, err := io.ReadAll(c.Request.Body)
 		require.NoError(t, err)
 		require.Equal(t, originalBody, string(bodyAfterValidation))
@@ -67,5 +73,29 @@ func TestGetAndValidOpenAIImageRequestMultipartStream(t *testing.T) {
 		_, err := GetAndValidOpenAIImageRequest(c, relayconstant.RelayModeImagesEdits)
 		require.Error(t, err)
 		require.Contains(t, err.Error(), "invalid stream value")
+	})
+
+	t.Run("image array fields are captured once", func(t *testing.T) {
+		var body bytes.Buffer
+		writer := multipart.NewWriter(&body)
+		require.NoError(t, writer.WriteField("model", "gpt-image-1"))
+		require.NoError(t, writer.WriteField("prompt", "edit these images"))
+		part, err := writer.CreateFormFile("image[]", "first.png")
+		require.NoError(t, err)
+		_, err = part.Write([]byte("first image"))
+		require.NoError(t, err)
+		part, err = writer.CreateFormFile("image[1]", "second.png")
+		require.NoError(t, err)
+		_, err = part.Write([]byte("second image"))
+		require.NoError(t, err)
+		require.NoError(t, writer.Close())
+
+		c, _ := gin.CreateTestContext(httptest.NewRecorder())
+		c.Request = httptest.NewRequest(http.MethodPost, "/v1/images/edits", &body)
+		c.Request.Header.Set("Content-Type", writer.FormDataContentType())
+
+		req, err := GetAndValidOpenAIImageRequest(c, relayconstant.RelayModeImagesEdits)
+		require.NoError(t, err)
+		require.Len(t, req.GetTokenCountMeta().Files, 2)
 	})
 }

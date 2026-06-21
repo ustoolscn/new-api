@@ -30,6 +30,11 @@ type moderationRequest struct {
 	Input any    `json:"input"`
 }
 
+type moderationCheckInput struct {
+	Input      any
+	InputTypes []string
+}
+
 type moderationResponse struct {
 	ID      string                  `json:"id"`
 	Model   string                  `json:"model"`
@@ -62,6 +67,7 @@ type ModerationResult struct {
 	CategoryAppliedInputTypes map[string][]string `json:"category_applied_input_types,omitempty"`
 	InputTypes                []string            `json:"input_types,omitempty"`
 	Error                     string              `json:"error,omitempty"`
+	Diagnostics               map[string]any      `json:"diagnostics,omitempty"`
 }
 
 func NewModerationErrorResult(err error) *ModerationResult {
@@ -71,6 +77,12 @@ func NewModerationErrorResult(err error) *ModerationResult {
 	if err != nil {
 		result.Error = err.Error()
 	}
+	return result
+}
+
+func NewModerationErrorResultWithDiagnostics(err error, diagnostics map[string]any) *ModerationResult {
+	result := NewModerationErrorResult(err)
+	result.Diagnostics = diagnostics
 	return result
 }
 
@@ -88,8 +100,8 @@ func ModerateRelayRequest(ctx context.Context, request dto.Request, meta *types.
 	if meta == nil && request != nil {
 		meta = request.GetTokenCountMeta()
 	}
-	input, inputTypes := buildModerationInput(meta)
-	if input == nil {
+	checks := buildModerationInputs(meta)
+	if len(checks) == 0 {
 		return nil, nil
 	}
 
@@ -106,39 +118,46 @@ func ModerateRelayRequest(ctx context.Context, request dto.Request, meta *types.
 		timeout = 10 * time.Second
 	}
 
-	payload, err := common.Marshal(moderationRequest{
-		Model: model,
-		Input: input,
-	})
-	if err != nil {
-		return nil, err
-	}
-
 	reqCtx, cancel := context.WithTimeout(ctx, timeout)
 	defer cancel()
-	req, err := http.NewRequestWithContext(reqCtx, http.MethodPost, baseURL+"/moderations", bytes.NewReader(payload))
-	if err != nil {
-		return nil, err
-	}
-	req.Header.Set("Authorization", "Bearer "+setting.ModerationAPIKey)
-	req.Header.Set("Content-Type", "application/json")
 
-	resp, err := http.DefaultClient.Do(req)
-	if err != nil {
-		return nil, err
-	}
-	defer resp.Body.Close()
+	var combined *ModerationResult
+	for _, check := range checks {
+		payload, err := common.Marshal(moderationRequest{
+			Model: model,
+			Input: check.Input,
+		})
+		if err != nil {
+			return nil, err
+		}
 
-	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-		return nil, fmt.Errorf("moderation endpoint returned status %d: %s", resp.StatusCode, readModerationErrorBody(resp.Body))
-	}
+		req, err := http.NewRequestWithContext(reqCtx, http.MethodPost, baseURL+"/moderations", bytes.NewReader(payload))
+		if err != nil {
+			return nil, err
+		}
+		req.Header.Set("Authorization", "Bearer "+setting.ModerationAPIKey)
+		req.Header.Set("Content-Type", "application/json")
 
-	var parsed moderationResponse
-	if err := common.DecodeJson(resp.Body, &parsed); err != nil {
-		return nil, err
+		resp, err := http.DefaultClient.Do(req)
+		if err != nil {
+			return nil, err
+		}
+
+		if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+			message := readModerationErrorBody(resp.Body)
+			resp.Body.Close()
+			return nil, fmt.Errorf("moderation endpoint returned status %d: %s", resp.StatusCode, message)
+		}
+
+		var parsed moderationResponse
+		err = common.DecodeJson(resp.Body, &parsed)
+		resp.Body.Close()
+		if err != nil {
+			return nil, err
+		}
+		combined = mergeModerationResults(combined, normalizeModerationResult(parsed, check.InputTypes))
 	}
-	result := normalizeModerationResult(parsed, inputTypes)
-	return result, nil
+	return combined, nil
 }
 
 func readModerationErrorBody(body io.Reader) string {
@@ -171,18 +190,16 @@ func readModerationErrorBody(body io.Reader) string {
 	return text
 }
 
-func buildModerationInput(meta *types.TokenCountMeta) (any, []string) {
+func buildModerationInputs(meta *types.TokenCountMeta) []moderationCheckInput {
 	if meta == nil {
-		return nil, nil
+		return nil
 	}
-	parts := make([]moderationInputPart, 0, 1+len(meta.Files))
-	inputTypes := make([]string, 0, 2)
+	checks := make([]moderationCheckInput, 0, 1+len(meta.Files))
 	if strings.TrimSpace(meta.CombineText) != "" {
-		parts = append(parts, moderationInputPart{
-			Type: "text",
-			Text: meta.CombineText,
+		checks = append(checks, moderationCheckInput{
+			Input:      meta.CombineText,
+			InputTypes: []string{"text"},
 		})
-		inputTypes = appendUnique(inputTypes, "text")
 	}
 	for _, file := range meta.Files {
 		if file == nil || file.FileType != types.FileTypeImage || file.Source == nil {
@@ -192,19 +209,72 @@ func buildModerationInput(meta *types.TokenCountMeta) (any, []string) {
 		if url == "" {
 			continue
 		}
-		parts = append(parts, moderationInputPart{
-			Type:     "image_url",
-			ImageURL: &moderationImageURL{URL: url},
+		checks = append(checks, moderationCheckInput{
+			Input: []moderationInputPart{
+				{
+					Type:     "image_url",
+					ImageURL: &moderationImageURL{URL: url},
+				},
+			},
+			InputTypes: []string{"image"},
 		})
-		inputTypes = appendUnique(inputTypes, "image")
 	}
-	if len(parts) == 0 {
-		return nil, nil
+	return checks
+}
+
+func ModerationDiagnostics(meta *types.TokenCountMeta) map[string]any {
+	diagnostics := map[string]any{
+		"combine_text_len":         0,
+		"files_total":              0,
+		"image_count":              0,
+		"audio_count":              0,
+		"file_count":               0,
+		"video_count":              0,
+		"moderation_image_inputs":  0,
+		"moderation_request_count": 0,
+		"tools_count":              0,
+		"messages_count":           0,
+		"max_tokens":               0,
 	}
-	if len(parts) == 1 && parts[0].Type == "text" {
-		return parts[0].Text, inputTypes
+	if meta == nil {
+		return diagnostics
 	}
-	return parts, inputTypes
+	diagnostics["combine_text_len"] = len(meta.CombineText)
+	diagnostics["tools_count"] = meta.ToolsCount
+	diagnostics["messages_count"] = meta.MessagesCount
+	diagnostics["max_tokens"] = meta.MaxTokens
+	diagnostics["moderation_request_count"] = len(buildModerationInputs(meta))
+	for _, file := range meta.Files {
+		if file == nil {
+			continue
+		}
+		diagnostics["files_total"] = diagnostics["files_total"].(int) + 1
+		switch file.FileType {
+		case types.FileTypeImage:
+			diagnostics["image_count"] = diagnostics["image_count"].(int) + 1
+			if file.Source != nil && moderationImageSourceURL(file.Source) != "" {
+				diagnostics["moderation_image_inputs"] = diagnostics["moderation_image_inputs"].(int) + 1
+			}
+		case types.FileTypeAudio:
+			diagnostics["audio_count"] = diagnostics["audio_count"].(int) + 1
+		case types.FileTypeFile:
+			diagnostics["file_count"] = diagnostics["file_count"].(int) + 1
+		case types.FileTypeVideo:
+			diagnostics["video_count"] = diagnostics["video_count"].(int) + 1
+		}
+	}
+	return diagnostics
+}
+
+func FormatModerationDiagnostics(diagnostics map[string]any) string {
+	if len(diagnostics) == 0 {
+		return "{}"
+	}
+	data, err := common.Marshal(diagnostics)
+	if err != nil {
+		return fmt.Sprintf("%v", diagnostics)
+	}
+	return string(data)
 }
 
 func moderationImageSourceURL(source types.FileSource) string {
@@ -254,6 +324,60 @@ func normalizeModerationResult(response moderationResponse, inputTypes []string)
 		result.Action = "warn"
 	}
 	return result
+}
+
+func mergeModerationResults(current *ModerationResult, next *ModerationResult) *ModerationResult {
+	if next == nil {
+		return current
+	}
+	if current == nil {
+		next.Action = moderationAction(next)
+		return next
+	}
+	if current.Model == "" {
+		current.Model = next.Model
+	}
+	current.Flagged = current.Flagged || next.Flagged
+	for _, inputType := range next.InputTypes {
+		current.InputTypes = appendUnique(current.InputTypes, inputType)
+	}
+	for _, category := range next.FlaggedCategories {
+		current.FlaggedCategories = appendUnique(current.FlaggedCategories, category)
+	}
+	for _, category := range next.BlockedCategories {
+		current.BlockedCategories = appendUnique(current.BlockedCategories, category)
+	}
+	if len(next.CategoryScores) > 0 && current.CategoryScores == nil {
+		current.CategoryScores = make(map[string]float64, len(next.CategoryScores))
+	}
+	for category, score := range next.CategoryScores {
+		if existing, ok := current.CategoryScores[category]; !ok || score > existing {
+			current.CategoryScores[category] = score
+		}
+	}
+	if len(next.CategoryAppliedInputTypes) > 0 && current.CategoryAppliedInputTypes == nil {
+		current.CategoryAppliedInputTypes = make(map[string][]string, len(next.CategoryAppliedInputTypes))
+	}
+	for category, inputTypes := range next.CategoryAppliedInputTypes {
+		for _, inputType := range inputTypes {
+			current.CategoryAppliedInputTypes[category] = appendUnique(current.CategoryAppliedInputTypes[category], inputType)
+		}
+	}
+	current.Action = moderationAction(current)
+	return current
+}
+
+func moderationAction(result *ModerationResult) string {
+	if result == nil {
+		return "pass"
+	}
+	if len(result.BlockedCategories) > 0 {
+		return "block"
+	}
+	if result.Flagged {
+		return "warn"
+	}
+	return "pass"
 }
 
 func appendUnique(items []string, item string) []string {

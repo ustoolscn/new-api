@@ -150,13 +150,20 @@ func Relay(c *gin.Context, relayFormat types.RelayFormat) {
 	if needModerationCheck {
 		moderationResult, moderationErr := service.ModerateRelayRequest(c.Request.Context(), request, meta)
 		if moderationErr != nil {
-			logger.LogError(c, fmt.Sprintf("moderation check failed: %s", moderationErr.Error()))
+			diagnostics := service.ModerationDiagnostics(meta)
+			diagnostics["origin_model_name"] = relayInfo.OriginModelName
+			diagnostics["upstream_model_name"] = relayInfo.UpstreamModelName
+			diagnostics["channel_id"] = relayInfo.ChannelId
+			diagnostics["is_stream"] = relayInfo.IsStream
+			diagnostics["failure_mode"] = setting.NormalizeModerationFailureMode(setting.ModerationFailureMode)
+			moderationResult = service.NewModerationErrorResultWithDiagnostics(moderationErr, diagnostics)
+			logger.LogError(c, fmt.Sprintf("moderation check failed: %s, diagnostics=%s", moderationErr.Error(), service.FormatModerationDiagnostics(diagnostics)))
 			if service.ModerationFailureModeClosed() {
 				newAPIError = types.NewErrorWithStatusCode(fmt.Errorf("moderation check failed"), types.ErrorCodeInvalidRequest, http.StatusForbidden, types.ErrOptionWithSkipRetry())
 				recordRelayModerationErrorLog(c, relayInfo, newAPIError, moderationResult, moderationErr)
 				return
 			}
-			c.Set("moderation_result", service.NewModerationErrorResult(moderationErr))
+			c.Set("moderation_result", moderationResult)
 		} else if moderationResult != nil && moderationResult.Action == "block" {
 			logger.LogWarn(c, fmt.Sprintf("moderation blocked request: %s", strings.Join(moderationResult.BlockedCategories, ", ")))
 			newAPIError = types.NewErrorWithStatusCode(fmt.Errorf("request content rejected by moderation"), types.ErrorCodeInvalidRequest, http.StatusForbidden, types.ErrOptionWithSkipRetry())
