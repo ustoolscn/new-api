@@ -150,12 +150,7 @@ func Relay(c *gin.Context, relayFormat types.RelayFormat) {
 	if needModerationCheck {
 		moderationResult, moderationErr := service.ModerateRelayRequest(c.Request.Context(), request, meta)
 		if moderationErr != nil {
-			diagnostics := service.ModerationDiagnostics(meta)
-			diagnostics["origin_model_name"] = relayInfo.OriginModelName
-			diagnostics["upstream_model_name"] = relayInfo.UpstreamModelName
-			diagnostics["channel_id"] = relayInfo.ChannelId
-			diagnostics["is_stream"] = relayInfo.IsStream
-			diagnostics["failure_mode"] = setting.NormalizeModerationFailureMode(setting.ModerationFailureMode)
+			diagnostics := relayModerationDiagnostics(relayInfo, meta)
 			moderationResult = service.NewModerationErrorResultWithDiagnostics(moderationErr, diagnostics)
 			logger.LogError(c, fmt.Sprintf("moderation check failed: %s, diagnostics=%s", moderationErr.Error(), service.FormatModerationDiagnostics(diagnostics)))
 			if service.ModerationFailureModeClosed() {
@@ -331,6 +326,23 @@ func recordRelayPrecheckErrorLog(c *gin.Context, relayInfo *relaycommon.RelayInf
 	}
 	useTimeSeconds := int(time.Since(startTime).Seconds())
 	model.RecordErrorLog(c, userId, 0, modelName, tokenName, err.MaskSensitiveErrorWithStatusCode(), tokenId, useTimeSeconds, common.GetContextKeyBool(c, constant.ContextKeyIsStream), userGroup, other)
+}
+
+func relayModerationDiagnostics(relayInfo *relaycommon.RelayInfo, meta *types.TokenCountMeta) map[string]any {
+	diagnostics := service.ModerationDiagnostics(meta)
+	diagnostics["failure_mode"] = setting.NormalizeModerationFailureMode(setting.ModerationFailureMode)
+	if relayInfo == nil {
+		return diagnostics
+	}
+	diagnostics["origin_model_name"] = relayInfo.OriginModelName
+	diagnostics["is_stream"] = relayInfo.IsStream
+	if relayInfo.ChannelMeta != nil {
+		diagnostics["upstream_model_name"] = relayInfo.ChannelMeta.UpstreamModelName
+		diagnostics["channel_id"] = relayInfo.ChannelMeta.ChannelId
+		return diagnostics
+	}
+	diagnostics["upstream_model_name"] = relayInfo.OriginModelName
+	return diagnostics
 }
 
 func recordRelayModerationErrorLog(c *gin.Context, relayInfo *relaycommon.RelayInfo, err *types.NewAPIError, moderationResult *service.ModerationResult, moderationErr error) {
