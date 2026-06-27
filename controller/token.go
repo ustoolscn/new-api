@@ -164,6 +164,23 @@ func GetTokenUsage(c *gin.Context) {
 	})
 }
 
+func GetTokenUser(c *gin.Context) {
+	userId := c.GetInt("id")
+	if userId == 0 {
+		common.ApiErrorI18n(c, i18n.MsgTokenInvalid)
+		return
+	}
+	userCache, err := model.GetUserCache(userId)
+	if err != nil {
+		common.ApiError(c, err)
+		return
+	}
+	common.ApiSuccess(c, gin.H{
+		"user_id":  userCache.Id,
+		"username": userCache.Username,
+	})
+}
+
 func AddToken(c *gin.Context) {
 	token := model.Token{}
 	err := c.ShouldBindJSON(&token)
