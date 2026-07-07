@@ -10,9 +10,9 @@ import (
 	"github.com/QuantumNous/new-api/dto"
 	"github.com/QuantumNous/new-api/relay/channel"
 	"github.com/QuantumNous/new-api/relay/channel/openai"
-	openaicompat "github.com/QuantumNous/new-api/relay/channel/openai_compat"
 	relaycommon "github.com/QuantumNous/new-api/relay/common"
 	"github.com/QuantumNous/new-api/relay/constant"
+	"github.com/QuantumNous/new-api/service/relayconvert"
 	"github.com/QuantumNous/new-api/setting/model_setting"
 	"github.com/QuantumNous/new-api/setting/reasoning"
 	"github.com/QuantumNous/new-api/types"
@@ -239,10 +239,16 @@ func (a *Adaptor) ConvertEmbeddingRequest(c *gin.Context, info *relaycommon.Rela
 }
 
 func (a *Adaptor) ConvertOpenAIResponsesRequest(c *gin.Context, info *relaycommon.RelayInfo, request dto.OpenAIResponsesRequest) (any, error) {
-	chatRequest, err := openaicompat.ConvertResponsesRequestToChat(c, request)
+	request, err := preprocessGeminiOpenAIResponsesRequest(request)
 	if err != nil {
 		return nil, err
 	}
+
+	chatRequest, err := relayconvert.ResponsesRequestToChatCompletionsRequest(&request)
+	if err != nil {
+		return nil, err
+	}
+
 	return a.ConvertOpenAIRequest(c, info, chatRequest)
 }
 

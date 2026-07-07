@@ -16,17 +16,12 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 
 For commercial licensing, please contact support@quantumnous.com
 */
-import { useEffect, useMemo, useState } from 'react'
 import { useQueryClient } from '@tanstack/react-query'
-import {
-  INTERFACE_LANGUAGE_OPTIONS,
-  normalizeInterfaceLanguage,
-} from '@/i18n/languages'
 import { Languages, Loader2 } from 'lucide-react'
+import { useEffect, useMemo, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { toast } from 'sonner'
-import { useAuthStore } from '@/stores/auth-store'
-import { refreshLanguageSensitiveQueries } from '@/lib/i18n-query-refresh'
+
 import {
   Select,
   SelectContent,
@@ -36,6 +31,13 @@ import {
   SelectValue,
 } from '@/components/ui/select'
 import { TitledCard } from '@/components/ui/titled-card'
+import {
+  INTERFACE_LANGUAGE_OPTIONS,
+  normalizeInterfaceLanguage,
+} from '@/i18n/languages'
+import { refreshLanguageSensitiveQueries } from '@/lib/i18n-query-refresh'
+import { useAuthStore } from '@/stores/auth-store'
+
 import { updateUserLanguage } from '../api'
 import { parseUserSettings } from '../lib'
 import type { UserProfile } from '../types'

@@ -16,11 +16,16 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 
 For commercial licensing, please contact support@quantumnous.com
 */
-import { useState, useEffect, useMemo, useCallback } from 'react'
 import { Crown, RefreshCw, Sparkles, Check } from 'lucide-react'
+import { useState, useEffect, useMemo, useCallback } from 'react'
 import { useTranslation } from 'react-i18next'
 import { toast } from 'sonner'
-import { formatQuota } from '@/lib/format'
+
+import {
+  StatusBadge,
+  dotColorMap,
+  textColorMap,
+} from '@/components/status-badge'
 import { formatBillingCurrencyFromUSD } from '@/lib/currency'
 import { cn } from '@/lib/utils'
 import { Button } from '@/components/ui/button'
@@ -43,11 +48,6 @@ import {
   TooltipTrigger,
 } from '@/components/ui/tooltip'
 import {
-  StatusBadge,
-  dotColorMap,
-  textColorMap,
-} from '@/components/status-badge'
-import {
   getPublicPlans,
   getSelfSubscriptionFull,
   updateBillingPreference,
@@ -58,6 +58,8 @@ import type {
   PlanRecord,
   UserSubscriptionRecord,
 } from '@/features/subscriptions/types'
+import { formatQuota } from '@/lib/format'
+
 import type { PaymentMethod, TopupInfo } from '../types'
 
 interface SubscriptionPlansCardProps {

@@ -1,7 +1,12 @@
 import assert from 'node:assert/strict'
 import { beforeEach, describe, test } from 'node:test'
 import { STORAGE_KEYS } from '../constants'
-import { clearStoredMessages, loadMessages, saveConfig, saveMessages } from './storage'
+import {
+  clearStoredMessages,
+  loadMessages,
+  saveConfig,
+  saveMessages,
+} from './storage/storage'
 
 class LocalStorageMock {
   private store = new Map<string, string>()
@@ -50,9 +55,12 @@ describe('playground storage', () => {
 
     assert.equal(localStorage.getItem(STORAGE_KEYS.MESSAGES), null)
     assert.equal(loadMessages(), null)
-    assert.equal(
-      localStorage.getItem(STORAGE_KEYS.CONFIG),
-      JSON.stringify({ model: 'gpt-4o' })
+    assert.deepEqual(
+      JSON.parse(localStorage.getItem(STORAGE_KEYS.CONFIG) ?? '{}'),
+      {
+        version: 1,
+        data: { model: 'gpt-4o' },
+      }
     )
   })
 })

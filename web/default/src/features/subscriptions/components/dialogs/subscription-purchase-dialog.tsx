@@ -16,10 +16,13 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 
 For commercial licensing, please contact support@quantumnous.com
 */
-import { useState, useEffect } from 'react'
 import { Crown, CalendarClock, Package } from 'lucide-react'
+import { useState, useEffect } from 'react'
 import { useTranslation } from 'react-i18next'
 import { toast } from 'sonner'
+
+import { Dialog } from '@/components/dialog'
+import { GroupBadge } from '@/components/group-badge'
 import { DEFAULT_CURRENCY_CONFIG } from '@/stores/system-config-store'
 import {
   formatBillingCurrencyFromUSD,
@@ -39,8 +42,7 @@ import {
   SelectValue,
 } from '@/components/ui/select'
 import { Separator } from '@/components/ui/separator'
-import { Dialog } from '@/components/dialog'
-import { GroupBadge } from '@/components/group-badge'
+
 import {
   formatWalletCurrencyAmount,
   getWalletCurrencyConfig,

@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict'
 import { describe, test } from 'node:test'
 import { API_ENDPOINTS } from '../constants'
-import { createUserMessage, formatMessageForAPI } from './message-utils'
+import { createUserMessage, formatMessageForAPI } from './message/message-utils'
 
 describe('playground message image content', () => {
   test('formats uploaded gallery URLs as OpenAI image_url content parts', () => {

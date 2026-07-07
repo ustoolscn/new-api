@@ -121,7 +121,7 @@ func GetChannelExcluding(group string, model string, retry int, requestPath stri
 	if len(excludeChannelIds) > 0 {
 		channelQuery = DB.Where(commonGroupCol+" = ? and model = ? and enabled = ?", group, model, true)
 	}
-	if common.UsingSQLite || common.UsingPostgreSQL {
+	if common.UsingMainDatabase(common.DatabaseTypeSQLite) || common.UsingMainDatabase(common.DatabaseTypePostgreSQL) {
 		err = channelQuery.Order("weight DESC").Find(&abilities).Error
 	} else {
 		err = channelQuery.Order("weight DESC").Find(&abilities).Error
@@ -378,7 +378,7 @@ func FixAbility() (int, int, error) {
 	defer fixLock.Unlock()
 
 	// truncate abilities table
-	if common.UsingSQLite {
+	if common.UsingMainDatabase(common.DatabaseTypeSQLite) {
 		err := DB.Exec("DELETE FROM abilities").Error
 		if err != nil {
 			common.SysLog(fmt.Sprintf("Delete abilities failed: %s", err.Error()))

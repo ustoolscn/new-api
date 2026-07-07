@@ -563,9 +563,9 @@ func billingStatsBucketLabel(t time.Time, granularity string) string {
 
 func billingStatsBucketSQL(timestampExpr string, granularity string) string {
 	switch {
-	case common.UsingPostgreSQL:
+	case common.UsingMainDatabase(common.DatabaseTypePostgreSQL):
 		return billingStatsPostgresBucketSQL(timestampExpr, granularity)
-	case common.UsingMySQL:
+	case common.UsingMainDatabase(common.DatabaseTypeMySQL):
 		return billingStatsMySQLBucketSQL(timestampExpr, granularity)
 	default:
 		return billingStatsSQLiteBucketSQL(timestampExpr, granularity)

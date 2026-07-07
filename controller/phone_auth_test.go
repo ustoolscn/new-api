@@ -26,9 +26,9 @@ func setupPhoneAuthControllerTestDB(t *testing.T) *gorm.DB {
 	t.Helper()
 
 	gin.SetMode(gin.TestMode)
-	common.UsingSQLite = true
-	common.UsingMySQL = false
-	common.UsingPostgreSQL = false
+	originalMainDatabaseType := common.MainDatabaseType()
+	originalLogDatabaseType := common.LogDatabaseType()
+	common.SetDatabaseTypes(common.DatabaseTypeSQLite, common.DatabaseTypeSQLite)
 	common.RedisEnabled = false
 	common.RegisterEnabled = true
 	common.PasswordRegisterEnabled = true
@@ -49,6 +49,7 @@ func setupPhoneAuthControllerTestDB(t *testing.T) *gorm.DB {
 		common.PasswordLoginEnabled = true
 		common.EmailVerificationEnabled = false
 		common.PhoneRegisterEnabled = false
+		common.SetDatabaseTypes(originalMainDatabaseType, originalLogDatabaseType)
 		sqlDB, err := db.DB()
 		if err == nil {
 			_ = sqlDB.Close()

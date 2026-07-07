@@ -16,23 +16,11 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 
 For commercial licensing, please contact support@quantumnous.com
 */
-import { useCallback, useEffect, useState } from 'react'
 import { useQueryClient } from '@tanstack/react-query'
-import {
-  INTERFACE_LANGUAGE_OPTIONS,
-  normalizeInterfaceLanguage,
-} from '@/i18n/languages'
 import { Check, Languages, X } from 'lucide-react'
+import { useCallback, useEffect, useState } from 'react'
 import { useTranslation } from 'react-i18next'
-import { useAuthStore } from '@/stores/auth-store'
-import { api } from '@/lib/api'
-import { refreshLanguageSensitiveQueries } from '@/lib/i18n-query-refresh'
-import {
-  detectRegionalPromptLanguage,
-  LANGUAGE_REGION_PROMPT_DISMISSED_KEY,
-  type RegionalPromptLanguage,
-} from '@/lib/regional-language'
-import { cn } from '@/lib/utils'
+
 import { Button } from '@/components/ui/button'
 import {
   DropdownMenu,
@@ -45,6 +33,16 @@ import {
   PopoverContent,
   PopoverTrigger,
 } from '@/components/ui/popover'
+import { INTERFACE_LANGUAGE_OPTIONS, normalizeInterfaceLanguage } from '@/i18n/languages'
+import { api } from '@/lib/api'
+import { refreshLanguageSensitiveQueries } from '@/lib/i18n-query-refresh'
+import {
+  detectRegionalPromptLanguage,
+  LANGUAGE_REGION_PROMPT_DISMISSED_KEY,
+  type RegionalPromptLanguage,
+} from '@/lib/regional-language'
+import { cn } from '@/lib/utils'
+import { useAuthStore } from '@/stores/auth-store'
 
 const regionalPromptMessages: Record<RegionalPromptLanguage, string> = {
   zh: '你可以在这里切换语言',
