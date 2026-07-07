@@ -17,6 +17,7 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 For commercial licensing, please contact support@quantumnous.com
 */
 import { api } from '@/lib/api'
+
 import type {
   LoginPayload,
   LoginResponse,
@@ -118,6 +119,17 @@ export async function sendEmailVerification(
 ): Promise<ApiResponse> {
   const res = await api.get('/api/verification', {
     params: { email, turnstile },
+  })
+  return res.data
+}
+
+// Send phone verification code
+export async function sendPhoneVerification(
+  phone: string,
+  turnstile?: string
+): Promise<ApiResponse> {
+  const res = await api.get('/api/sms/verification', {
+    params: { phone, turnstile },
   })
   return res.data
 }

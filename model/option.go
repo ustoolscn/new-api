@@ -39,6 +39,17 @@ func InitOptionMap(loadFromDatabase ...bool) {
 	common.OptionMap["PasswordLoginEnabled"] = strconv.FormatBool(common.PasswordLoginEnabled)
 	common.OptionMap["PasswordRegisterEnabled"] = strconv.FormatBool(common.PasswordRegisterEnabled)
 	common.OptionMap["EmailVerificationEnabled"] = strconv.FormatBool(common.EmailVerificationEnabled)
+	common.OptionMap["PhoneRegisterEnabled"] = strconv.FormatBool(common.PhoneRegisterEnabled)
+	common.OptionMap["SMSVerificationEnabled"] = strconv.FormatBool(common.SMSVerificationEnabled)
+	common.OptionMap["SMSAccessKeyId"] = common.SMSAccessKeyId
+	common.OptionMap["SMSAccessKeySecret"] = common.SMSAccessKeySecret
+	common.OptionMap["SMSSignName"] = common.SMSSignName
+	common.OptionMap["SMSTemplateCode"] = common.SMSTemplateCode
+	common.OptionMap["SMSTemplateParam"] = common.SMSTemplateParam
+	common.OptionMap["SMSSchemeName"] = common.SMSSchemeName
+	common.OptionMap["SMSCodeLength"] = strconv.Itoa(common.SMSCodeLength)
+	common.OptionMap["SMSValidTime"] = strconv.Itoa(common.SMSValidTime)
+	common.OptionMap["SMSInterval"] = strconv.Itoa(common.SMSInterval)
 	common.OptionMap["GitHubOAuthEnabled"] = strconv.FormatBool(common.GitHubOAuthEnabled)
 	common.OptionMap["LinuxDOOAuthEnabled"] = strconv.FormatBool(common.LinuxDOOAuthEnabled)
 	common.OptionMap["TelegramOAuthEnabled"] = strconv.FormatBool(common.TelegramOAuthEnabled)
@@ -306,6 +317,10 @@ func updateOptionMap(key string, value string) (err error) {
 			common.PasswordLoginEnabled = boolValue
 		case "EmailVerificationEnabled":
 			common.EmailVerificationEnabled = boolValue
+		case "PhoneRegisterEnabled":
+			common.PhoneRegisterEnabled = boolValue
+		case "SMSVerificationEnabled":
+			common.SMSVerificationEnabled = boolValue
 		case "GitHubOAuthEnabled":
 			common.GitHubOAuthEnabled = boolValue
 		case "LinuxDOOAuthEnabled":
@@ -389,6 +404,30 @@ func updateOptionMap(key string, value string) (err error) {
 	switch key {
 	case "EmailDomainWhitelist":
 		common.EmailDomainWhitelist = strings.Split(value, ",")
+	case "SMSAccessKeyId":
+		common.SMSAccessKeyId = value
+	case "SMSAccessKeySecret":
+		common.SMSAccessKeySecret = value
+	case "SMSSignName":
+		common.SMSSignName = value
+	case "SMSTemplateCode":
+		common.SMSTemplateCode = value
+	case "SMSTemplateParam":
+		common.SMSTemplateParam = value
+	case "SMSSchemeName":
+		common.SMSSchemeName = value
+	case "SMSCodeLength":
+		if intValue, err := strconv.Atoi(value); err == nil {
+			common.SMSCodeLength = intValue
+		}
+	case "SMSValidTime":
+		if intValue, err := strconv.Atoi(value); err == nil {
+			common.SMSValidTime = intValue
+		}
+	case "SMSInterval":
+		if intValue, err := strconv.Atoi(value); err == nil {
+			common.SMSInterval = intValue
+		}
 	case "SMTPServer":
 		common.SMTPServer = value
 	case "SMTPPort":

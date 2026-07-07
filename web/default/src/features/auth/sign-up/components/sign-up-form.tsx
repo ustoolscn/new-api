@@ -1,3 +1,5 @@
+import { zodResolver } from '@hookform/resolvers/zod'
+import { Loader2 } from 'lucide-react'
 /*
 Copyright (C) 2023-2026 QuantumNous
 
@@ -17,14 +19,14 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 For commercial licensing, please contact support@quantumnous.com
 */
 import { useEffect, useMemo, useState } from 'react'
-import type { z } from 'zod'
 import { useForm } from 'react-hook-form'
-import { zodResolver } from '@hookform/resolvers/zod'
-import { Loader2 } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 import { toast } from 'sonner'
-import { cn } from '@/lib/utils'
-import { useStatus } from '@/hooks/use-status'
+import type { z } from 'zod'
+
+import { Dialog } from '@/components/dialog'
+import { PasswordInput } from '@/components/password-input'
+import { Turnstile } from '@/components/turnstile'
 import { Button } from '@/components/ui/button'
 import {
   Form,
@@ -36,20 +38,21 @@ import {
 } from '@/components/ui/form'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
-import { Dialog } from '@/components/dialog'
-import { PasswordInput } from '@/components/password-input'
-import { Turnstile } from '@/components/turnstile'
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { register, wechatLoginByCode } from '@/features/auth/api'
 import { LegalConsent } from '@/features/auth/components/legal-consent'
 import { OAuthProviders } from '@/features/auth/components/oauth-providers'
 import { registerFormSchema } from '@/features/auth/constants'
 import { useAuthRedirect } from '@/features/auth/hooks/use-auth-redirect'
 import { useEmailVerification } from '@/features/auth/hooks/use-email-verification'
+import { usePhoneVerification } from '@/features/auth/hooks/use-phone-verification'
 import { useTurnstile } from '@/features/auth/hooks/use-turnstile'
 import {
   getAffiliateCode,
   saveAffiliateCode,
 } from '@/features/auth/lib/storage'
+import { useStatus } from '@/hooks/use-status'
+import { cn } from '@/lib/utils'
 
 export function SignUpForm({
   className,
@@ -58,6 +61,10 @@ export function SignUpForm({
   const { t } = useTranslation()
   const [isLoading, setIsLoading] = useState(false)
   const [verificationCode, setVerificationCode] = useState('')
+  const [smsCode, setSmsCode] = useState('')
+  const [registerMethod, setRegisterMethod] = useState<'phone' | 'email'>(
+    'phone'
+  )
   const [agreedToLegal, setAgreedToLegal] = useState(false)
   const [wechatCode, setWeChatCode] = useState('')
   const [isWeChatDialogOpen, setIsWeChatDialogOpen] = useState(false)
@@ -82,19 +89,37 @@ export function SignUpForm({
     turnstileToken,
     validateTurnstile,
   })
+  const {
+    isSending: isSendingSmsCode,
+    secondsLeft: smsSecondsLeft,
+    isActive: isSmsActive,
+    sendCode: sendSmsCode,
+  } = usePhoneVerification({
+    turnstileToken,
+    validateTurnstile,
+  })
 
   const form = useForm<z.infer<typeof registerFormSchema>>({
     resolver: zodResolver(registerFormSchema),
     defaultValues: {
       username: '',
       email: '',
+      phone: '',
       password: '',
       confirmPassword: '',
     },
   })
 
   const emailValue = form.watch('email')
-  const emailVerificationRequired = !!status?.email_verification
+  const phoneValue = form.watch('phone')
+  const emailRegisterEnabled = Boolean(
+    status?.email_verification ?? status?.data?.email_verification
+  )
+  const phoneRegisterEnabled = Boolean(
+    status?.phone_register_enabled ?? status?.data?.phone_register_enabled
+  )
+  const hasRegisterMethod = emailRegisterEnabled || phoneRegisterEnabled
+  const showRegisterTabs = emailRegisterEnabled && phoneRegisterEnabled
   const hasUserAgreement = Boolean(status?.user_agreement_enabled)
   const hasPrivacyPolicy = Boolean(status?.privacy_policy_enabled)
   const requiresLegalConsent = hasUserAgreement || hasPrivacyPolicy
@@ -134,14 +159,39 @@ export function SignUpForm({
     }
   }, [])
 
+  useEffect(() => {
+    if (phoneRegisterEnabled) {
+      setRegisterMethod('phone')
+      return
+    }
+    if (emailRegisterEnabled) {
+      setRegisterMethod('email')
+    }
+  }, [emailRegisterEnabled, phoneRegisterEnabled])
+
   async function onSubmit(data: z.infer<typeof registerFormSchema>) {
     if (requiresLegalConsent && !agreedToLegal) {
       toast.error(legalConsentErrorMessage)
       return
     }
 
-    // Validate email verification if required
-    if (emailVerificationRequired) {
+    if (!hasRegisterMethod) {
+      toast.error(t('Registration is currently unavailable'))
+      return
+    }
+
+    if (registerMethod === 'phone') {
+      if (!data.phone) {
+        toast.error(t('Please enter your phone number'))
+        return
+      }
+      if (!smsCode) {
+        toast.error(t('Please enter the SMS verification code'))
+        return
+      }
+    }
+
+    if (registerMethod === 'email') {
       if (!data.email) {
         toast.error(t('Please enter your email'))
         return
@@ -159,8 +209,13 @@ export function SignUpForm({
       const res = await register({
         username: data.username,
         password: data.password,
-        email: data.email || undefined,
-        verification_code: verificationCode || undefined,
+        email: registerMethod === 'email' ? data.email || undefined : undefined,
+        phone: registerMethod === 'phone' ? data.phone || undefined : undefined,
+        verification_code:
+          registerMethod === 'email'
+            ? verificationCode || undefined
+            : undefined,
+        sms_code: registerMethod === 'phone' ? smsCode || undefined : undefined,
         aff_code: getAffiliateCode(),
         turnstile: turnstileToken,
       })
@@ -181,6 +236,123 @@ export function SignUpForm({
   async function handleSendVerificationCode() {
     await sendCode(emailValue || '')
   }
+
+  async function handleSendSmsCode() {
+    await sendSmsCode(phoneValue || '')
+  }
+
+  const verificationContent = (
+    <>
+      {registerMethod === 'phone' && phoneRegisterEnabled && (
+        <>
+          <FormField
+            control={form.control}
+            name='phone'
+            render={({ field }) => (
+              <FormItem>
+                <FormLabel>{t('Phone Number')}</FormLabel>
+                <FormControl>
+                  <Input
+                    placeholder={t('Enter your phone number')}
+                    inputMode='tel'
+                    autoComplete='tel'
+                    {...field}
+                  />
+                </FormControl>
+                <FormMessage />
+              </FormItem>
+            )}
+          />
+
+          <div className='flex items-end gap-2'>
+            <div className='flex-1'>
+              <Input
+                placeholder={t('SMS verification code')}
+                value={smsCode}
+                onChange={(e) => setSmsCode(e.target.value)}
+                inputMode='numeric'
+                autoComplete='one-time-code'
+              />
+            </div>
+            <Button
+              variant='outline'
+              type='button'
+              disabled={
+                isLoading ||
+                isSendingSmsCode ||
+                isSmsActive ||
+                !phoneValue ||
+                !turnstileReady
+              }
+              onClick={handleSendSmsCode}
+            >
+              {isSmsActive ? (
+                t('Resend ({{seconds}}s)', { seconds: smsSecondsLeft })
+              ) : isSendingSmsCode ? (
+                <Loader2 className='h-4 w-4 animate-spin' />
+              ) : (
+                t('Send code')
+              )}
+            </Button>
+          </div>
+        </>
+      )}
+
+      {registerMethod === 'email' && emailRegisterEnabled && (
+        <>
+          <FormField
+            control={form.control}
+            name='email'
+            render={({ field }) => (
+              <FormItem>
+                <FormLabel>{t('Email (required for verification)')}</FormLabel>
+                <FormControl>
+                  <Input
+                    placeholder={t('name@example.com')}
+                    type='email'
+                    autoComplete='email'
+                    {...field}
+                  />
+                </FormControl>
+                <FormMessage />
+              </FormItem>
+            )}
+          />
+
+          <div className='flex items-end gap-2'>
+            <div className='flex-1'>
+              <Input
+                placeholder={t('Verification code')}
+                value={verificationCode}
+                onChange={(e) => setVerificationCode(e.target.value)}
+                autoComplete='one-time-code'
+              />
+            </div>
+            <Button
+              variant='outline'
+              type='button'
+              disabled={
+                isLoading ||
+                isSendingCode ||
+                isActive ||
+                !emailValue ||
+                !turnstileReady
+              }
+              onClick={handleSendVerificationCode}
+            >
+              {isActive ? (
+                t('Resend ({{seconds}}s)', { seconds: secondsLeft })
+              ) : isSendingCode ? (
+                <Loader2 className='h-4 w-4 animate-spin' />
+              ) : (
+                t('Send code')
+              )}
+            </Button>
+          </div>
+        </>
+      )}
+    </>
+  )
 
   const handleOpenWeChatDialog = () => {
     if (requiresLegalConsent && !agreedToLegal) {
@@ -277,61 +449,36 @@ export function SignUpForm({
           )}
         />
 
-        {/* Email Verification Section */}
-        {emailVerificationRequired && (
-          <>
-            {/* Email Field */}
-            <FormField
-              control={form.control}
-              name='email'
-              render={({ field }) => (
-                <FormItem>
-                  <FormLabel>
-                    {t('Email (required for verification)')}
-                  </FormLabel>
-                  <FormControl>
-                    <Input
-                      placeholder={t('name@example.com')}
-                      type='email'
-                      {...field}
-                    />
-                  </FormControl>
-                  <FormMessage />
-                </FormItem>
-              )}
-            />
-
-            {/* Verification Code Field */}
-            <div className='flex items-end gap-2'>
-              <div className='flex-1'>
-                <Input
-                  placeholder={t('Verification code')}
-                  value={verificationCode}
-                  onChange={(e) => setVerificationCode(e.target.value)}
-                />
-              </div>
-              <Button
-                variant='outline'
-                type='button'
-                disabled={
-                  isLoading ||
-                  isSendingCode ||
-                  isActive ||
-                  !emailValue ||
-                  !turnstileReady
-                }
-                onClick={handleSendVerificationCode}
-              >
-                {isActive ? (
-                  t('Resend ({{seconds}}s)', { seconds: secondsLeft })
-                ) : isSendingCode ? (
-                  <Loader2 className='h-4 w-4 animate-spin' />
-                ) : (
-                  t('Send code')
-                )}
-              </Button>
-            </div>
-          </>
+        {hasRegisterMethod ? (
+          showRegisterTabs ? (
+            <Tabs
+              value={registerMethod}
+              onValueChange={(value) =>
+                setRegisterMethod(value as 'phone' | 'email')
+              }
+            >
+              <TabsList className='w-full'>
+                <TabsTrigger value='phone'>
+                  {t('Phone registration')}
+                </TabsTrigger>
+                <TabsTrigger value='email'>
+                  {t('Email registration')}
+                </TabsTrigger>
+              </TabsList>
+              <TabsContent value='phone' className='grid gap-4'>
+                {verificationContent}
+              </TabsContent>
+              <TabsContent value='email' className='grid gap-4'>
+                {verificationContent}
+              </TabsContent>
+            </Tabs>
+          ) : (
+            verificationContent
+          )
+        ) : (
+          <p className='text-muted-foreground text-sm'>
+            {t('Registration is currently unavailable')}
+          </p>
         )}
 
         {/* Turnstile */}
@@ -358,7 +505,8 @@ export function SignUpForm({
           disabled={
             isLoading ||
             (requiresLegalConsent && !agreedToLegal) ||
-            !turnstileReady
+            !turnstileReady ||
+            !hasRegisterMethod
           }
         >
           {isLoading ? <Loader2 className='h-4 w-4 animate-spin' /> : null}

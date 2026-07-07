@@ -8,6 +8,7 @@ import (
 
 	"github.com/QuantumNous/new-api/common"
 	"github.com/QuantumNous/new-api/constant"
+	"github.com/QuantumNous/new-api/i18n"
 	"github.com/QuantumNous/new-api/logger"
 	"github.com/QuantumNous/new-api/middleware"
 	"github.com/QuantumNous/new-api/model"
@@ -92,6 +93,8 @@ func buildStatusResponse() gin.H {
 		"register_enabled":              common.RegisterEnabled,
 		"password_login_enabled":        common.PasswordLoginEnabled,
 		"password_register_enabled":     common.PasswordRegisterEnabled,
+		"phone_register_enabled":        common.PhoneRegisterEnabled,
+		"sms_verification_enabled":      common.SMSVerificationEnabled,
 		"default_use_auto_group":        setting.DefaultUseAutoGroup,
 
 		"usd_exchange_rate": operation_setting.USDExchangeRate,
@@ -314,6 +317,38 @@ func SendEmailVerification(c *gin.Context) {
 		"message": "",
 	})
 	return
+}
+
+func SendPhoneVerification(c *gin.Context) {
+	if !common.PhoneRegisterEnabled {
+		common.ApiErrorI18n(c, i18n.MsgUserRegisterDisabled)
+		return
+	}
+	phone, err := common.NormalizeMainlandPhone(c.Query("phone"))
+	if err != nil {
+		c.JSON(http.StatusOK, gin.H{
+			"success": false,
+			"message": "无效的手机号",
+		})
+		return
+	}
+	if model.IsPhoneAlreadyTaken(phone) {
+		c.JSON(http.StatusOK, gin.H{
+			"success": false,
+			"message": "手机号已被占用",
+		})
+		return
+	}
+	code := common.GenerateNumericVerificationCode(common.SMSCodeLength)
+	if err := common.SendSMSVerificationCode(phone, code); err != nil {
+		common.ApiError(c, err)
+		return
+	}
+	common.RegisterVerificationCodeWithKey(phone, code, common.PhoneVerificationPurpose)
+	c.JSON(http.StatusOK, gin.H{
+		"success": true,
+		"message": "",
+	})
 }
 
 func SendPasswordResetEmail(c *gin.Context) {

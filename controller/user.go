@@ -36,7 +36,7 @@ func Login(c *gin.Context) {
 		return
 	}
 	var loginRequest LoginRequest
-	err := json.NewDecoder(c.Request.Body).Decode(&loginRequest)
+	err := common.DecodeJson(c.Request.Body, &loginRequest)
 	if err != nil {
 		common.ApiErrorI18n(c, i18n.MsgInvalidParams)
 		return
@@ -183,16 +183,49 @@ func Register(c *gin.Context) {
 		return
 	}
 	var user model.User
-	err := json.NewDecoder(c.Request.Body).Decode(&user)
+	err := common.DecodeJson(c.Request.Body, &user)
 	if err != nil {
 		common.ApiErrorI18n(c, i18n.MsgInvalidParams)
 		return
+	}
+	user.Phone = strings.TrimSpace(user.Phone)
+	if user.Phone != "" {
+		normalizedPhone, err := common.NormalizeMainlandPhone(user.Phone)
+		if err != nil {
+			common.ApiErrorI18n(c, i18n.MsgInvalidParams)
+			return
+		}
+		user.Phone = normalizedPhone
 	}
 	if err := common.Validate.Struct(&user); err != nil {
 		common.ApiErrorI18n(c, i18n.MsgUserInputInvalid, map[string]any{"Error": err.Error()})
 		return
 	}
-	if common.EmailVerificationEnabled {
+	hasPhoneRegister := user.Phone != ""
+	hasEmailRegister := user.Email != ""
+	if hasPhoneRegister && !common.PhoneRegisterEnabled {
+		common.ApiErrorI18n(c, i18n.MsgUserRegisterDisabled)
+		return
+	}
+	if hasEmailRegister && !common.EmailVerificationEnabled {
+		common.ApiErrorI18n(c, i18n.MsgUserEmailVerificationRequired)
+		return
+	}
+	if !hasPhoneRegister && !hasEmailRegister {
+		common.ApiErrorI18n(c, i18n.MsgUserEmailVerificationRequired)
+		return
+	}
+	if hasPhoneRegister {
+		if user.SmsCode == "" {
+			common.ApiErrorI18n(c, i18n.MsgUserVerificationCodeError)
+			return
+		}
+		if !common.VerifyCodeWithKey(user.Phone, user.SmsCode, common.PhoneVerificationPurpose) {
+			common.ApiErrorI18n(c, i18n.MsgUserVerificationCodeError)
+			return
+		}
+	}
+	if hasEmailRegister {
 		if user.Email == "" || user.VerificationCode == "" {
 			common.ApiErrorI18n(c, i18n.MsgUserEmailVerificationRequired)
 			return
@@ -202,7 +235,7 @@ func Register(c *gin.Context) {
 			return
 		}
 	}
-	exist, err := model.CheckUserExistOrDeleted(user.Username, user.Email)
+	exist, err := model.CheckUserExistOrDeleted(user.Username, user.Email, user.Phone)
 	if err != nil {
 		common.ApiErrorI18n(c, i18n.MsgDatabaseError)
 		common.SysLog(fmt.Sprintf("CheckUserExistOrDeleted error: %v", err))
@@ -221,8 +254,11 @@ func Register(c *gin.Context) {
 		InviterId:   inviterId,
 		Role:        common.RoleCommonUser, // 明确设置角色为普通用户
 	}
-	if common.EmailVerificationEnabled {
+	if hasEmailRegister {
 		cleanUser.Email = user.Email
+	}
+	if hasPhoneRegister {
+		cleanUser.Phone = user.Phone
 	}
 	if err := cleanUser.Insert(inviterId); err != nil {
 		common.ApiError(c, err)
@@ -268,6 +304,12 @@ func Register(c *gin.Context) {
 		"success": true,
 		"message": "",
 	})
+	if hasPhoneRegister {
+		common.DeleteKey(user.Phone, common.PhoneVerificationPurpose)
+	}
+	if hasEmailRegister {
+		common.DeleteKey(user.Email, common.EmailVerificationPurpose)
+	}
 	return
 }
 

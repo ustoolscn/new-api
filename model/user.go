@@ -30,12 +30,14 @@ type User struct {
 	Role             int            `json:"role" gorm:"type:int;default:1"`   // admin, common
 	Status           int            `json:"status" gorm:"type:int;default:1"` // enabled, disabled
 	Email            string         `json:"email" gorm:"index" validate:"max=50"`
+	Phone            string         `json:"phone" gorm:"column:phone;index" validate:"max=20"`
 	GitHubId         string         `json:"github_id" gorm:"column:github_id;index"`
 	DiscordId        string         `json:"discord_id" gorm:"column:discord_id;index"`
 	OidcId           string         `json:"oidc_id" gorm:"column:oidc_id;index"`
 	WeChatId         string         `json:"wechat_id" gorm:"column:wechat_id;index"`
 	TelegramId       string         `json:"telegram_id" gorm:"column:telegram_id;index"`
 	VerificationCode string         `json:"verification_code" gorm:"-:all"`                         // this field is only for Email verification, don't save it to database!
+	SmsCode          string         `json:"sms_code" gorm:"-:all"`                                  // this field is only for phone verification, don't save it to database!
 	AccessToken      *string        `json:"-" gorm:"type:char(32);column:access_token;uniqueIndex"` // this token is for system management
 	Quota            int            `json:"quota" gorm:"type:int;default:0"`
 	UsedQuota        int            `json:"used_quota" gorm:"type:int;default:0;column:used_quota"` // used quota
@@ -163,17 +165,18 @@ func generateDefaultSidebarConfigForRole(userRole int) string {
 }
 
 // CheckUserExistOrDeleted check if user exist or deleted, if not exist, return false, nil, if deleted or exist, return true, nil
-func CheckUserExistOrDeleted(username string, email string) (bool, error) {
+func CheckUserExistOrDeleted(username string, email string, phone ...string) (bool, error) {
 	var user User
 
-	// err := DB.Unscoped().First(&user, "username = ? or email = ?", username, email).Error
-	// check email if empty
 	var err error
-	if email == "" {
-		err = DB.Unscoped().First(&user, "username = ?", username).Error
-	} else {
-		err = DB.Unscoped().First(&user, "username = ? or email = ?", username, email).Error
+	query := DB.Unscoped().Where("username = ?", username)
+	if email != "" {
+		query = query.Or("email = ?", email)
 	}
+	if len(phone) > 0 && phone[0] != "" {
+		query = query.Or("phone = ?", phone[0])
+	}
+	err = query.First(&user).Error
 	if err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
 			// not exist, return false, nil
@@ -678,8 +681,12 @@ func (user *User) ValidateAndFill() (err error) {
 	if username == "" || password == "" {
 		return ErrUserEmptyCredentials
 	}
-	// find by username or email
-	err = DB.Where("username = ? OR email = ?", username, username).First(user).Error
+	normalizedPhone, phoneErr := common.NormalizeMainlandPhone(username)
+	query := DB.Where("username = ? OR email = ?", username, username)
+	if phoneErr == nil {
+		query = query.Or("phone = ?", normalizedPhone)
+	}
+	err = query.First(user).Error
 	if err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
 			return ErrInvalidCredentials
@@ -762,6 +769,10 @@ func (user *User) FillUserByTelegramId() error {
 
 func IsEmailAlreadyTaken(email string) bool {
 	return DB.Unscoped().Where("email = ?", email).Find(&User{}).RowsAffected == 1
+}
+
+func IsPhoneAlreadyTaken(phone string) bool {
+	return DB.Unscoped().Where("phone = ?", phone).Find(&User{}).RowsAffected == 1
 }
 
 func IsWeChatIdAlreadyTaken(wechatId string) bool {
