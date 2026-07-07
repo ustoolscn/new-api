@@ -1,6 +1,9 @@
-name: Publish Docker image (manual branch)
+name: Publish Docker image (branch)
 
 on:
+  push:
+    branches:
+      - cooper
   workflow_dispatch:
     inputs:
       branch:
@@ -24,12 +27,12 @@ jobs:
         uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
         with:
           fetch-depth: 1
-          ref: ${{ inputs.branch }}
+          ref: ${{ github.event.inputs.branch || github.ref_name }}
 
       - name: Resolve Docker tags
         id: version
         env:
-          BRANCH_NAME: ${{ inputs.branch }}
+          BRANCH_NAME: ${{ github.event.inputs.branch || github.ref_name }}
         run: |
           TAG_PREFIX=$(printf '%s' "$BRANCH_NAME" | tr '[:upper:]' '[:lower:]' | sed -E 's/[^a-z0-9_.-]+/-/g; s/^[.-]+//; s/[.-]+$//')
           TAG_PREFIX=${TAG_PREFIX:0:105}
