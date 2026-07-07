@@ -1,0 +1,117 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1400" height="980" viewBox="0 0 1400 980">
+  <defs>
+    <style>
+      .bg { fill: #f7f4ef; }
+      .panel { fill: #fffdf9; stroke: #d8d0c3; stroke-width: 1.5; }
+      .title { font: 700 34px "Microsoft YaHei", "Noto Sans CJK SC", Arial, sans-serif; fill: #202124; }
+      .subtitle { font: 400 18px "Microsoft YaHei", "Noto Sans CJK SC", Arial, sans-serif; fill: #5f6368; }
+      .h2 { font: 700 22px "Microsoft YaHei", "Noto Sans CJK SC", Arial, sans-serif; fill: #202124; }
+      .label { font: 500 17px "Microsoft YaHei", "Noto Sans CJK SC", Arial, sans-serif; fill: #34383d; }
+      .small { font: 400 14px "Microsoft YaHei", "Noto Sans CJK SC", Arial, sans-serif; fill: #686f78; }
+      .tiny { font: 400 12px "Microsoft YaHei", "Noto Sans CJK SC", Arial, sans-serif; fill: #686f78; }
+      .num { font: 700 25px "Microsoft YaHei", "Noto Sans CJK SC", Arial, sans-serif; fill: #202124; }
+      .big-num { font: 800 42px "Microsoft YaHei", "Noto Sans CJK SC", Arial, sans-serif; fill: #202124; }
+      .white { fill: #fff; }
+      .green { fill: #15825f; }
+      .green-soft { fill: #dff3eb; }
+      .blue { fill: #2563a9; }
+      .blue-soft { fill: #e1edf9; }
+      .amber { fill: #b86b00; }
+      .amber-soft { fill: #fff1d6; }
+      .red { fill: #b64242; }
+      .red-soft { fill: #fde5df; }
+      .ink { fill: #202124; }
+      .muted { fill: #68717d; }
+      .axis { stroke: #b8b0a4; stroke-width: 1; }
+      .dash { stroke: #b8b0a4; stroke-width: 1; stroke-dasharray: 5 6; }
+    </style>
+  </defs>
+
+  <rect class="bg" width="1400" height="980"/>
+
+  <text x="70" y="70" class="title">6 月 Pro 号池成本与利润分析</text>
+  <text x="70" y="104" class="subtitle">口径：用户消耗确认收入；充值未消耗部分视为平台未来交付负债；汇率统一按 1 USD = ¥7</text>
+
+  <rect x="70" y="135" width="1260" height="118" rx="8" class="panel"/>
+  <text x="105" y="178" class="h2">最稳配置结论</text>
+  <text x="105" y="219" class="big-num">25 个总号</text>
+  <text x="348" y="205" class="label">月总成本约</text>
+  <text x="348" y="234" class="num">¥49,050</text>
+  <text x="575" y="205" class="label">月利润约</text>
+  <text x="575" y="234" class="num">¥22,584</text>
+  <text x="790" y="205" class="label">销售利润率</text>
+  <text x="790" y="234" class="num">31.5%</text>
+  <text x="1015" y="205" class="label">利润 / 成本</text>
+  <text x="1015" y="234" class="num">46.0%</text>
+
+  <rect x="70" y="285" width="780" height="390" rx="8" class="panel"/>
+  <text x="105" y="328" class="h2">利润瀑布图</text>
+  <text x="105" y="354" class="small">确认收入只看用户实际消耗，不把充值直接算利润</text>
+
+  <line x1="145" y1="610" x2="790" y2="610" class="axis"/>
+  <line x1="145" y1="385" x2="145" y2="610" class="axis"/>
+  <text x="98" y="614" class="tiny">0</text>
+  <text x="83" y="543" class="tiny">25k</text>
+  <text x="83" y="472" class="tiny">50k</text>
+  <text x="83" y="401" class="tiny">75k</text>
+  <line x1="145" y1="539" x2="790" y2="539" class="dash"/>
+  <line x1="145" y1="468" x2="790" y2="468" class="dash"/>
+  <line x1="145" y1="397" x2="790" y2="397" class="dash"/>
+
+  <!-- scale: max 75,000 CNY, chart height 213 -->
+  <rect x="190" y="406.5" width="105" height="203.5" rx="5" class="green"/>
+  <text x="173" y="638" class="label">确认收入</text>
+  <text x="178" y="386" class="num">¥71,634</text>
+
+  <rect x="360" y="505.6" width="105" height="104.4" rx="5" class="red"/>
+  <text x="344" y="638" class="label">运营成本</text>
+  <text x="342" y="488" class="num">-¥36,750</text>
+  <text x="342" y="665" class="tiny">25 号 + 服务器</text>
+
+  <rect x="530" y="575.1" width="105" height="34.9" rx="5" class="amber"/>
+  <text x="506" y="638" class="label">余额准备</text>
+  <text x="513" y="557" class="num">-¥12,300</text>
+  <text x="498" y="665" class="tiny">未消耗余额未来交付成本</text>
+
+  <rect x="700" y="545.9" width="105" height="64.1" rx="5" class="blue"/>
+  <text x="707" y="638" class="label">净利润</text>
+  <text x="689" y="528" class="num">¥22,584</text>
+
+  <rect x="880" y="285" width="450" height="390" rx="8" class="panel"/>
+  <text x="915" y="328" class="h2">成本拆分</text>
+  <text x="915" y="354" class="small">最稳按 25 个总号准备，覆盖 6 月最高单日压力</text>
+
+  <rect x="915" y="392" width="350" height="48" rx="6" class="red-soft"/>
+  <rect x="915" y="392" width="318" height="48" rx="6" class="red"/>
+  <text x="933" y="423" class="white label">Pro 账号：¥35,000</text>
+  <text x="1276" y="423" class="small">71.4%</text>
+
+  <rect x="915" y="462" width="350" height="48" rx="6" class="amber-soft"/>
+  <rect x="915" y="462" width="88" height="48" rx="6" class="amber"/>
+  <text x="933" y="493" class="white label">余额交付准备：¥12,300</text>
+  <text x="1276" y="493" class="small">25.1%</text>
+
+  <rect x="915" y="532" width="350" height="48" rx="6" class="blue-soft"/>
+  <rect x="915" y="532" width="13" height="48" rx="6" class="blue"/>
+  <text x="933" y="563" class="ink label">服务器：¥1,750</text>
+  <text x="1276" y="563" class="small">3.6%</text>
+
+  <line x1="915" y1="615" x2="1265" y2="615" class="axis"/>
+  <text x="915" y="646" class="label">总成本：¥49,050</text>
+
+  <rect x="70" y="705" width="600" height="210" rx="8" class="panel"/>
+  <text x="105" y="748" class="h2">为什么按 25 个号算最稳</text>
+  <text x="105" y="786" class="label">6 月最高单日：2026-06-25</text>
+  <text x="105" y="819" class="small">当天平台消耗 ¥4,886，对应官方原价约 $6,981</text>
+  <text x="105" y="852" class="small">按单号每周 $2,500 均摊，需要 20 个可用号</text>
+  <text x="105" y="885" class="small">再按 20% 封号率准备：20 / 0.8 = 25 个总号</text>
+
+  <rect x="700" y="705" width="630" height="210" rx="8" class="panel"/>
+  <text x="735" y="748" class="h2">用户未消耗余额</text>
+  <text x="735" y="786" class="label">当前未交付余额：¥52,691.50</text>
+  <text x="735" y="819" class="small">这不是利润，是未来要交付的额度负债</text>
+  <text x="735" y="852" class="small">按 1 折售价反推官方原价约 $75,274</text>
+  <text x="735" y="885" class="small">考虑 20% 封号后，预计未来交付成本约 ¥12,300</text>
+
+  <text x="70" y="952" class="tiny">数据来源：本地数据库只读聚合；统计区间 2026-06-01 00:00:00 至 2026-07-01 00:00:00（北京时间）。</text>
+</svg>

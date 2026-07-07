@@ -1,0 +1,102 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1400" height="980" viewBox="0 0 1400 980">
+  <defs>
+    <style>
+      .bg { fill: #f6f7f4; }
+      .panel { fill: #fffefa; stroke: #d5d8cf; stroke-width: 1.5; }
+      .title { font: 700 34px "Microsoft YaHei", "Noto Sans CJK SC", Arial, sans-serif; fill: #1f2328; }
+      .subtitle { font: 400 18px "Microsoft YaHei", "Noto Sans CJK SC", Arial, sans-serif; fill: #59616b; }
+      .h2 { font: 700 22px "Microsoft YaHei", "Noto Sans CJK SC", Arial, sans-serif; fill: #1f2328; }
+      .label { font: 500 17px "Microsoft YaHei", "Noto Sans CJK SC", Arial, sans-serif; fill: #2f363d; }
+      .small { font: 400 14px "Microsoft YaHei", "Noto Sans CJK SC", Arial, sans-serif; fill: #626b75; }
+      .tiny { font: 400 12px "Microsoft YaHei", "Noto Sans CJK SC", Arial, sans-serif; fill: #626b75; }
+      .num { font: 700 25px "Microsoft YaHei", "Noto Sans CJK SC", Arial, sans-serif; fill: #1f2328; }
+      .big { font: 800 40px "Microsoft YaHei", "Noto Sans CJK SC", Arial, sans-serif; fill: #1f2328; }
+      .white { fill: #fff; }
+      .green { fill: #13845f; }
+      .green-soft { fill: #dff2e9; }
+      .blue { fill: #2563a9; }
+      .blue-soft { fill: #e2ecf8; }
+      .teal { fill: #047b83; }
+      .teal-soft { fill: #d9f0f1; }
+      .amber { fill: #b26a00; }
+      .amber-soft { fill: #fff0d2; }
+      .red { fill: #b5453f; }
+      .red-soft { fill: #f9e3dd; }
+      .axis { stroke: #aeb7ad; stroke-width: 1; }
+      .dash { stroke: #aeb7ad; stroke-width: 1; stroke-dasharray: 5 6; }
+    </style>
+  </defs>
+
+  <rect class="bg" width="1400" height="980"/>
+
+  <text x="70" y="70" class="title">网站价格从官方 1 折提高到 2 折：利润变化</text>
+  <text x="70" y="104" class="subtitle">前提：用量不下降；按最稳 25 个号、服务器 $250/月、汇率 1 USD = ¥7；收入按用户实际消耗确认</text>
+
+  <rect x="70" y="135" width="1260" height="130" rx="8" class="panel"/>
+  <text x="105" y="179" class="h2">一句话结论</text>
+  <text x="105" y="225" class="big">月利润约从 ¥22,584 提高到 ¥94,219 - ¥100,369</text>
+
+  <rect x="70" y="300" width="600" height="300" rx="8" class="panel"/>
+  <text x="105" y="343" class="h2">当前 1 折</text>
+  <text x="105" y="386" class="label">确认收入</text>
+  <text x="300" y="386" class="num">¥71,634</text>
+  <text x="105" y="426" class="label">25 号 + 服务器</text>
+  <text x="300" y="426" class="num">-¥36,750</text>
+  <text x="105" y="466" class="label">未消耗余额交付准备</text>
+  <text x="300" y="466" class="num">-¥12,300</text>
+  <line x1="105" y1="492" x2="595" y2="492" class="axis"/>
+  <text x="105" y="535" class="label">实际利润</text>
+  <text x="300" y="535" class="big">¥22,584</text>
+  <text x="105" y="570" class="small">销售利润率：31.5%</text>
+
+  <rect x="730" y="300" width="600" height="300" rx="8" class="panel"/>
+  <text x="765" y="343" class="h2">提高到 2 折</text>
+  <text x="765" y="386" class="label">确认收入</text>
+  <text x="980" y="386" class="num">¥143,269</text>
+  <text x="765" y="426" class="label">25 号 + 服务器</text>
+  <text x="980" y="426" class="num">-¥36,750</text>
+  <text x="765" y="466" class="label">老余额保护口径</text>
+  <text x="980" y="466" class="num">利润 ¥94,219</text>
+  <text x="765" y="506" class="label">老余额按新价消耗</text>
+  <text x="980" y="506" class="num">利润 ¥100,369</text>
+  <line x1="765" y1="532" x2="1255" y2="532" class="axis"/>
+  <text x="765" y="570" class="small">销售利润率：65.8% - 70.1%</text>
+
+  <rect x="70" y="635" width="780" height="270" rx="8" class="panel"/>
+  <text x="105" y="678" class="h2">利润柱状对比</text>
+  <text x="105" y="704" class="small">单位：人民币 / 月</text>
+
+  <line x1="145" y1="855" x2="790" y2="855" class="axis"/>
+  <line x1="145" y1="725" x2="145" y2="855" class="axis"/>
+  <line x1="145" y1="790" x2="790" y2="790" class="dash"/>
+  <text x="95" y="859" class="tiny">0</text>
+  <text x="83" y="794" class="tiny">50k</text>
+  <text x="77" y="729" class="tiny">100k</text>
+
+  <rect x="210" y="825.6" width="120" height="29.4" rx="5" class="blue"/>
+  <text x="203" y="884" class="label">当前 1 折</text>
+  <text x="200" y="808" class="num">¥22,584</text>
+
+  <rect x="430" y="732.5" width="120" height="122.5" rx="5" class="green"/>
+  <text x="396" y="884" class="label">2 折 老余额保护</text>
+  <text x="414" y="715" class="num">¥94,219</text>
+
+  <rect x="650" y="724.5" width="120" height="130.5" rx="5" class="teal"/>
+  <text x="608" y="884" class="label">2 折 老余额新价</text>
+  <text x="633" y="707" class="num">¥100,369</text>
+
+  <rect x="880" y="635" width="450" height="270" rx="8" class="panel"/>
+  <text x="915" y="678" class="h2">用量下降容忍度</text>
+  <text x="915" y="720" class="label">只要不亏</text>
+  <text x="1115" y="720" class="num">保留 34.2%</text>
+  <text x="915" y="760" class="small">2 折收入跌到 ¥49,050 仍覆盖成本</text>
+
+  <text x="915" y="812" class="label">保持当前利润</text>
+  <text x="1115" y="812" class="num">保留 50.0%</text>
+  <text x="915" y="852" class="small">2 折后用量即使腰斩，利润仍约等于现在</text>
+
+  <rect x="915" y="872" width="350" height="16" rx="8" class="green-soft"/>
+  <rect x="915" y="872" width="175" height="16" rx="8" class="green"/>
+
+  <text x="70" y="952" class="tiny">说明：若老用户余额保护，则未消耗余额交付准备仍按约 ¥12,300；若余额按新 2 折价格扣费，则未来交付成本约降至 ¥6,150。</text>
+</svg>
