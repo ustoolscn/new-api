@@ -37,6 +37,14 @@ var (
 	errOriginalPasswordFail = errors.New("original password is incorrect")
 )
 
+func rejectReservedUsername(c *gin.Context, username string) bool {
+	if err := model.ValidateUsernameLoginIdentifier(username); err != nil {
+		common.ApiErrorI18n(c, i18n.MsgUserInputInvalid, map[string]any{"Error": err.Error()})
+		return true
+	}
+	return false
+}
+
 func Login(c *gin.Context) {
 	if !common.PasswordLoginEnabled {
 		common.ApiErrorI18n(c, i18n.MsgUserPasswordLoginDisabled)
@@ -199,6 +207,9 @@ func Register(c *gin.Context) {
 	user.Email = model.NormalizeEmail(user.Email)
 	if user.Username == "" {
 		common.ApiErrorI18n(c, i18n.MsgInvalidParams)
+		return
+	}
+	if rejectReservedUsername(c, user.Username) {
 		return
 	}
 	user.Phone = strings.TrimSpace(user.Phone)
@@ -528,6 +539,7 @@ func GetSelf(c *gin.Context) {
 		"role":              user.Role,
 		"status":            user.Status,
 		"email":             user.Email,
+		"phone":             user.Phone,
 		"github_id":         user.GitHubId,
 		"discord_id":        user.DiscordId,
 		"oidc_id":           user.OidcId,
@@ -705,6 +717,9 @@ func UpdateUser(c *gin.Context) {
 		common.ApiErrorI18n(c, i18n.MsgInvalidParams)
 		return
 	}
+	if rejectReservedUsername(c, updatedUser.Username) {
+		return
+	}
 	if updatedUser.Password == "" {
 		updatedUser.Password = "$I_LOVE_U" // make Validator happy :)
 	}
@@ -874,6 +889,14 @@ func UpdateSelf(c *gin.Context) {
 		common.ApiErrorI18n(c, i18n.MsgInvalidParams)
 		return
 	}
+	user.Username = strings.TrimSpace(user.Username)
+	if user.Username == "" {
+		common.ApiErrorI18n(c, i18n.MsgInvalidParams)
+		return
+	}
+	if rejectReservedUsername(c, user.Username) {
+		return
+	}
 
 	if user.Password == "" {
 		user.Password = "$I_LOVE_U" // make Validator happy :)
@@ -1000,6 +1023,9 @@ func CreateUser(c *gin.Context) {
 	user.Username = strings.TrimSpace(user.Username)
 	if err != nil || user.Username == "" || user.Password == "" {
 		common.ApiErrorI18n(c, i18n.MsgInvalidParams)
+		return
+	}
+	if rejectReservedUsername(c, user.Username) {
 		return
 	}
 	if err := common.Validate.Struct(&user); err != nil {
@@ -1249,6 +1275,11 @@ type emailBindRequest struct {
 	Code  string `json:"code"`
 }
 
+type phoneBindRequest struct {
+	Phone string `json:"phone"`
+	Code  string `json:"code"`
+}
+
 func EmailBind(c *gin.Context) {
 	var req emailBindRequest
 	if err := common.DecodeJson(c.Request.Body, &req); err != nil {
@@ -1285,6 +1316,44 @@ func EmailBind(c *gin.Context) {
 		"message": "",
 	})
 	return
+}
+
+func PhoneBind(c *gin.Context) {
+	var req phoneBindRequest
+	if err := common.DecodeJson(c.Request.Body, &req); err != nil {
+		common.ApiError(c, errors.New("invalid request body"))
+		return
+	}
+	phone, err := common.NormalizeMainlandPhone(req.Phone)
+	if err != nil {
+		common.ApiErrorI18n(c, i18n.MsgInvalidParams)
+		return
+	}
+	if !common.VerifyCodeWithKey(phone, req.Code, common.PhoneVerificationPurpose) {
+		common.ApiErrorI18n(c, i18n.MsgUserVerificationCodeError)
+		return
+	}
+	user, err := model.GetUserById(c.GetInt("id"), false)
+	if err != nil {
+		common.ApiError(c, err)
+		return
+	}
+	if err := model.BindPhoneToUser(user, phone); err != nil {
+		if errors.Is(err, model.ErrPhoneAlreadyTaken) {
+			c.JSON(http.StatusOK, gin.H{
+				"success": false,
+				"message": "手机号已被占用",
+			})
+			return
+		}
+		common.ApiError(c, err)
+		return
+	}
+	common.DeleteKey(phone, common.PhoneVerificationPurpose)
+	c.JSON(http.StatusOK, gin.H{
+		"success": true,
+		"message": "",
+	})
 }
 
 type topUpRequest struct {

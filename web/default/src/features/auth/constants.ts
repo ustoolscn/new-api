@@ -49,10 +49,21 @@ export const registerFormSchema = z
     path: ['confirmPassword'],
   })
 
-export const forgotPasswordFormSchema = z.object({
+export const forgotPasswordEmailFormSchema = z.object({
   email: z.string().email({
     message: 'Please enter a valid email address',
   }),
+})
+
+export const forgotPasswordPhoneFormSchema = z.object({
+  phone: z.string().min(1, 'Please enter your phone number'),
+  code: z.string().min(1, 'Please enter your reset code'),
+})
+
+export const forgotPasswordFormSchema = z.object({
+  email: z.string().optional(),
+  phone: z.string().optional(),
+  code: z.string().optional(),
 })
 
 export const otpFormSchema = z.object({

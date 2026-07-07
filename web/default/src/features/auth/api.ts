@@ -75,6 +75,28 @@ export async function sendPasswordResetEmail(
   return res.data
 }
 
+// Send password reset SMS
+export async function sendPasswordResetPhone(
+  phone: string,
+  turnstile?: string
+): Promise<ApiResponse> {
+  const res = await api.get('/api/reset_password/phone', {
+    params: { phone, turnstile },
+  })
+  return res.data
+}
+
+// Reset password with an SMS code
+export async function resetPasswordByPhone(
+  phone: string,
+  token: string
+): Promise<ApiResponse> {
+  const res = await api.post('/api/user/reset', { phone, token }, {
+    skipBusinessError: true,
+  } as Record<string, unknown>)
+  return res.data
+}
+
 // ----------------------------------------------------------------------------
 // OAuth
 // ----------------------------------------------------------------------------

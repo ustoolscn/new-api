@@ -168,6 +168,40 @@ export function useUsersColumns(): ColumnDef<User>[] {
       meta: { mobileBadge: true },
     },
     {
+      accessorKey: 'email',
+      header: ({ column }) => (
+        <DataTableColumnHeader column={column} title={t('Email')} />
+      ),
+      cell: ({ row }) => {
+        const email = row.getValue('email') as string | undefined
+        return (
+          <LongText className='text-muted-foreground max-w-[180px] text-sm'>
+            {email || '-'}
+          </LongText>
+        )
+      },
+      enableSorting: false,
+      size: 210,
+      meta: { label: t('Email'), mobileOrder: 40 },
+    },
+    {
+      accessorKey: 'phone',
+      header: ({ column }) => (
+        <DataTableColumnHeader column={column} title={t('Phone Number')} />
+      ),
+      cell: ({ row }) => {
+        const phone = row.getValue('phone') as string | undefined
+        return (
+          <LongText className='text-muted-foreground max-w-[140px] font-mono text-sm'>
+            {phone || '-'}
+          </LongText>
+        )
+      },
+      enableSorting: false,
+      size: 170,
+      meta: { label: t('Phone Number'), mobileOrder: 45 },
+    },
+    {
       id: 'quota',
       accessorKey: 'quota',
       header: t('Quota'),
@@ -227,7 +261,7 @@ export function useUsersColumns(): ColumnDef<User>[] {
         )
       },
       size: 170,
-      meta: { mobileOrder: 40 },
+      meta: { mobileOrder: 50 },
     },
     {
       accessorKey: 'last_ip',

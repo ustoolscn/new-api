@@ -16,7 +16,7 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 
 For commercial licensing, please contact support@quantumnous.com
 */
-import { Mail, Shield, Send, Link2, Unlink } from 'lucide-react'
+import { Mail, Shield, Send, Link2, Unlink, Smartphone } from 'lucide-react'
 import { useEffect, useMemo, useState, useCallback } from 'react'
 import { useTranslation } from 'react-i18next'
 import { SiGithub, SiWechat, SiLinux } from 'react-icons/si'
@@ -44,6 +44,7 @@ import {
 } from '../../api'
 import type { UserProfile, BindingItem } from '../../types'
 import { EmailBindDialog } from '../dialogs/email-bind-dialog'
+import { PhoneBindDialog } from '../dialogs/phone-bind-dialog'
 import { TelegramBindDialog } from '../dialogs/telegram-bind-dialog'
 import { WeChatBindDialog } from '../dialogs/wechat-bind-dialog'
 
@@ -56,7 +57,7 @@ interface AccountBindingsTabProps {
   onUpdate: () => void
 }
 
-type DialogKey = 'email' | 'wechat' | 'telegram'
+type DialogKey = 'email' | 'phone' | 'wechat' | 'telegram'
 
 export function AccountBindingsTab({
   profile,
@@ -148,6 +149,12 @@ export function AccountBindingsTab({
     return () => window.removeEventListener('storage', handleStorage)
   }, [onUpdate])
 
+  const getBindingButtonLabel = (binding: BindingItem) => {
+    if (!binding.isBound) return t('Bind')
+    if (binding.id === 'email' || binding.id === 'phone') return t('Change')
+    return t('Bound')
+  }
+
   // Memoize bindings to prevent unnecessary recalculations
   const bindings: BindingItem[] = useMemo(() => {
     if (!profile || !status) return []
@@ -161,6 +168,17 @@ export function AccountBindingsTab({
         isBound: Boolean(profile.email),
         isEnabled: true,
         onBind: () => dialogs.open('email'),
+      },
+      {
+        id: 'phone',
+        label: t('Phone Number'),
+        icon: Smartphone,
+        value: profile.phone,
+        isBound: Boolean(profile.phone),
+        isEnabled: Boolean(
+          status?.phone_register_enabled || status?.sms_verification_enabled
+        ),
+        onBind: () => dialogs.open('phone'),
       },
       {
         id: 'wechat',
@@ -296,13 +314,13 @@ export function AccountBindingsTab({
               size='sm'
               className='h-7 shrink-0 px-2.5 text-xs'
               onClick={binding.onBind}
-              disabled={binding.isBound && binding.id !== 'email'}
+              disabled={
+                binding.isBound &&
+                binding.id !== 'email' &&
+                binding.id !== 'phone'
+              }
             >
-              {binding.isBound
-                ? binding.id === 'email'
-                  ? t('Change')
-                  : t('Bound')
-                : t('Bind')}
+              {getBindingButtonLabel(binding)}
             </Button>
           </div>
         ))}
@@ -399,6 +417,16 @@ export function AccountBindingsTab({
           open ? dialogs.open('email') : dialogs.close('email')
         }
         currentEmail={profile.email}
+        onSuccess={onUpdate}
+      />
+
+      {/* Phone Bind Dialog */}
+      <PhoneBindDialog
+        open={dialogs.isOpen('phone')}
+        onOpenChange={(open) =>
+          open ? dialogs.open('phone') : dialogs.close('phone')
+        }
+        currentPhone={profile.phone}
         onSuccess={onUpdate}
       />
 

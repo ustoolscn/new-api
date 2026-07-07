@@ -20,6 +20,7 @@ import (
 type authAPIResponse struct {
 	Success bool   `json:"success"`
 	Message string `json:"message"`
+	Data    string `json:"data"`
 }
 
 func setupPhoneAuthControllerTestDB(t *testing.T) *gorm.DB {
@@ -35,6 +36,7 @@ func setupPhoneAuthControllerTestDB(t *testing.T) *gorm.DB {
 	common.PasswordLoginEnabled = true
 	common.EmailVerificationEnabled = false
 	common.PhoneRegisterEnabled = true
+	originalSMSVerificationEnabled := common.SMSVerificationEnabled
 
 	dsn := fmt.Sprintf("file:%s?mode=memory&cache=shared", strings.ReplaceAll(t.Name(), "/", "_"))
 	db, err := gorm.Open(sqlite.Open(dsn), &gorm.Config{})
@@ -49,6 +51,7 @@ func setupPhoneAuthControllerTestDB(t *testing.T) *gorm.DB {
 		common.PasswordLoginEnabled = true
 		common.EmailVerificationEnabled = false
 		common.PhoneRegisterEnabled = false
+		common.SMSVerificationEnabled = originalSMSVerificationEnabled
 		common.SetDatabaseTypes(originalMainDatabaseType, originalLogDatabaseType)
 		sqlDB, err := db.DB()
 		if err == nil {
@@ -64,6 +67,32 @@ func performPhoneAuthRequest(handler gin.HandlerFunc, body string) authAPIRespon
 	c, _ := gin.CreateTestContext(w)
 	c.Request = httptest.NewRequest(http.MethodPost, "/", bytes.NewBufferString(body))
 	c.Request.Header.Set("Content-Type", "application/json")
+
+	handler(c)
+
+	var payload authAPIResponse
+	_ = common.Unmarshal(w.Body.Bytes(), &payload)
+	return payload
+}
+
+func performPhoneAuthRequestAsUser(handler gin.HandlerFunc, userId int, body string) authAPIResponse {
+	w := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(w)
+	c.Set("id", userId)
+	c.Request = httptest.NewRequest(http.MethodPost, "/", bytes.NewBufferString(body))
+	c.Request.Header.Set("Content-Type", "application/json")
+
+	handler(c)
+
+	var payload authAPIResponse
+	_ = common.Unmarshal(w.Body.Bytes(), &payload)
+	return payload
+}
+
+func performPhoneAuthGetRequest(handler gin.HandlerFunc, target string) authAPIResponse {
+	w := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(w)
+	c.Request = httptest.NewRequest(http.MethodGet, target, nil)
 
 	handler(c)
 
@@ -92,6 +121,31 @@ func TestPhoneRegisterRejectsDuplicatePhone(t *testing.T) {
 		Username: "existing",
 		Password: hashedPassword,
 		Phone:    "13800138000",
+		Status:   common.UserStatusEnabled,
+	}).Error)
+	common.RegisterVerificationCodeWithKey("13800138000", "123456", common.PhoneVerificationPurpose)
+
+	res := performPhoneAuthRequest(Register, `{"username":"phone_user","password":"password123","phone":"13800138000","sms_code":"123456"}`)
+
+	assert.False(t, res.Success)
+}
+
+func TestPhoneRegisterRejectsPhoneNumberUsername(t *testing.T) {
+	setupPhoneAuthControllerTestDB(t)
+	common.RegisterVerificationCodeWithKey("13900139000", "123456", common.PhoneVerificationPurpose)
+
+	res := performPhoneAuthRequest(Register, `{"username":"13800138000","password":"password123","phone":"13900139000","sms_code":"123456"}`)
+
+	assert.False(t, res.Success)
+}
+
+func TestPhoneRegisterRejectsPhoneMatchingExistingUsername(t *testing.T) {
+	db := setupPhoneAuthControllerTestDB(t)
+	hashedPassword, err := common.Password2Hash("password123")
+	require.NoError(t, err)
+	require.NoError(t, db.Create(&model.User{
+		Username: "13800138000",
+		Password: hashedPassword,
 		Status:   common.UserStatusEnabled,
 	}).Error)
 	common.RegisterVerificationCodeWithKey("13800138000", "123456", common.PhoneVerificationPurpose)
@@ -130,4 +184,152 @@ func TestPasswordLoginAcceptsPhoneNumber(t *testing.T) {
 
 	require.NoError(t, user.ValidateAndFill())
 	assert.Equal(t, "phone_user", user.Username)
+}
+
+func TestPasswordLoginPrefersExactUsernameOverPhoneMatch(t *testing.T) {
+	db := setupPhoneAuthControllerTestDB(t)
+	phoneUserPassword, err := common.Password2Hash("phonepass123")
+	require.NoError(t, err)
+	exactUserPassword, err := common.Password2Hash("exactpass123")
+	require.NoError(t, err)
+	require.NoError(t, db.Create(&model.User{
+		Username: "phone_user",
+		Password: phoneUserPassword,
+		Phone:    "13800138000",
+		Status:   common.UserStatusEnabled,
+		Group:    "default",
+		AffCode:  "phone-user",
+	}).Error)
+	require.NoError(t, db.Create(&model.User{
+		Username: "13800138000",
+		Password: exactUserPassword,
+		Status:   common.UserStatusEnabled,
+		Group:    "default",
+		AffCode:  "exact-user",
+	}).Error)
+
+	user := model.User{
+		Username: "13800138000",
+		Password: "exactpass123",
+	}
+
+	require.NoError(t, user.ValidateAndFill())
+	assert.Equal(t, "13800138000", user.Username)
+}
+
+func TestPasswordResetAcceptsPhoneVerificationCode(t *testing.T) {
+	db := setupPhoneAuthControllerTestDB(t)
+	hashedPassword, err := common.Password2Hash("oldpass123")
+	require.NoError(t, err)
+	require.NoError(t, db.Create(&model.User{
+		Username: "phone_user",
+		Password: hashedPassword,
+		Phone:    "13800138000",
+		Status:   common.UserStatusEnabled,
+		Group:    "default",
+	}).Error)
+	common.RegisterVerificationCodeWithKey("13800138000", "123456", common.PasswordResetPurpose)
+
+	res := performPhoneAuthRequest(ResetPassword, `{"phone":"13800138000","token":"123456"}`)
+
+	assert.True(t, res.Success, res.Message)
+	require.NotEmpty(t, res.Data)
+	user := model.User{
+		Username: "phone_user",
+		Password: res.Data,
+	}
+	require.NoError(t, user.ValidateAndFill())
+	assert.False(t, common.VerifyCodeWithKey("13800138000", "123456", common.PasswordResetPurpose))
+}
+
+func TestPasswordResetRejectsInvalidPhoneVerificationCode(t *testing.T) {
+	db := setupPhoneAuthControllerTestDB(t)
+	hashedPassword, err := common.Password2Hash("oldpass123")
+	require.NoError(t, err)
+	require.NoError(t, db.Create(&model.User{
+		Username: "phone_user",
+		Password: hashedPassword,
+		Phone:    "13800138000",
+		Status:   common.UserStatusEnabled,
+		Group:    "default",
+	}).Error)
+	common.RegisterVerificationCodeWithKey("13800138000", "123456", common.PasswordResetPurpose)
+
+	res := performPhoneAuthRequest(ResetPassword, `{"phone":"13800138000","token":"000000"}`)
+
+	assert.False(t, res.Success)
+	user := model.User{
+		Username: "phone_user",
+		Password: "oldpass123",
+	}
+	require.NoError(t, user.ValidateAndFill())
+}
+
+func TestPasswordResetRejectsAmbiguousPhone(t *testing.T) {
+	db := setupPhoneAuthControllerTestDB(t)
+	hashedPassword, err := common.Password2Hash("oldpass123")
+	require.NoError(t, err)
+	require.NoError(t, db.Create(&model.User{
+		Username: "first_phone_user",
+		Password: hashedPassword,
+		Phone:    "13800138000",
+		Status:   common.UserStatusEnabled,
+		AffCode:  "first-phone-user",
+	}).Error)
+	require.NoError(t, db.Create(&model.User{
+		Username: "second_phone_user",
+		Password: hashedPassword,
+		Phone:    "13800138000",
+		Status:   common.UserStatusEnabled,
+		AffCode:  "second-phone-user",
+	}).Error)
+	common.RegisterVerificationCodeWithKey("13800138000", "123456", common.PasswordResetPurpose)
+
+	res := performPhoneAuthRequest(ResetPassword, `{"phone":"13800138000","token":"123456"}`)
+
+	assert.False(t, res.Success)
+}
+
+func TestSendPasswordResetPhoneDoesNotRevealMissingPhone(t *testing.T) {
+	setupPhoneAuthControllerTestDB(t)
+	common.SMSVerificationEnabled = false
+
+	res := performPhoneAuthGetRequest(SendPasswordResetPhone, "/?phone=13800138000")
+
+	assert.True(t, res.Success, res.Message)
+}
+
+func TestPhoneBindStoresVerifiedPhone(t *testing.T) {
+	db := setupPhoneAuthControllerTestDB(t)
+	require.NoError(t, db.Create(&model.User{
+		Username: "binding_user",
+		Password: "password123",
+		Status:   common.UserStatusEnabled,
+	}).Error)
+	common.RegisterVerificationCodeWithKey("13800138000", "123456", common.PhoneVerificationPurpose)
+
+	res := performPhoneAuthRequestAsUser(PhoneBind, 1, `{"phone":"13800138000","code":"123456"}`)
+
+	assert.True(t, res.Success, res.Message)
+	var user model.User
+	require.NoError(t, db.First(&user, 1).Error)
+	assert.Equal(t, "13800138000", user.Phone)
+	assert.False(t, common.VerifyCodeWithKey("13800138000", "123456", common.PhoneVerificationPurpose))
+}
+
+func TestPhoneBindRejectsInvalidVerificationCode(t *testing.T) {
+	db := setupPhoneAuthControllerTestDB(t)
+	require.NoError(t, db.Create(&model.User{
+		Username: "binding_user",
+		Password: "password123",
+		Status:   common.UserStatusEnabled,
+	}).Error)
+	common.RegisterVerificationCodeWithKey("13800138000", "123456", common.PhoneVerificationPurpose)
+
+	res := performPhoneAuthRequestAsUser(PhoneBind, 1, `{"phone":"13800138000","code":"000000"}`)
+
+	assert.False(t, res.Success)
+	var user model.User
+	require.NoError(t, db.First(&user, 1).Error)
+	assert.Empty(t, user.Phone)
 }

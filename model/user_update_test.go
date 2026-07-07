@@ -174,6 +174,101 @@ func TestValidateAndFillRejectsPasswordlessUser(t *testing.T) {
 	assert.Empty(t, stored.Password)
 }
 
+func TestSearchUsersMatchesPhone(t *testing.T) {
+	setupUserUpdateTestState(t)
+
+	require.NoError(t, DB.Create(&User{
+		Username:    "phone-search-user",
+		DisplayName: "Phone Search",
+		Password:    "old-password",
+		Phone:       "13800138000",
+		AffCode:     "phone-search",
+		Status:      common.UserStatusEnabled,
+		Group:       "default",
+	}).Error)
+
+	users, total, err := SearchUsers("13800138000", "", nil, nil, 0, 20)
+
+	require.NoError(t, err)
+	assert.Equal(t, int64(1), total)
+	require.Len(t, users, 1)
+	assert.Equal(t, "phone-search-user", users[0].Username)
+}
+
+func TestBindPhoneToUserRejectsTakenPhoneIdentifier(t *testing.T) {
+	setupUserUpdateTestState(t)
+
+	require.NoError(t, DB.Create(&User{
+		Id:       1,
+		Username: "phone-owner",
+		Password: "old-password",
+		Phone:    "13800138000",
+		AffCode:  "phone-owner",
+		Status:   common.UserStatusEnabled,
+	}).Error)
+	require.NoError(t, DB.Create(&User{
+		Id:       2,
+		Username: "binding-user",
+		Password: "old-password",
+		AffCode:  "binding-user",
+		Status:   common.UserStatusEnabled,
+	}).Error)
+
+	user := User{Id: 2}
+	require.NoError(t, user.FillUserById())
+
+	err := BindPhoneToUser(&user, "13800138000")
+
+	require.ErrorIs(t, err, ErrPhoneAlreadyTaken)
+}
+
+func TestBindPhoneToUserRejectsExistingUsernameIdentifier(t *testing.T) {
+	setupUserUpdateTestState(t)
+
+	require.NoError(t, DB.Create(&User{
+		Id:       1,
+		Username: "13800138000",
+		Password: "old-password",
+		AffCode:  "legacy-phone-username",
+		Status:   common.UserStatusEnabled,
+	}).Error)
+	require.NoError(t, DB.Create(&User{
+		Id:       2,
+		Username: "binding-user",
+		Password: "old-password",
+		AffCode:  "binding-user",
+		Status:   common.UserStatusEnabled,
+	}).Error)
+
+	user := User{Id: 2}
+	require.NoError(t, user.FillUserById())
+
+	err := BindPhoneToUser(&user, "13800138000")
+
+	require.ErrorIs(t, err, ErrPhoneAlreadyTaken)
+}
+
+func TestBindPhoneToUserStoresPhone(t *testing.T) {
+	setupUserUpdateTestState(t)
+
+	require.NoError(t, DB.Create(&User{
+		Id:       1,
+		Username: "binding-user",
+		Password: "old-password",
+		AffCode:  "binding-user",
+		Status:   common.UserStatusEnabled,
+	}).Error)
+
+	user := User{Id: 1}
+	require.NoError(t, user.FillUserById())
+
+	require.NoError(t, BindPhoneToUser(&user, "13800138000"))
+
+	var stored User
+	require.NoError(t, DB.First(&stored, 1).Error)
+	assert.Equal(t, "13800138000", stored.Phone)
+}
+
 func TestResetUserPasswordByEmailRequiresSingleActiveMatch(t *testing.T) {
 	setupUserUpdateTestState(t)
 

@@ -1,7 +1,6 @@
 package controller
 
 import (
-	"encoding/json"
 	"errors"
 	"fmt"
 	"net/http"
@@ -374,38 +373,84 @@ func SendPasswordResetEmail(c *gin.Context) {
 	})
 }
 
+func SendPasswordResetPhone(c *gin.Context) {
+	phone, err := common.NormalizeMainlandPhone(c.Query("phone"))
+	if err != nil {
+		common.ApiErrorI18n(c, i18n.MsgInvalidParams)
+		return
+	}
+	if _, err := model.GetUniqueUserByPhone(phone); err == nil {
+		code := common.GenerateNumericVerificationCode(common.SMSCodeLength)
+		if err := common.SendSMSVerificationCode(phone, code); err != nil {
+			logger.LogError(c.Request.Context(), fmt.Sprintf("failed to send password reset SMS to %s: %s", phone, err.Error()))
+		} else {
+			common.RegisterVerificationCodeWithKey(phone, code, common.PasswordResetPurpose)
+		}
+	} else if err != nil && !errors.Is(err, model.ErrPhoneNotFound) {
+		logger.LogWarn(c.Request.Context(), fmt.Sprintf("skip password reset SMS for %s: %s", phone, err.Error()))
+	}
+	c.JSON(http.StatusOK, gin.H{
+		"success": true,
+		"message": "",
+	})
+}
+
 type PasswordResetRequest struct {
 	Email string `json:"email"`
+	Phone string `json:"phone"`
 	Token string `json:"token"`
 }
 
 func ResetPassword(c *gin.Context) {
 	var req PasswordResetRequest
-	err := json.NewDecoder(c.Request.Body).Decode(&req)
+	err := common.DecodeJson(c.Request.Body, &req)
 	if err != nil {
 		common.ApiError(c, err)
 		return
 	}
 	req.Email = model.NormalizeEmail(req.Email)
-	if req.Email == "" || req.Token == "" {
+	if req.Token == "" || (req.Email == "" && req.Phone == "") || (req.Email != "" && req.Phone != "") {
 		common.ApiErrorI18n(c, i18n.MsgInvalidParams)
 		return
 	}
-	if !common.VerifyCodeWithKey(req.Email, req.Token, common.PasswordResetPurpose) {
-		common.ApiErrorI18n(c, i18n.MsgUserPasswordResetLinkInvalid)
-		return
-	}
+
+	var resetKey string
+	var resetErr error
 	password := common.GenerateVerificationCode(12)
-	err = model.ResetUserPasswordByEmail(req.Email, password)
-	if err != nil {
-		if errors.Is(err, model.ErrEmailNotFound) || errors.Is(err, model.ErrEmailAmbiguous) {
+
+	if req.Email != "" {
+		resetKey = req.Email
+		if !common.VerifyCodeWithKey(resetKey, req.Token, common.PasswordResetPurpose) {
 			common.ApiErrorI18n(c, i18n.MsgUserPasswordResetLinkInvalid)
 			return
 		}
-		common.ApiError(c, err)
+		resetErr = model.ResetUserPasswordByEmail(req.Email, password)
+		if errors.Is(resetErr, model.ErrEmailNotFound) || errors.Is(resetErr, model.ErrEmailAmbiguous) {
+			common.ApiErrorI18n(c, i18n.MsgUserPasswordResetLinkInvalid)
+			return
+		}
+	} else {
+		phone, err := common.NormalizeMainlandPhone(req.Phone)
+		if err != nil {
+			common.ApiErrorI18n(c, i18n.MsgInvalidParams)
+			return
+		}
+		resetKey = phone
+		if !common.VerifyCodeWithKey(resetKey, req.Token, common.PasswordResetPurpose) {
+			common.ApiErrorI18n(c, i18n.MsgUserPasswordResetLinkInvalid)
+			return
+		}
+		resetErr = model.ResetUserPasswordByPhone(phone, password)
+		if errors.Is(resetErr, model.ErrPhoneNotFound) || errors.Is(resetErr, model.ErrPhoneAmbiguous) {
+			common.ApiErrorI18n(c, i18n.MsgUserPasswordResetLinkInvalid)
+			return
+		}
+	}
+	if resetErr != nil {
+		common.ApiError(c, resetErr)
 		return
 	}
-	common.DeleteKey(req.Email, common.PasswordResetPurpose)
+	common.DeleteKey(resetKey, common.PasswordResetPurpose)
 	c.JSON(http.StatusOK, gin.H{
 		"success": true,
 		"message": "",

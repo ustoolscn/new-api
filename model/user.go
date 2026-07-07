@@ -4,6 +4,7 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
+	"net/mail"
 	"strconv"
 	"strings"
 
@@ -186,10 +187,10 @@ func CheckUserExistOrDeleted(username string, email string, phone ...string) (bo
 	email = NormalizeEmail(email)
 	query := DB.Unscoped().Where("username = ?", username)
 	if email != "" {
-		query = query.Or("LOWER(email) = ?", email)
+		query = query.Or("LOWER(email) = ?", email).Or("username = ?", email)
 	}
 	if len(phone) > 0 && phone[0] != "" {
-		query = query.Or("phone = ?", phone[0])
+		query = query.Or("phone = ?", phone[0]).Or("username = ?", phone[0])
 	}
 	err := query.First(&user).Error
 	if err != nil {
@@ -206,6 +207,20 @@ func CheckUserExistOrDeleted(username string, email string, phone ...string) (bo
 
 func NormalizeEmail(email string) string {
 	return strings.ToLower(strings.TrimSpace(email))
+}
+
+func ValidateUsernameLoginIdentifier(username string) error {
+	username = strings.TrimSpace(username)
+	if username == "" {
+		return nil
+	}
+	if _, err := common.NormalizeMainlandPhone(username); err == nil {
+		return ErrUsernameReserved
+	}
+	if parsed, err := mail.ParseAddress(username); err == nil && parsed.Address == username {
+		return ErrUsernameReserved
+	}
+	return nil
 }
 
 func emailQuery(tx *gorm.DB, email string) *gorm.DB {
@@ -248,6 +263,32 @@ func EnsureEmailAvailable(email string, excludeUserID int) error {
 	}
 	if !available {
 		return ErrEmailAlreadyTaken
+	}
+	return nil
+}
+
+func IsPhoneAvailable(phone string, excludeUserID int) (bool, error) {
+	if phone == "" {
+		return true, nil
+	}
+	query := DB.Unscoped().Model(&User{}).Where("phone = ? OR username = ?", phone, phone)
+	if excludeUserID > 0 {
+		query = query.Where("id <> ?", excludeUserID)
+	}
+	var count int64
+	if err := query.Count(&count).Error; err != nil {
+		return false, err
+	}
+	return count == 0, nil
+}
+
+func EnsurePhoneAvailable(phone string, excludeUserID int) error {
+	available, err := IsPhoneAvailable(phone, excludeUserID)
+	if err != nil {
+		return err
+	}
+	if !available {
+		return ErrPhoneAlreadyTaken
 	}
 	return nil
 }
@@ -314,13 +355,12 @@ func GetAllUsers(pageInfo *common.PageInfo) (users []*User, total int64, err err
 		tx.Rollback()
 		return nil, 0, err
 	}
-	if err = fillUsersLastIp(users); err != nil {
-		tx.Rollback()
-		return nil, 0, err
-	}
 
 	// Commit transaction
 	if err = tx.Commit().Error; err != nil {
+		return nil, 0, err
+	}
+	if err = fillUsersLastIp(users); err != nil {
 		return nil, 0, err
 	}
 
@@ -347,8 +387,8 @@ func SearchUsers(keyword string, group string, role *int, status *int, startIdx 
 	query := tx.Unscoped().Model(&User{})
 
 	// 构建搜索条件
-	likeCondition := "username LIKE ? OR email LIKE ? OR display_name LIKE ?"
-	likeArgs := []interface{}{"%" + keyword + "%", "%" + keyword + "%", "%" + keyword + "%"}
+	likeCondition := "username LIKE ? OR email LIKE ? OR phone LIKE ? OR display_name LIKE ?"
+	likeArgs := []interface{}{"%" + keyword + "%", "%" + keyword + "%", "%" + keyword + "%", "%" + keyword + "%"}
 
 	// 尝试将关键字转换为整数ID
 	keywordInt, err := strconv.Atoi(keyword)
@@ -386,13 +426,12 @@ func SearchUsers(keyword string, group string, role *int, status *int, startIdx 
 		tx.Rollback()
 		return nil, 0, err
 	}
-	if err = fillUsersLastIp(users); err != nil {
-		tx.Rollback()
-		return nil, 0, err
-	}
 
 	// 提交事务
 	if err = tx.Commit().Error; err != nil {
+		return nil, 0, err
+	}
+	if err = fillUsersLastIp(users); err != nil {
 		return nil, 0, err
 	}
 
@@ -577,6 +616,20 @@ func BindEmailToUser(user *User, email string) error {
 	}); err != nil {
 		return err
 	}
+	return updateUserCache(*user)
+}
+
+func BindPhoneToUser(user *User, phone string) error {
+	if phone == "" {
+		return ErrPhoneNotFound
+	}
+	if err := EnsurePhoneAvailable(phone, user.Id); err != nil {
+		return err
+	}
+	if err := DB.Model(&User{}).Where("id = ?", user.Id).Update("phone", phone).Error; err != nil {
+		return err
+	}
+	user.Phone = phone
 	return updateUserCache(*user)
 }
 
@@ -841,12 +894,19 @@ func (user *User) ValidateAndFill() (err error) {
 	if username == "" || password == "" {
 		return ErrUserEmptyCredentials
 	}
-	normalizedPhone, phoneErr := common.NormalizeMainlandPhone(username)
-	query := DB.Where("username = ? OR email = ?", username, username)
-	if phoneErr == nil {
-		query = query.Or("phone = ?", normalizedPhone)
+
+	err = DB.Where("username = ?", username).First(user).Error
+	if errors.Is(err, gorm.ErrRecordNotFound) {
+		email := NormalizeEmail(username)
+		if parsed, parseErr := mail.ParseAddress(email); parseErr == nil && parsed.Address == email {
+			err = DB.Where("LOWER(email) = ?", email).First(user).Error
+		}
 	}
-	err = query.First(user).Error
+	if errors.Is(err, gorm.ErrRecordNotFound) {
+		if normalizedPhone, phoneErr := common.NormalizeMainlandPhone(username); phoneErr == nil {
+			err = DB.Where("phone = ?", normalizedPhone).First(user).Error
+		}
+	}
 	if err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
 			return ErrInvalidCredentials
@@ -954,8 +1014,27 @@ func GetUniqueUserByEmail(email string) (*User, error) {
 	}
 }
 
+func GetUniqueUserByPhone(phone string) (*User, error) {
+	if phone == "" {
+		return nil, ErrPhoneNotFound
+	}
+	var users []User
+	if err := DB.Where("phone = ?", phone).Limit(2).Find(&users).Error; err != nil {
+		return nil, err
+	}
+	switch len(users) {
+	case 0:
+		return nil, ErrPhoneNotFound
+	case 1:
+		return &users[0], nil
+	default:
+		return nil, ErrPhoneAmbiguous
+	}
+}
+
 func IsPhoneAlreadyTaken(phone string) bool {
-	return DB.Unscoped().Where("phone = ?", phone).Find(&User{}).RowsAffected == 1
+	available, err := IsPhoneAvailable(phone, 0)
+	return err == nil && !available
 }
 
 func IsWeChatIdAlreadyTaken(wechatId string) bool {
@@ -992,6 +1071,21 @@ func ResetUserPasswordByEmail(email string, password string) error {
 	}
 	err = DB.Model(&User{}).Where("id = ?", user.Id).Update("password", hashedPassword).Error
 	return err
+}
+
+func ResetUserPasswordByPhone(phone string, password string) error {
+	if phone == "" || password == "" {
+		return errors.New("手机号或密码为空！")
+	}
+	user, err := GetUniqueUserByPhone(phone)
+	if err != nil {
+		return err
+	}
+	hashedPassword, err := common.Password2Hash(password)
+	if err != nil {
+		return err
+	}
+	return DB.Model(&User{}).Where("id = ?", user.Id).Update("password", hashedPassword).Error
 }
 
 func IsAdmin(userId int) bool {
