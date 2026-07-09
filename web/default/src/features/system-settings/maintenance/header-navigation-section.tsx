@@ -52,7 +52,6 @@ import {
 
 const headerNavSchema = z.object({
   home: z.boolean(),
-  hiCodex: z.boolean(),
   console: z.boolean(),
   pricingEnabled: z.boolean(),
   pricingRequireAuth: z.boolean(),
@@ -96,10 +95,6 @@ const toFormValues = (
 ): HeaderNavFormValues => ({
   home:
     config.home === undefined ? HEADER_NAV_DEFAULT.home : Boolean(config.home),
-  hiCodex:
-    config.hiCodex === undefined
-      ? HEADER_NAV_DEFAULT.hiCodex
-      : Boolean(config.hiCodex),
   console:
     config.console === undefined
       ? HEADER_NAV_DEFAULT.console
@@ -161,7 +156,6 @@ export function HeaderNavigationSection({
     const payload: HeaderNavModulesConfig = {
       ...config,
       home: values.home,
-      hiCodex: values.hiCodex,
       console: values.console,
       docs: values.docs,
       about: values.about,
@@ -226,11 +220,6 @@ export function HeaderNavigationSection({
       key: 'home',
       title: t('Home'),
       description: t('Landing page with system overview.'),
-    },
-    {
-      key: 'hiCodex',
-      title: t('Hi Codex'),
-      description: t('Codex desktop helper introduction and download page.'),
     },
     {
       key: 'console',

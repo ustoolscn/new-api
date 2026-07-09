@@ -78,7 +78,7 @@ Keep this index current. Whenever directories, major modules, routing boundaries
 
 - `web/default/` — primary React 19 + TypeScript frontend using Rsbuild, Base UI-style components, Tailwind CSS, TanStack Router/Query/Table, and Bun scripts.
 - `web/default/src/components/` — reusable UI primitives, layout shell, navigation, theme controls, dialogs, form helpers, and shared widgets.
-- `web/default/src/features/` — feature modules for auth, channels, Hi Codex, models, pricing, profile, redemption codes, system settings, usage logs, users, and wallet.
+- `web/default/src/features/` — feature modules for auth, channels, models, pricing, profile, redemption codes, system settings, usage logs, users, and wallet.
 - `web/default/src/i18n/` — i18next configuration and locale JSON files for `en`, `zh`, `fr`, `ja`, `ru`, and `vi`.
 - `web/default/src/routes/` — TanStack Router route tree and page entry points.
 - `web/default/src/assets/`, `context/`, `hooks/`, `lib/`, `stores/`, `types/` — frontend assets, providers, reusable hooks, utilities, state, and shared types.

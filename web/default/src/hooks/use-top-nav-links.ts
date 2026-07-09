@@ -67,11 +67,6 @@ export function useTopNavLinks(): TopNavLink[] {
     links.push({ title: t('Home'), href: '/' })
   }
 
-  // Hi Codex
-  if (modules?.hiCodex !== false) {
-    links.push({ title: t('Hi Codex'), href: '/hi-codex' })
-  }
-
   // Console -> /dashboard (new console path)
   if (modules?.console !== false) {
     links.push({ title: t('Console'), href: '/dashboard' })

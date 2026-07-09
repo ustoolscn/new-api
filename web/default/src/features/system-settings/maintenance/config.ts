@@ -23,7 +23,6 @@ export type HeaderNavAccessConfig = {
 
 export type HeaderNavModulesConfig = {
   home: boolean
-  hiCodex: boolean
   console: boolean
   pricing: HeaderNavAccessConfig
   rankings: HeaderNavAccessConfig
@@ -41,7 +40,6 @@ export type SidebarModulesAdminConfig = Record<string, SidebarSectionConfig>
 
 export const HEADER_NAV_DEFAULT: HeaderNavModulesConfig = {
   home: true,
-  hiCodex: true,
   console: true,
   pricing: {
     enabled: true,
