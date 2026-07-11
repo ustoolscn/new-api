@@ -155,6 +155,10 @@ func UpdateOption(c *gin.Context) {
 	default:
 		option.Value = fmt.Sprintf("%v", option.Value)
 	}
+	if system_setting.IsClientIPSettingKey(option.Key) {
+		common.ApiErrorMsg(c, "client IP blacklist settings must use the dedicated endpoint")
+		return
+	}
 	switch option.Key {
 	case "QuotaForInviter", "QuotaForInvitee":
 		if isPositiveOptionValue(option.Value.(string)) && !operation_setting.IsPaymentComplianceConfirmed() {

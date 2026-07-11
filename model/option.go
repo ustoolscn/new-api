@@ -227,6 +227,9 @@ func loadOptionsFromDatabase() {
 			common.SysLog("failed to update option map: " + err.Error())
 		}
 	}
+	if err := system_setting.UpdateAndSyncClientIPSetting(); err != nil {
+		common.SysLog("failed to rebuild client IP blacklist setting: " + err.Error())
+	}
 }
 
 func SyncOptions(frequency int) {
