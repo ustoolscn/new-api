@@ -3,6 +3,7 @@ package model
 import (
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/QuantumNous/new-api/common"
@@ -19,6 +20,8 @@ type Option struct {
 	Key   string `json:"key" gorm:"primaryKey"`
 	Value string `json:"value"`
 }
+
+var optionSyncMutex sync.Mutex
 
 func AllOption() ([]*Option, error) {
 	var options []*Option
@@ -220,6 +223,9 @@ func InitOptionMap(loadFromDatabase ...bool) {
 }
 
 func loadOptionsFromDatabase() {
+	optionSyncMutex.Lock()
+	defer optionSyncMutex.Unlock()
+
 	options, _ := AllOption()
 	for _, option := range options {
 		err := updateOptionMap(option.Key, option.Value)
@@ -241,6 +247,12 @@ func SyncOptions(frequency int) {
 }
 
 func UpdateOption(key string, value string) error {
+	clientIPSettingChanged := system_setting.IsClientIPSettingKey(key)
+	if clientIPSettingChanged {
+		optionSyncMutex.Lock()
+		defer optionSyncMutex.Unlock()
+	}
+
 	// Save to database first
 	option := Option{
 		Key: key,
@@ -253,7 +265,13 @@ func UpdateOption(key string, value string) error {
 	// otherwise it will execute Update (with all fields).
 	DB.Save(&option)
 	// Update OptionMap
-	return updateOptionMap(key, value)
+	if err := updateOptionMap(key, value); err != nil {
+		return err
+	}
+	if clientIPSettingChanged {
+		return system_setting.UpdateAndSyncClientIPSetting()
+	}
+	return nil
 }
 
 // UpdateOptionsBulk persists multiple key/value pairs in a single database
@@ -265,8 +283,15 @@ func UpdateOptionsBulk(values map[string]string) error {
 	if len(values) == 0 {
 		return nil
 	}
+	optionSyncMutex.Lock()
+	defer optionSyncMutex.Unlock()
+
+	clientIPSettingChanged := false
 	err := DB.Transaction(func(tx *gorm.DB) error {
 		for k, v := range values {
+			if system_setting.IsClientIPSettingKey(k) {
+				clientIPSettingChanged = true
+			}
 			option := Option{Key: k}
 			if err := tx.FirstOrCreate(&option, Option{Key: k}).Error; err != nil {
 				return err
@@ -285,6 +310,9 @@ func UpdateOptionsBulk(values map[string]string) error {
 		if err := updateOptionMap(k, v); err != nil {
 			return err
 		}
+	}
+	if clientIPSettingChanged {
+		return system_setting.UpdateAndSyncClientIPSetting()
 	}
 	return nil
 }

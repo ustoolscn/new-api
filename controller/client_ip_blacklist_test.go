@@ -36,7 +36,6 @@ func TestGetClientIPBlacklistSettingReturnsNormalizedSettingAndCurrentIP(t *test
 		"client_ip_setting.blacklist":         `["203.0.113.7","2001:db8::/48"]`,
 		"client_ip_setting.trusted_proxies":   `[]`,
 	}))
-	require.NoError(t, system_setting.UpdateAndSyncClientIPSetting())
 
 	recorder := performClientIPSettingRequest(http.MethodGet, nil, "198.51.100.20:50000", GetClientIPBlacklistSetting)
 
@@ -78,6 +77,26 @@ func TestUpdateClientIPBlacklistSettingRequiresSelfBlockConfirmation(t *testing.
 	var response clientIPBlacklistTestResponse
 	require.NoError(t, common.Unmarshal(recorder.Body.Bytes(), &response))
 	assert.Equal(t, "client_ip_self_block_confirmation_required", response.Code)
+}
+
+func TestUpdateClientIPBlacklistSettingChecksCurrentTrustBeforeCandidateHeaders(t *testing.T) {
+	setupClientIPBlacklistControllerTest(t)
+
+	recorder := performClientIPSettingRequestWithForwardedFor(
+		http.MethodPut,
+		map[string]any{
+			"blacklist_enabled":  true,
+			"blacklist":          []string{"203.0.113.7"},
+			"trusted_proxies":    []string{"203.0.113.7"},
+			"confirm_self_block": false,
+		},
+		"203.0.113.7:50000",
+		"198.51.100.20",
+		UpdateClientIPBlacklistSetting,
+	)
+
+	assert.Equal(t, http.StatusConflict, recorder.Code)
+	assert.Contains(t, recorder.Body.String(), "client_ip_self_block_confirmation_required")
 }
 
 func TestUpdateClientIPBlacklistSettingPersistsConfirmedSetting(t *testing.T) {
@@ -163,6 +182,10 @@ func setupClientIPBlacklistControllerTest(t *testing.T) *gorm.DB {
 }
 
 func performClientIPSettingRequest(method string, body any, remoteAddr string, handler gin.HandlerFunc) *httptest.ResponseRecorder {
+	return performClientIPSettingRequestWithForwardedFor(method, body, remoteAddr, "", handler)
+}
+
+func performClientIPSettingRequestWithForwardedFor(method string, body any, remoteAddr, forwardedFor string, handler gin.HandlerFunc) *httptest.ResponseRecorder {
 	var bodyReader *strings.Reader
 	if body == nil {
 		bodyReader = strings.NewReader("")
@@ -171,6 +194,9 @@ func performClientIPSettingRequest(method string, body any, remoteAddr string, h
 	}
 	req := httptest.NewRequest(method, "/api/option/client-ip-blacklist", bodyReader)
 	req.Header.Set("Content-Type", "application/json")
+	if forwardedFor != "" {
+		req.Header.Set("X-Forwarded-For", forwardedFor)
+	}
 	req.RemoteAddr = remoteAddr
 	recorder := httptest.NewRecorder()
 	c, _ := gin.CreateTestContext(recorder)

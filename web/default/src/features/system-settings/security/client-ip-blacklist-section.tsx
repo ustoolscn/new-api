@@ -118,7 +118,7 @@ export function ClientIPBlacklistSection(props: ClientIPBlacklistSectionProps) {
   })
 
   useEffect(() => {
-    if (!settingsQuery.data?.success) return
+    if (!settingsQuery.data?.success || form.formState.isDirty) return
     const nextValues = buildFormValues(
       settingsQuery.data.data.blacklist_enabled,
       settingsQuery.data.data.blacklist,
@@ -126,7 +126,7 @@ export function ClientIPBlacklistSection(props: ClientIPBlacklistSectionProps) {
     )
     baselineRef.current = nextValues
     form.reset(nextValues)
-  }, [form, settingsQuery.data])
+  }, [form, form.formState.isDirty, settingsQuery.data])
 
   const updateMutation = useMutation({
     mutationFn: updateClientIPBlacklistSettings,

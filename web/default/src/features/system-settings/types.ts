@@ -50,7 +50,7 @@ export type ClientIPBlacklistSettingsResponse = {
   success: boolean
   message: string
   code?: string
-  data: ClientIPBlacklistSettings
+  data?: ClientIPBlacklistSettings
 }
 
 export type UpdateClientIPBlacklistRequest = {

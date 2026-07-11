@@ -66,7 +66,22 @@ func UpdateClientIPBlacklistSetting(c *gin.Context) {
 		return
 	}
 
-	clientIP, err := common.ResolveClientIP(
+	activeSnapshot := system_setting.GetClientIPSnapshot()
+	activeClientIP, err := common.ResolveClientIP(
+		c.Request.RemoteAddr,
+		c.GetHeader("X-Forwarded-For"),
+		c.GetHeader("X-Real-IP"),
+		activeSnapshot.TrustedProxies,
+	)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{
+			"success": false,
+			"message": err.Error(),
+		})
+		return
+	}
+
+	candidateClientIP, err := common.ResolveClientIP(
 		c.Request.RemoteAddr,
 		c.GetHeader("X-Forwarded-For"),
 		c.GetHeader("X-Real-IP"),
@@ -83,7 +98,7 @@ func UpdateClientIPBlacklistSetting(c *gin.Context) {
 	selfBlocked := false
 	if snapshot.BlacklistEnabled {
 		for _, prefix := range snapshot.Blacklist {
-			if prefix.Contains(clientIP) {
+			if prefix.Contains(activeClientIP) || prefix.Contains(candidateClientIP) {
 				selfBlocked = true
 				break
 			}
@@ -119,11 +134,6 @@ func UpdateClientIPBlacklistSetting(c *gin.Context) {
 		common.ApiError(c, err)
 		return
 	}
-	if err := system_setting.UpdateAndSyncClientIPSetting(); err != nil {
-		common.ApiError(c, err)
-		return
-	}
-
 	recordManageAudit(c, "client_ip_blacklist.update", map[string]interface{}{
 		"blacklist_enabled":    snapshot.BlacklistEnabled,
 		"blacklist_count":      len(snapshot.Blacklist),
@@ -135,7 +145,7 @@ func UpdateClientIPBlacklistSetting(c *gin.Context) {
 		"blacklist_enabled": snapshot.BlacklistEnabled,
 		"blacklist":         normalizedBlacklist,
 		"trusted_proxies":   normalizedTrustedProxies,
-		"current_ip":        clientIP.String(),
+		"current_ip":        candidateClientIP.String(),
 	})
 }
 

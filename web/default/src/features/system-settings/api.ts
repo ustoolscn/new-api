@@ -18,6 +18,7 @@ For commercial licensing, please contact support@quantumnous.com
 */
 import { api } from '@/lib/api'
 
+import { requireClientIPBlacklistResponseData } from './security/client-ip-blacklist-utils'
 import type {
   ClientIPBlacklistSettingsResponse,
   ConfirmPaymentComplianceResponse,
@@ -49,7 +50,7 @@ export async function getClientIPBlacklistSettings() {
   const res = await api.get<ClientIPBlacklistSettingsResponse>(
     '/api/option/client-ip-blacklist'
   )
-  return res.data
+  return requireClientIPBlacklistResponseData(res.data)
 }
 
 export async function updateClientIPBlacklistSettings(
@@ -58,9 +59,9 @@ export async function updateClientIPBlacklistSettings(
   const res = await api.put<ClientIPBlacklistSettingsResponse>(
     '/api/option/client-ip-blacklist',
     request,
-    { skipErrorHandler: true }
+    { skipBusinessError: true, skipErrorHandler: true }
   )
-  return res.data
+  return requireClientIPBlacklistResponseData(res.data)
 }
 
 export async function confirmPaymentCompliance() {
