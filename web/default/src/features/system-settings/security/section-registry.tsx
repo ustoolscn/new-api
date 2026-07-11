@@ -22,6 +22,7 @@ import { SSRFSection } from '../request-limits/ssrf-section'
 import { TokenLimitSection } from '../request-limits/token-limit-section'
 import type { SecuritySettings } from '../types'
 import { createSectionRegistry } from '../utils/section-registry'
+import { ClientIPBlacklistSection } from './client-ip-blacklist-section'
 
 const SECURITY_SECTIONS = [
   {
@@ -87,6 +88,22 @@ const SECURITY_SECTIONS = [
             settings['fetch_setting.allowed_ports'],
           'fetch_setting.apply_ip_filter_for_domain':
             settings['fetch_setting.apply_ip_filter_for_domain'],
+        }}
+      />
+    ),
+  },
+  {
+    id: 'client-ip-blacklist',
+    titleKey: 'Client IP Blacklist',
+    build: (settings: SecuritySettings) => (
+      <ClientIPBlacklistSection
+        defaultValues={{
+          'client_ip_setting.blacklist_enabled':
+            settings['client_ip_setting.blacklist_enabled'],
+          'client_ip_setting.blacklist':
+            settings['client_ip_setting.blacklist'],
+          'client_ip_setting.trusted_proxies':
+            settings['client_ip_setting.trusted_proxies'],
         }}
       />
     ),

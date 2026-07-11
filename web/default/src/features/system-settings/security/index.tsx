@@ -52,6 +52,9 @@ const defaultSecuritySettings: SecuritySettings = {
   'fetch_setting.ip_list': [],
   'fetch_setting.allowed_ports': [],
   'fetch_setting.apply_ip_filter_for_domain': false,
+  'client_ip_setting.blacklist_enabled': false,
+  'client_ip_setting.blacklist': [],
+  'client_ip_setting.trusted_proxies': [],
   'token_setting.max_user_tokens': 1000,
 }
 

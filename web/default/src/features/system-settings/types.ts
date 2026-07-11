@@ -39,6 +39,27 @@ export type UpdateOptionResponse = {
   message: string
 }
 
+export type ClientIPBlacklistSettings = {
+  blacklist_enabled: boolean
+  blacklist: string[]
+  trusted_proxies: string[]
+  current_ip: string
+}
+
+export type ClientIPBlacklistSettingsResponse = {
+  success: boolean
+  message: string
+  code?: string
+  data: ClientIPBlacklistSettings
+}
+
+export type UpdateClientIPBlacklistRequest = {
+  blacklist_enabled: boolean
+  blacklist: string[]
+  trusted_proxies: string[]
+  confirm_self_block: boolean
+}
+
 export type GenerateAITranslationsResponse = {
   success: boolean
   message: string
@@ -428,6 +449,9 @@ export type SecuritySettings = {
   'fetch_setting.ip_list': string[]
   'fetch_setting.allowed_ports': number[]
   'fetch_setting.apply_ip_filter_for_domain': boolean
+  'client_ip_setting.blacklist_enabled': boolean
+  'client_ip_setting.blacklist': string[]
+  'client_ip_setting.trusted_proxies': string[]
   'token_setting.max_user_tokens': number
 }
 

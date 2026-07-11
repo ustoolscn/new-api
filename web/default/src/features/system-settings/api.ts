@@ -19,10 +19,12 @@ For commercial licensing, please contact support@quantumnous.com
 import { api } from '@/lib/api'
 
 import type {
+  ClientIPBlacklistSettingsResponse,
   ConfirmPaymentComplianceResponse,
   FetchUpstreamRatiosRequest,
   GenerateAITranslationsResponse,
   UpdateAITranslationSettingsRequest,
+  UpdateClientIPBlacklistRequest,
   LogCleanupTask,
   SystemOptionsResponse,
   SystemTaskListResponse,
@@ -40,6 +42,24 @@ export async function getSystemOptions() {
 
 export async function updateSystemOption(request: UpdateOptionRequest) {
   const res = await api.put<UpdateOptionResponse>('/api/option/', request)
+  return res.data
+}
+
+export async function getClientIPBlacklistSettings() {
+  const res = await api.get<ClientIPBlacklistSettingsResponse>(
+    '/api/option/client-ip-blacklist'
+  )
+  return res.data
+}
+
+export async function updateClientIPBlacklistSettings(
+  request: UpdateClientIPBlacklistRequest
+) {
+  const res = await api.put<ClientIPBlacklistSettingsResponse>(
+    '/api/option/client-ip-blacklist',
+    request,
+    { skipErrorHandler: true }
+  )
   return res.data
 }
 
