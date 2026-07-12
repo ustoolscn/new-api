@@ -30,11 +30,17 @@ import {
 } from '@/components/ai-elements/prompt-input'
 
 import { uploadPlaygroundImage } from '../../api'
-import type { ModelOption, GroupOption } from '../../types'
+import type {
+  ModelOption,
+  GroupOption,
+  ParameterEnabled,
+  PlaygroundConfig,
+} from '../../types'
 import { PlaygroundInputControls } from './playground-input-controls'
 import { PlaygroundInputTools } from './playground-input-tools'
 
 interface PlaygroundInputProps {
+  config: PlaygroundConfig
   onSubmit: (text: string, imageUrls?: string[]) => void
   onStop?: () => void
   disabled?: boolean
@@ -48,6 +54,15 @@ interface PlaygroundInputProps {
   onGroupChange: (value: string) => void
   hasMessages?: boolean
   onClearMessages?: () => void
+  onConfigChange: <K extends keyof PlaygroundConfig>(
+    key: K,
+    value: PlaygroundConfig[K]
+  ) => void
+  onParameterEnabledChange: (
+    key: keyof ParameterEnabled,
+    value: boolean
+  ) => void
+  parameterEnabled: ParameterEnabled
 }
 
 interface UploadedImage {
@@ -58,6 +73,7 @@ interface UploadedImage {
 }
 
 export function PlaygroundInput({
+  config,
   onSubmit,
   onStop,
   disabled,
@@ -71,6 +87,9 @@ export function PlaygroundInput({
   onGroupChange,
   hasMessages = false,
   onClearMessages,
+  onConfigChange,
+  onParameterEnabledChange,
+  parameterEnabled,
 }: PlaygroundInputProps) {
   const { t } = useTranslation()
   const [text, setText] = useState('')
@@ -92,7 +111,7 @@ export function PlaygroundInput({
   }
 
   const handleImageUpload = async (event: ChangeEvent<HTMLInputElement>) => {
-    const files = Array.from(event.target.files || [])
+    const files = [...(event.target.files || [])]
     event.target.value = ''
     const imageFiles = files.filter((file) => file.type.startsWith('image/'))
 
@@ -196,9 +215,13 @@ export function PlaygroundInput({
             text={text}
             tools={
               <PlaygroundInputTools
+                config={config}
                 disabled={disabled}
                 hasMessages={hasMessages}
                 onClearMessages={onClearMessages}
+                onConfigChange={onConfigChange}
+                onParameterEnabledChange={onParameterEnabledChange}
+                parameterEnabled={parameterEnabled}
                 uploadAction={
                   <PromptInputButton
                     aria-label={t('Upload photo')}

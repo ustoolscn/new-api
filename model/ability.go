@@ -129,7 +129,7 @@ func GetChannelExcluding(group string, model string, retry int, requestPath stri
 	if err != nil {
 		return nil, err
 	}
-	abilities = filterAbilitiesByRequestPath(abilities, requestPath)
+	abilities = filterAbilitiesByRequestPathAndModel(abilities, requestPath, model)
 	if len(excludeChannelIds) > 0 {
 		availableAbilities := make([]Ability, 0, len(abilities))
 		uniquePriorities := make(map[int]bool)
@@ -183,11 +183,12 @@ func GetChannelExcluding(group string, model string, retry int, requestPath stri
 	return &channel, err
 }
 
-// filterAbilitiesByRequestPath restricts candidates by request path for the DB
-// (non-memory-cache) selection path. Only Advanced Custom (type 58) channels are
-// path-checked: kept only when one of their routes matches requestPath; all other
-// channel types always pass. When requestPath is empty, filtering is skipped.
-func filterAbilitiesByRequestPath(abilities []Ability, requestPath string) []Ability {
+// filterAbilitiesByRequestPathAndModel restricts candidates by request path and
+// model for the DB (non-memory-cache) selection path. Only Advanced Custom
+// (type 58) channels are path-checked: kept only when one of their routes matches
+// requestPath and model; all other channel types always pass. When requestPath is
+// empty, filtering is skipped.
+func filterAbilitiesByRequestPathAndModel(abilities []Ability, requestPath string, model string) []Ability {
 	if requestPath == "" || len(abilities) == 0 {
 		return abilities
 	}
@@ -222,7 +223,7 @@ func filterAbilitiesByRequestPath(abilities []Ability, requestPath string) []Abi
 			filtered = append(filtered, ability)
 			continue
 		}
-		if config != nil && config.SupportsPath(requestPath) {
+		if config != nil && config.SupportsPathForModel(requestPath, model) {
 			filtered = append(filtered, ability)
 		}
 	}
