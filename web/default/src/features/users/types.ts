@@ -96,6 +96,45 @@ export interface GetUsersResponse {
   }
 }
 
+export interface RegisteredDevice {
+  id: number
+  user_id: number
+  username: string
+  email: string
+  phone: string
+  fingerprint_hash: string
+  first_ip: string
+  user_agent: string
+  source: string
+  first_seen_at: number
+  last_seen_at: number
+  banned: boolean
+  banned_at: number
+  device_user_count: number
+  device_record_count: number
+  ip_user_count: number
+  ip_record_count: number
+}
+
+export interface GetRegisteredDevicesParams {
+  keyword?: string
+  status?: 'true' | 'false' | ''
+  duplicate?: 'device' | 'ip' | ''
+  p?: number
+  page_size?: number
+}
+
+export interface GetRegisteredDevicesResponse {
+  success: boolean
+  message?: string
+  data?: {
+    items: RegisteredDevice[]
+    total: number
+    page: number
+    page_size: number
+  }
+}
+
 export interface SearchUsersParams {
   keyword?: string
   group?: string

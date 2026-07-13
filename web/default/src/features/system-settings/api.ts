@@ -41,9 +41,18 @@ export async function getSystemOptions() {
   return res.data
 }
 
+function requireSuccessfulOptionUpdate(
+  response: UpdateOptionResponse
+): UpdateOptionResponse {
+  if (!response.success) {
+    throw new Error(response.message)
+  }
+  return response
+}
+
 export async function updateSystemOption(request: UpdateOptionRequest) {
   const res = await api.put<UpdateOptionResponse>('/api/option/', request)
-  return res.data
+  return requireSuccessfulOptionUpdate(res.data)
 }
 
 export async function getClientIPBlacklistSettings() {

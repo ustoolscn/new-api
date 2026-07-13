@@ -111,6 +111,40 @@ func clearChannelReadOnlyFields(channel *PatchChannel, requestData map[string]an
 	}
 }
 
+var channelPatchColumns = map[string]string{
+	"type": "Type", "key": "Key", "openai_organization": "OpenAIOrganization",
+	"test_model": "TestModel", "name": "Name", "weight": "Weight",
+	"base_url": "BaseURL", "other": "Other", "models": "Models", "group": "Group",
+	"model_mapping": "ModelMapping", "status_code_mapping": "StatusCodeMapping",
+	"priority": "Priority", "auto_ban": "AutoBan", "other_info": "OtherInfo",
+	"tag": "Tag", "setting": "Setting", "param_override": "ParamOverride",
+	"header_override": "HeaderOverride", "remark": "Remark",
+	"channel_info": "ChannelInfo", "settings": "OtherSettings",
+}
+
+func channelUpdateColumns(requestData map[string]any, multiKeyMode *string, isMultiKey bool) []string {
+	columns := make([]string, 0, len(requestData))
+	seen := make(map[string]struct{}, len(requestData))
+	for field := range requestData {
+		column, ok := channelPatchColumns[field]
+		if !ok {
+			continue
+		}
+		if _, ok := seen[column]; ok {
+			continue
+		}
+		seen[column] = struct{}{}
+		columns = append(columns, column)
+	}
+	_, keySubmitted := requestData["key"]
+	if multiKeyMode != nil || (isMultiKey && keySubmitted) {
+		if _, ok := seen["ChannelInfo"]; !ok {
+			columns = append(columns, "ChannelInfo")
+		}
+	}
+	return columns
+}
+
 // channelNonSensitiveFields lists routing / server-managed channel
 // fields a ChannelWrite admin may edit without ChannelSensitiveWrite. When a new
 // field is added to model.Channel it must be added to either this set or

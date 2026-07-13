@@ -1,3 +1,5 @@
+import { zodResolver } from '@hookform/resolvers/zod'
+import { useMutation, useQueryClient } from '@tanstack/react-query'
 /*
 Copyright (C) 2023-2026 QuantumNous
 
@@ -17,12 +19,11 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 For commercial licensing, please contact support@quantumnous.com
 */
 import { useEffect } from 'react'
-import { useMutation, useQueryClient } from '@tanstack/react-query'
-import * as z from 'zod'
-import { zodResolver } from '@hookform/resolvers/zod'
 import { type Resolver, useForm } from 'react-hook-form'
 import { useTranslation } from 'react-i18next'
 import { toast } from 'sonner'
+import * as z from 'zod'
+
 import { Button } from '@/components/ui/button'
 import {
   Form,
@@ -35,19 +36,30 @@ import {
 } from '@/components/ui/form'
 import { Input } from '@/components/ui/input'
 import { Switch } from '@/components/ui/switch'
+
 import { generateAITranslations, updateAITranslationSettings } from '../api'
 import { SettingsSection } from '../components/settings-section'
 import type { SiteSettings } from '../types'
 
-const schema = z.object({
-  AITranslationEnabled: z.boolean(),
-  AITranslationBaseURL: z.string().url(),
-  AITranslationAPIKey: z.string().optional(),
-  AITranslationModel: z.string().min(1),
-  AITranslationTimeoutSeconds: z.coerce.number().int().min(1),
-})
+const createSchema = (t: (key: string) => string) =>
+  z.object({
+    AITranslationEnabled: z.boolean(),
+    AITranslationBaseURL: z
+      .string()
+      .url({ error: t('Please enter a valid URL') }),
+    AITranslationAPIKey: z.string().optional(),
+    AITranslationModel: z
+      .string()
+      .min(1, { error: t('Translation model is required') }),
+    AITranslationTimeoutSeconds: z.coerce
+      .number()
+      .int({ error: t('Translation timeout must be a positive whole number') })
+      .min(1, {
+        error: t('Translation timeout must be a positive whole number'),
+      }),
+  })
 
-type FormValues = z.infer<typeof schema>
+type FormValues = z.infer<ReturnType<typeof createSchema>>
 
 type Props = {
   defaultValues: Pick<
@@ -87,6 +99,7 @@ export function AITranslationSection({ defaultValues }: Props) {
   const { t } = useTranslation()
   const queryClient = useQueryClient()
   const normalizedDefaults = normalizeValues(defaultValues)
+  const schema = createSchema(t)
   const form = useForm<FormValues>({
     resolver: zodResolver(schema) as Resolver<FormValues>,
     defaultValues: normalizedDefaults,

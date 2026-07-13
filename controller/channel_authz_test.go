@@ -129,6 +129,28 @@ func TestClearChannelReadOnlyFields(t *testing.T) {
 	assert.Equal(t, "default", channel.Group)
 }
 
+func TestChannelUpdateColumnsUsesOnlySubmittedWritableFields(t *testing.T) {
+	emptyMode := ""
+	columns := channelUpdateColumns(map[string]any{
+		"id":            1,
+		"weight":        0,
+		"auto_ban":      0,
+		"other_info":    "",
+		"used_quota":    100,
+		"unknown_field": true,
+	}, &emptyMode, false)
+
+	assert.ElementsMatch(t, []string{"Weight", "AutoBan", "OtherInfo", "ChannelInfo"}, columns)
+}
+
+func TestChannelUpdateColumnsPersistsMultiKeyMetadataWhenKeyChanges(t *testing.T) {
+	columns := channelUpdateColumns(map[string]any{"id": 1, "key": "new-key"}, nil, true)
+	assert.ElementsMatch(t, []string{"Key", "ChannelInfo"}, columns)
+
+	columns = channelUpdateColumns(map[string]any{"id": 1, "key": "new-key"}, nil, false)
+	assert.ElementsMatch(t, []string{"Key"}, columns)
+}
+
 func TestUpdateChannelRejectsStatusField(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	recorder := httptest.NewRecorder()

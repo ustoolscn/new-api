@@ -188,6 +188,7 @@ func main() {
 	server.Use(middleware.ClientIPBlacklist())
 	server.Use(middleware.Version())
 	server.Use(middleware.I18n())
+	server.Use(middleware.DeviceBanCheck())
 	middleware.SetUpLogger(server)
 	// Initialize session store
 	store := cookie.NewStore([]byte(common.SessionSecret))

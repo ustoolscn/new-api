@@ -253,17 +253,19 @@ func UpdateOption(key string, value string) error {
 		defer optionSyncMutex.Unlock()
 	}
 
-	// Save to database first
-	option := Option{
-		Key: key,
+	// Persist first so in-memory state never gets ahead of the database. The
+	// transaction also rolls back the placeholder row created by FirstOrCreate
+	// when the subsequent value update fails.
+	if err := DB.Transaction(func(tx *gorm.DB) error {
+		option := Option{Key: key}
+		if err := tx.FirstOrCreate(&option, Option{Key: key}).Error; err != nil {
+			return err
+		}
+		option.Value = value
+		return tx.Save(&option).Error
+	}); err != nil {
+		return err
 	}
-	// https://gorm.io/docs/update.html#Save-All-Fields
-	DB.FirstOrCreate(&option, Option{Key: key})
-	option.Value = value
-	// Save is a combination function.
-	// If save value does not contain primary key, it will execute Create,
-	// otherwise it will execute Update (with all fields).
-	DB.Save(&option)
 	// Update OptionMap
 	if err := updateOptionMap(key, value); err != nil {
 		return err

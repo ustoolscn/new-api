@@ -121,6 +121,18 @@ func authHelper(c *gin.Context, minRole int) {
 		c.Abort()
 		return
 	}
+	// Session data can outlive an administrative ban. Refresh the current user
+	// status so disabling a device immediately invalidates existing sessions too.
+	if !useAccessToken && model.DB != nil {
+		userCache, cacheErr := model.GetUserCache(apiUserId)
+		if cacheErr != nil {
+			common.SysLog(fmt.Sprintf("authHelper GetUserCache error for user %d: %v", apiUserId, cacheErr))
+			c.JSON(http.StatusInternalServerError, gin.H{"success": false, "message": common.TranslateMessage(c, i18n.MsgDatabaseError)})
+			c.Abort()
+			return
+		}
+		status = userCache.Status
+	}
 	if status.(int) == common.UserStatusDisabled {
 		c.JSON(http.StatusOK, gin.H{
 			"success": false,
@@ -224,9 +236,19 @@ func TokenOrUserAuth() func(c *gin.Context) {
 		session := sessions.Default(c)
 		if id := session.Get("id"); id != nil {
 			if status, ok := session.Get("status").(int); ok && status == common.UserStatusEnabled {
-				c.Set("id", id)
-				c.Next()
-				return
+				userID, idOK := id.(int)
+				if idOK && model.DB != nil {
+					userCache, err := model.GetUserCache(userID)
+					if err == nil && userCache.Status == common.UserStatusEnabled {
+						c.Set("id", id)
+						c.Next()
+						return
+					}
+				} else if idOK {
+					c.Set("id", id)
+					c.Next()
+					return
+				}
 			}
 		}
 		// Fall back to token auth (API clients)

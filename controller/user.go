@@ -156,6 +156,17 @@ func setupLogin(user *model.User, c *gin.Context) {
 		common.ApiErrorI18n(c, i18n.MsgUserSessionSaveFailed)
 		return
 	}
+	if err := model.RecordUserDevice(
+		user,
+		c.GetHeader(model.DeviceFingerprintHeader),
+		c.ClientIP(),
+		c.Request.UserAgent(),
+		"login:"+loginMethodFromContext(c),
+	); err != nil {
+		// Device metadata must not turn a successful authentication into a
+		// failed login after the session has already been persisted.
+		common.SysLog(fmt.Sprintf("failed to record login device for user %d: %v", user.Id, err))
+	}
 	recordLoginAudit(user, c)
 	c.JSON(http.StatusOK, gin.H{
 		"message": "",
@@ -304,7 +315,6 @@ func Register(c *gin.Context) {
 		common.ApiError(c, err)
 		return
 	}
-
 	// 获取插入后的用户ID
 	var insertedUser model.User
 	if err := model.DB.Where("username = ?", cleanUser.Username).First(&insertedUser).Error; err != nil {
@@ -339,6 +349,11 @@ func Register(c *gin.Context) {
 			return
 		}
 	}
+	if err := model.RecordUserDevice(&insertedUser, c.GetHeader(model.DeviceFingerprintHeader), c.ClientIP(), c.Request.UserAgent(), "password"); err != nil {
+		// Device recording is risk metadata and must not turn an otherwise
+		// completed registration into a client-visible failure.
+		common.SysLog(fmt.Sprintf("failed to record registration device for user %d: %v", insertedUser.Id, err))
+	}
 
 	c.JSON(http.StatusOK, gin.H{
 		"success": true,
@@ -351,6 +366,48 @@ func Register(c *gin.Context) {
 		common.DeleteKey(user.Email, common.EmailVerificationPurpose)
 	}
 	return
+}
+
+func GetUserDevices(c *gin.Context) {
+	pageInfo := common.GetPageQuery(c)
+	var banned *bool
+	if value := c.Query("status"); value != "" {
+		parsed, err := strconv.ParseBool(value)
+		if err != nil {
+			common.ApiErrorI18n(c, i18n.MsgInvalidParams)
+			return
+		}
+		banned = &parsed
+	}
+	duplicate := c.Query("duplicate")
+	if duplicate != "" && duplicate != "device" && duplicate != "ip" {
+		common.ApiErrorI18n(c, i18n.MsgInvalidParams)
+		return
+	}
+	devices, total, err := model.GetUserDevices(pageInfo, c.Query("keyword"), banned, duplicate)
+	if err != nil {
+		common.ApiError(c, err)
+		return
+	}
+	pageInfo.SetTotal(int(total))
+	pageInfo.SetItems(devices)
+	common.ApiSuccess(c, pageInfo)
+}
+
+func BanUserDevice(c *gin.Context)   { setUserDeviceBan(c, true) }
+func UnbanUserDevice(c *gin.Context) { setUserDeviceBan(c, false) }
+
+func setUserDeviceBan(c *gin.Context, banned bool) {
+	id, err := strconv.Atoi(c.Param("id"))
+	if err != nil || id <= 0 {
+		common.ApiErrorI18n(c, i18n.MsgInvalidId)
+		return
+	}
+	if _, err := model.SetUserDeviceBan(id, banned); err != nil {
+		common.ApiError(c, err)
+		return
+	}
+	common.ApiSuccess(c, nil)
 }
 
 func GetAllUsers(c *gin.Context) {

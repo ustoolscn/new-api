@@ -44,20 +44,37 @@ import { SettingsPageFormActions } from '../components/settings-page-context'
 import { SettingsSection } from '../components/settings-section'
 import { useUpdateOption } from '../hooks/use-update-option'
 
-const sensitiveSchema = z.object({
-  CheckSensitiveEnabled: z.boolean(),
-  CheckSensitiveOnPromptEnabled: z.boolean(),
-  SensitiveWords: z.string().optional(),
-  ModerationEnabled: z.boolean(),
-  ModerationModel: z.string().optional(),
-  ModerationBaseURL: z.string().optional(),
-  ModerationAPIKey: z.string().optional(),
-  ModerationTimeoutSeconds: z.number().int().min(1).max(120),
-  ModerationFailureMode: z.string().optional(),
-  ModerationBlockCategories: z.string().optional(),
-})
+const createSensitiveSchema = (t: (key: string) => string) =>
+  z.object({
+    CheckSensitiveEnabled: z.boolean(),
+    CheckSensitiveOnPromptEnabled: z.boolean(),
+    SensitiveWords: z.string().optional(),
+    ModerationEnabled: z.boolean(),
+    ModerationModel: z.string().optional(),
+    ModerationBaseURL: z.string().optional(),
+    ModerationAPIKey: z.string().optional(),
+    ModerationTimeoutSeconds: z
+      .number()
+      .int({
+        error: t(
+          'Moderation timeout must be a whole number between 1 and 120 seconds'
+        ),
+      })
+      .min(1, {
+        error: t(
+          'Moderation timeout must be a whole number between 1 and 120 seconds'
+        ),
+      })
+      .max(120, {
+        error: t(
+          'Moderation timeout must be a whole number between 1 and 120 seconds'
+        ),
+      }),
+    ModerationFailureMode: z.string().optional(),
+    ModerationBlockCategories: z.string().optional(),
+  })
 
-type SensitiveFormValues = z.infer<typeof sensitiveSchema>
+type SensitiveFormValues = z.infer<ReturnType<typeof createSensitiveSchema>>
 
 type SensitiveWordsSectionProps = {
   defaultValues: SensitiveFormValues
@@ -68,6 +85,7 @@ export function SensitiveWordsSection({
 }: SensitiveWordsSectionProps) {
   const { t } = useTranslation()
   const updateOption = useUpdateOption()
+  const sensitiveSchema = createSensitiveSchema(t)
   const form = useForm<SensitiveFormValues>({
     resolver: zodResolver(sensitiveSchema),
     defaultValues,

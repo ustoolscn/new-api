@@ -28,6 +28,8 @@ import type {
   ManageUserAction,
   ManageUserQuotaPayload,
   ApiResponse,
+  GetRegisteredDevicesParams,
+  GetRegisteredDevicesResponse,
 } from './types'
 
 // ============================================================================
@@ -67,6 +69,28 @@ export async function searchUsers(
   queryParams.set('p', String(p))
   queryParams.set('page_size', String(page_size))
   const res = await api.get(`/api/user/search?${queryParams.toString()}`)
+  return res.data
+}
+
+export async function getRegisteredDevices(
+  params: GetRegisteredDevicesParams = {}
+): Promise<GetRegisteredDevicesResponse> {
+  const queryParams = new URLSearchParams()
+  queryParams.set('p', String(params.p ?? 1))
+  queryParams.set('page_size', String(params.page_size ?? 20))
+  if (params.keyword) queryParams.set('keyword', params.keyword)
+  if (params.status) queryParams.set('status', params.status)
+  if (params.duplicate) queryParams.set('duplicate', params.duplicate)
+  const res = await api.get(`/api/user/device?${queryParams.toString()}`)
+  return res.data
+}
+
+export async function setRegisteredDeviceBanned(
+  id: number,
+  banned: boolean
+): Promise<ApiResponse> {
+  const action = banned ? 'ban' : 'unban'
+  const res = await api.post(`/api/user/device/${id}/${action}`)
   return res.data
 }
 

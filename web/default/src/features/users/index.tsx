@@ -16,10 +16,13 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 
 For commercial licensing, please contact support@quantumnous.com
 */
+import { useState } from 'react'
 import { useTranslation } from 'react-i18next'
 
 import { SectionPageLayout } from '@/components/layout'
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 
+import { RegisteredDevicesTable } from './components/registered-devices-table'
 import { UsersDeleteDialog } from './components/users-delete-dialog'
 import { UsersMutateDrawer } from './components/users-mutate-drawer'
 import { UsersPrimaryButtons } from './components/users-primary-buttons'
@@ -29,16 +32,28 @@ import { UsersTable } from './components/users-table'
 function UsersContent() {
   const { t } = useTranslation()
   const { open, setOpen, currentRow } = useUsers()
+  const [activeTab, setActiveTab] = useState('users')
 
   return (
     <>
       <SectionPageLayout fixedContent>
         <SectionPageLayout.Title>{t('Users')}</SectionPageLayout.Title>
         <SectionPageLayout.Actions>
-          <UsersPrimaryButtons />
+          {activeTab === 'users' && <UsersPrimaryButtons />}
         </SectionPageLayout.Actions>
         <SectionPageLayout.Content>
-          <UsersTable />
+          <Tabs value={activeTab} onValueChange={setActiveTab} className='h-full min-h-0'>
+            <TabsList>
+              <TabsTrigger value='users'>{t('Users')}</TabsTrigger>
+              <TabsTrigger value='devices'>{t('Registered devices')}</TabsTrigger>
+            </TabsList>
+            <TabsContent value='users' className='min-h-0 flex-1'>
+              <UsersTable />
+            </TabsContent>
+            <TabsContent value='devices' className='min-h-0 flex-1'>
+              <RegisteredDevicesTable />
+            </TabsContent>
+          </Tabs>
         </SectionPageLayout.Content>
       </SectionPageLayout>
 

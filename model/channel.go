@@ -524,6 +524,20 @@ func (channel *Channel) Insert() error {
 }
 
 func (channel *Channel) Update() error {
+	return channel.update(nil)
+}
+
+// UpdateFields updates only the explicitly selected channel columns. Select is
+// required here so GORM persists intentional zero values such as 0, false-like
+// integer flags, empty strings, and nil pointers from PATCH-style requests.
+func (channel *Channel) UpdateFields(fields ...string) error {
+	if len(fields) == 0 {
+		return nil
+	}
+	return channel.update(fields)
+}
+
+func (channel *Channel) update(fields []string) error {
 	// If this is a multi-key channel, recalculate MultiKeySize based on the current key list to avoid inconsistency after editing keys
 	if channel.ChannelInfo.IsMultiKey {
 		var keyStr string
@@ -563,7 +577,11 @@ func (channel *Channel) Update() error {
 		}
 	}
 	var err error
-	err = DB.Model(channel).Updates(channel).Error
+	query := DB.Model(channel)
+	if len(fields) > 0 {
+		query = query.Select(fields)
+	}
+	err = query.Updates(channel).Error
 	if err != nil {
 		return err
 	}

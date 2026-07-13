@@ -22,6 +22,8 @@ import { toast } from 'sonner'
 
 import { useAuthStore } from '@/stores/auth-store'
 
+import { getDeviceFingerprint } from './device-fingerprint'
+
 declare module 'axios' {
   export interface AxiosRequestConfig {
     skipBusinessError?: boolean
@@ -65,7 +67,8 @@ api.get = ((url: string, config: ApiRequestConfig = {}) => {
   const key = `${url}?${params}`
 
   // Return existing in-flight request if available
-  if (inFlightGet.has(key)) return inFlightGet.get(key)!
+  const inFlightRequest = inFlightGet.get(key)
+  if (inFlightRequest) return inFlightRequest
 
   // Create new request and clean up after completion
   const req = originalGet(url, config).finally(() => inFlightGet.delete(key))
@@ -160,7 +163,7 @@ export function getCommonHeaders(): Record<string, string> {
 // ============================================================================
 
 // Attach user ID header for all requests
-api.interceptors.request.use((config) => {
+api.interceptors.request.use(async (config) => {
   config.headers = config.headers ?? {}
   ;(config.headers as Record<string, string>)['Accept-Language'] =
     i18next.resolvedLanguage || i18next.language || 'en'
@@ -168,6 +171,11 @@ api.interceptors.request.use((config) => {
   if (uid) {
     // Custom header for user identification
     ;(config.headers as Record<string, string>)['New-Api-User'] = uid
+  }
+  const deviceFingerprint = await getDeviceFingerprint()
+  if (deviceFingerprint) {
+    ;(config.headers as Record<string, string>)['X-Device-Fingerprint'] =
+      deviceFingerprint
   }
   return config
 })
