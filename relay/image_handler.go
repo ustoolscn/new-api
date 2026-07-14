@@ -2,10 +2,13 @@ package relay
 
 import (
 	"bytes"
+	"context"
 	"fmt"
 	"io"
 	"net/http"
 	"strings"
+	"sync"
+	"time"
 
 	"github.com/QuantumNous/new-api/common"
 	"github.com/QuantumNous/new-api/constant"
@@ -19,6 +22,72 @@ import (
 
 	"github.com/gin-gonic/gin"
 )
+
+const imageJSONHeartbeatInterval = 15 * time.Second
+
+type imageHeartbeatReadCloser struct {
+	io.ReadCloser
+	stop context.CancelFunc
+	once sync.Once
+}
+
+func (r *imageHeartbeatReadCloser) Read(p []byte) (int, error) {
+	n, err := r.ReadCloser.Read(p)
+	if n > 0 || err != nil {
+		r.once.Do(r.stop)
+	}
+	return n, err
+}
+
+func (r *imageHeartbeatReadCloser) Close() error {
+	r.once.Do(r.stop)
+	return r.ReadCloser.Close()
+}
+
+func startImageJSONHeartbeat(c *gin.Context, info *relaycommon.RelayInfo, interval time.Duration) context.CancelFunc {
+	if c == nil || c.Request == nil || info == nil || info.IsStream {
+		return func() {}
+	}
+	path := c.Request.URL.Path
+	if path != "/v1/images/generations" && path != "/v1/images/edits" {
+		return func() {}
+	}
+	if interval <= 0 {
+		interval = imageJSONHeartbeatInterval
+	}
+
+	heartbeatCtx, cancel := context.WithCancel(c.Request.Context())
+	done := make(chan struct{})
+	var stopOnce sync.Once
+	go func() {
+		defer close(done)
+		ticker := time.NewTicker(interval)
+		defer ticker.Stop()
+		for {
+			select {
+			case <-ticker.C:
+				c.Header("Content-Type", "application/json; charset=utf-8")
+				c.Header("Cache-Control", "no-cache")
+				c.Header("X-Accel-Buffering", "no")
+				if _, err := c.Writer.Write([]byte("\n")); err != nil {
+					return
+				}
+				if err := helper.FlushWriter(c); err != nil {
+					return
+				}
+			case <-heartbeatCtx.Done():
+				return
+			}
+		}
+	}()
+
+	return func() {
+		stopOnce.Do(func() {
+			cancel()
+			<-done
+		})
+	}
+}
 
 func ImageHelper(c *gin.Context, info *relaycommon.RelayInfo) (newAPIError *types.NewAPIError) {
 	info.InitChannelMeta(c)
@@ -90,6 +159,8 @@ func ImageHelper(c *gin.Context, info *relaycommon.RelayInfo) (newAPIError *type
 
 	statusCodeMappingStr := c.GetString("status_code_mapping")
 
+	stopHeartbeat := startImageJSONHeartbeat(c, info, imageJSONHeartbeatInterval)
+	defer stopHeartbeat()
 	resp, err := adaptor.DoRequest(c, info, requestBody)
 	if err != nil {
 		return types.NewOpenAIError(err, types.ErrorCodeDoRequestFailed, http.StatusInternalServerError)
@@ -97,6 +168,9 @@ func ImageHelper(c *gin.Context, info *relaycommon.RelayInfo) (newAPIError *type
 	var httpResp *http.Response
 	if resp != nil {
 		httpResp = resp.(*http.Response)
+		if httpResp.Body != nil {
+			httpResp.Body = &imageHeartbeatReadCloser{ReadCloser: httpResp.Body, stop: stopHeartbeat}
+		}
 		info.IsStream = info.IsStream || strings.HasPrefix(httpResp.Header.Get("Content-Type"), "text/event-stream")
 		if httpResp.StatusCode != http.StatusOK {
 			if httpResp.StatusCode == http.StatusCreated && info.ApiType == constant.APITypeReplicate {

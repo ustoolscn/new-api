@@ -1,11 +1,13 @@
 package channel
 
 import (
+	"context"
 	"io"
 	"net/http"
 	"net/http/httptest"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/QuantumNous/new-api/dto"
 	"github.com/QuantumNous/new-api/model"
@@ -15,6 +17,54 @@ import (
 	"github.com/gin-gonic/gin"
 	"github.com/stretchr/testify/require"
 )
+
+func TestDoRequestCancelsUpstreamWhenClientDisconnects(t *testing.T) {
+	fetchSetting := system_setting.GetFetchSetting()
+	originalFetchSetting := *fetchSetting
+	fetchSetting.EnableSSRFProtection = false
+	t.Cleanup(func() { *fetchSetting = originalFetchSetting })
+	service.InitHttpClient()
+
+	upstreamStarted := make(chan struct{})
+	upstreamCanceled := make(chan struct{})
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		close(upstreamStarted)
+		<-r.Context().Done()
+		close(upstreamCanceled)
+	}))
+	t.Cleanup(server.Close)
+
+	recorder := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(recorder)
+	clientCtx, cancel := context.WithCancel(context.Background())
+	c.Request = httptest.NewRequest(http.MethodPost, "/v1/images/generations", nil).WithContext(clientCtx)
+	req, err := http.NewRequest(http.MethodPost, server.URL, nil)
+	require.NoError(t, err)
+
+	requestDone := make(chan error, 1)
+	go func() {
+		_, requestErr := doRequest(c, req, &relaycommon.RelayInfo{ChannelMeta: &relaycommon.ChannelMeta{}})
+		requestDone <- requestErr
+	}()
+	select {
+	case <-upstreamStarted:
+	case <-time.After(time.Second):
+		t.Fatal("upstream request did not start")
+	}
+	cancel()
+
+	select {
+	case <-upstreamCanceled:
+	case <-time.After(time.Second):
+		t.Fatal("upstream request was not canceled after the client disconnected")
+	}
+	select {
+	case err := <-requestDone:
+		require.Error(t, err)
+	case <-time.After(time.Second):
+		t.Fatal("relay request did not return after cancellation")
+	}
+}
 
 func TestProcessHeaderOverride_ChannelTestSkipsPassthroughRules(t *testing.T) {
 	t.Parallel()
