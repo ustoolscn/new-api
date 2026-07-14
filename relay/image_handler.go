@@ -33,7 +33,7 @@ type imageHeartbeatReadCloser struct {
 
 func (r *imageHeartbeatReadCloser) Read(p []byte) (int, error) {
 	n, err := r.ReadCloser.Read(p)
-	if n > 0 || err != nil {
+	if err != nil {
 		r.once.Do(r.stop)
 	}
 	return n, err
@@ -44,7 +44,7 @@ func (r *imageHeartbeatReadCloser) Close() error {
 	return r.ReadCloser.Close()
 }
 
-func startImageJSONHeartbeat(c *gin.Context, info *relaycommon.RelayInfo, interval time.Duration) context.CancelFunc {
+func startImageJSONHeartbeat(c *gin.Context, info *relaycommon.RelayInfo, interval time.Duration, cancelUpstream context.CancelFunc) context.CancelFunc {
 	if c == nil || c.Request == nil || info == nil || info.IsStream {
 		return func() {}
 	}
@@ -70,9 +70,11 @@ func startImageJSONHeartbeat(c *gin.Context, info *relaycommon.RelayInfo, interv
 				c.Header("Cache-Control", "no-cache")
 				c.Header("X-Accel-Buffering", "no")
 				if _, err := c.Writer.Write([]byte("\n")); err != nil {
+					cancelUpstream()
 					return
 				}
 				if err := helper.FlushWriter(c); err != nil {
+					cancelUpstream()
 					return
 				}
 			case <-heartbeatCtx.Done():
@@ -159,7 +161,10 @@ func ImageHelper(c *gin.Context, info *relaycommon.RelayInfo) (newAPIError *type
 
 	statusCodeMappingStr := c.GetString("status_code_mapping")
 
-	stopHeartbeat := startImageJSONHeartbeat(c, info, imageJSONHeartbeatInterval)
+	requestCtx, cancelUpstream := context.WithCancel(c.Request.Context())
+	c.Request = c.Request.WithContext(requestCtx)
+	defer cancelUpstream()
+	stopHeartbeat := startImageJSONHeartbeat(c, info, imageJSONHeartbeatInterval, cancelUpstream)
 	defer stopHeartbeat()
 	resp, err := adaptor.DoRequest(c, info, requestBody)
 	if err != nil {
