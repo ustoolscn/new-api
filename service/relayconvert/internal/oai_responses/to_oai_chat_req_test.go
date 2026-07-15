@@ -55,6 +55,53 @@ func TestResponsesRequestToChatCompletionsRequestInstructionsAndScalarInput(t *t
 	assert.Equal(t, "abc", gjson.GetBytes(got.Metadata, "trace").String())
 }
 
+func TestResponsesRequestToChatCompletionsRequestMergesInstructionsAndDeveloperMessage(t *testing.T) {
+	got, err := ResponsesRequestToChatCompletionsRequest(&dto.OpenAIResponsesRequest{
+		Model:        "deepseek-chat",
+		Instructions: mustRawMessage(t, "system rules"),
+		Input: mustRawMessage(t, []map[string]any{
+			{
+				"role": "developer",
+				"content": []map[string]any{
+					{"type": "input_text", "text": "developer rules"},
+				},
+			},
+			{
+				"role": "user",
+				"content": []map[string]any{
+					{"type": "input_text", "text": "hello"},
+				},
+			},
+		}),
+	})
+	require.NoError(t, err)
+
+	require.Len(t, got.Messages, 2)
+	assert.Equal(t, dto.Message{Role: "system", Content: "system rules\n\ndeveloper rules"}, got.Messages[0])
+	assert.Equal(t, dto.Message{Role: "user", Content: "hello"}, got.Messages[1])
+}
+
+func TestResponsesRequestToChatCompletionsRequestConvertsDeveloperWithoutInstructions(t *testing.T) {
+	got, err := ResponsesRequestToChatCompletionsRequest(&dto.OpenAIResponsesRequest{
+		Model: "deepseek-chat",
+		Input: mustRawMessage(t, []map[string]any{
+			{
+				"role":    "developer",
+				"content": "developer rules",
+			},
+			{
+				"role":    "user",
+				"content": "hello",
+			},
+		}),
+	})
+	require.NoError(t, err)
+
+	require.Len(t, got.Messages, 2)
+	assert.Equal(t, dto.Message{Role: "system", Content: "developer rules"}, got.Messages[0])
+	assert.Equal(t, dto.Message{Role: "user", Content: "hello"}, got.Messages[1])
+}
+
 func TestResponsesRequestToChatCompletionsRequestMultimodalInput(t *testing.T) {
 	got, err := ResponsesRequestToChatCompletionsRequest(&dto.OpenAIResponsesRequest{
 		Model: "gpt-test",

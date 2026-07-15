@@ -188,9 +188,28 @@ func responsesInputItemToChatMessages(item map[string]any, messages []dto.Messag
 	if role == "" {
 		role = "user"
 	}
+	if role == "developer" {
+		role = "system"
+	}
+	if role != "system" && role != "user" && role != "assistant" && role != "tool" {
+		return nil, fmt.Errorf("unsupported responses input role %q", role)
+	}
 	content, err := responsesInputContentToChatContent(item["content"])
 	if err != nil {
 		return nil, err
+	}
+	if role == "system" && len(messages) > 0 && messages[len(messages)-1].Role == "system" {
+		previousContent, previousIsString := messages[len(messages)-1].Content.(string)
+		contentString, contentIsString := content.(string)
+		if previousIsString && contentIsString {
+			switch {
+			case previousContent == "":
+				messages[len(messages)-1].Content = contentString
+			case contentString != "":
+				messages[len(messages)-1].Content = previousContent + "\n\n" + contentString
+			}
+			return messages, nil
+		}
 	}
 	return append(messages, dto.Message{Role: role, Content: content}), nil
 }
