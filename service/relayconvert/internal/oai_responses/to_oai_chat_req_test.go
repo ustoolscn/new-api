@@ -197,6 +197,86 @@ func TestResponsesRequestToChatCompletionsRequestOnlyFunctionCallCreatesAssistan
 	assert.Equal(t, `{"q":"x"}`, toolCalls[0].Function.Arguments)
 }
 
+func TestResponsesRequestToChatCompletionsRequestPreservesAssistantReasoning(t *testing.T) {
+	got, err := ResponsesRequestToChatCompletionsRequest(&dto.OpenAIResponsesRequest{
+		Model: "kimi-k2.6",
+		Input: mustRawMessage(t, []map[string]any{
+			{
+				"role":    "assistant",
+				"content": "final answer",
+			},
+			{
+				"type": "reasoning",
+				"summary": []map[string]any{
+					{"type": "summary_text", "text": "first thought"},
+					{"type": "summary_text", "summary_text": "second thought"},
+				},
+			},
+		}),
+	})
+	require.NoError(t, err)
+
+	require.Len(t, got.Messages, 1)
+	assert.Equal(t, "assistant", got.Messages[0].Role)
+	assert.Equal(t, "final answer", got.Messages[0].StringContent())
+	assert.Equal(t, "first thought\n\nsecond thought", got.Messages[0].GetReasoningContent())
+}
+
+func TestResponsesRequestToChatCompletionsRequestMergesReasoningBeforeAssistant(t *testing.T) {
+	got, err := ResponsesRequestToChatCompletionsRequest(&dto.OpenAIResponsesRequest{
+		Model: "kimi-k2.6",
+		Input: mustRawMessage(t, []map[string]any{
+			{
+				"type":              "reasoning",
+				"reasoning_content": "thinking",
+			},
+			{
+				"role":    "assistant",
+				"content": "final answer",
+			},
+		}),
+	})
+	require.NoError(t, err)
+
+	require.Len(t, got.Messages, 1)
+	assert.Equal(t, "assistant", got.Messages[0].Role)
+	assert.Equal(t, "final answer", got.Messages[0].StringContent())
+	assert.Equal(t, "thinking", got.Messages[0].GetReasoningContent())
+}
+
+func TestResponsesRequestToChatCompletionsRequestSkipsEmptyReasoning(t *testing.T) {
+	got, err := ResponsesRequestToChatCompletionsRequest(&dto.OpenAIResponsesRequest{
+		Model: "kimi-k2.6",
+		Input: mustRawMessage(t, []map[string]any{
+			{"type": "reasoning", "summary": []map[string]any{}},
+			{"role": "user", "content": "next turn"},
+		}),
+	})
+	require.NoError(t, err)
+
+	require.Len(t, got.Messages, 1)
+	assert.Equal(t, dto.Message{Role: "user", Content: "next turn"}, got.Messages[0])
+}
+
+func TestResponsesRequestToChatCompletionsRequestCustomToolCallOutputCreatesToolMessage(t *testing.T) {
+	got, err := ResponsesRequestToChatCompletionsRequest(&dto.OpenAIResponsesRequest{
+		Model: "gpt-test",
+		Input: mustRawMessage(t, []map[string]any{
+			{
+				"type":    "custom_tool_call_output",
+				"call_id": "call_custom",
+				"output":  "patched",
+			},
+		}),
+	})
+	require.NoError(t, err)
+
+	require.Len(t, got.Messages, 1)
+	assert.Equal(t, "tool", got.Messages[0].Role)
+	assert.Equal(t, "call_custom", got.Messages[0].ToolCallId)
+	assert.Equal(t, "patched", got.Messages[0].StringContent())
+}
+
 func TestResponsesRequestToChatCompletionsRequestToolsToolChoiceAndTextFormat(t *testing.T) {
 	got, err := ResponsesRequestToChatCompletionsRequest(&dto.OpenAIResponsesRequest{
 		Model: "gpt-test",

@@ -15,6 +15,7 @@ const (
 	responsesInputTypeFunctionCallOutput = "function_call_output"
 	responsesInputTypeCustomToolCall     = "custom_tool_call"
 	responsesInputTypeCustomToolOutput   = "custom_tool_call_output"
+	responsesInputTypeReasoning          = "reasoning"
 )
 
 const (
@@ -182,6 +183,24 @@ func responsesInputItemToChatMessages(item map[string]any, messages []dto.Messag
 		callID := strings.TrimSpace(common.Interface2String(item["call_id"]))
 		content := responseToolOutputToChatContent(item["output"])
 		return append(messages, dto.Message{Role: "tool", ToolCallId: callID, Content: content}), nil
+	case responsesInputTypeCustomToolOutput:
+		callID := strings.TrimSpace(common.Interface2String(item["call_id"]))
+		content := responseToolOutputToChatContent(item["output"])
+		return append(messages, dto.Message{Role: "tool", ToolCallId: callID, Content: content}), nil
+	case responsesInputTypeReasoning:
+		reasoning := responsesReasoningItemText(item)
+		if reasoning == "" {
+			return messages, nil
+		}
+		if len(messages) == 0 || messages[len(messages)-1].Role != "assistant" {
+			messages = append(messages, dto.Message{Role: "assistant", Content: ""})
+		}
+		idx := len(messages) - 1
+		if previous := messages[idx].GetReasoningContent(); previous != "" {
+			reasoning = previous + "\n\n" + reasoning
+		}
+		messages[idx].ReasoningContent = &reasoning
+		return messages, nil
 	}
 
 	role := strings.TrimSpace(common.Interface2String(item["role"]))
@@ -198,6 +217,13 @@ func responsesInputItemToChatMessages(item map[string]any, messages []dto.Messag
 	if err != nil {
 		return nil, err
 	}
+	if role == "assistant" && len(messages) > 0 {
+		idx := len(messages) - 1
+		if messages[idx].Role == "assistant" && messages[idx].StringContent() == "" && messages[idx].GetReasoningContent() != "" {
+			messages[idx].Content = content
+			return messages, nil
+		}
+	}
 	if role == "system" && len(messages) > 0 && messages[len(messages)-1].Role == "system" {
 		previousContent, previousIsString := messages[len(messages)-1].Content.(string)
 		contentString, contentIsString := content.(string)
@@ -212,6 +238,42 @@ func responsesInputItemToChatMessages(item map[string]any, messages []dto.Messag
 		}
 	}
 	return append(messages, dto.Message{Role: role, Content: content}), nil
+}
+
+func responsesReasoningItemText(item map[string]any) string {
+	parts := make([]string, 0, 3)
+	for _, key := range []string{"reasoning_content", "text"} {
+		text := strings.TrimSpace(common.Interface2String(item[key]))
+		if text != "" {
+			parts = append(parts, text)
+		}
+	}
+
+	switch summary := item["summary"].(type) {
+	case string:
+		if text := strings.TrimSpace(summary); text != "" {
+			parts = append(parts, text)
+		}
+	case []any:
+		for _, rawPart := range summary {
+			if part, ok := rawPart.(map[string]any); ok {
+				for _, key := range []string{"text", "summary_text"} {
+					if text := strings.TrimSpace(common.Interface2String(part[key])); text != "" {
+						parts = append(parts, text)
+					}
+				}
+			}
+		}
+	case []map[string]any:
+		for _, part := range summary {
+			for _, key := range []string{"text", "summary_text"} {
+				if text := strings.TrimSpace(common.Interface2String(part[key])); text != "" {
+					parts = append(parts, text)
+				}
+			}
+		}
+	}
+	return strings.Join(parts, "\n\n")
 }
 
 func responsesInputContentToChatContent(content any) (any, error) {

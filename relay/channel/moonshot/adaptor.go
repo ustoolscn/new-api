@@ -103,11 +103,92 @@ func isTemperatureOneOnlyModel(model string) bool {
 }
 
 func (a *Adaptor) ConvertOpenAIResponsesRequest(c *gin.Context, info *relaycommon.RelayInfo, request dto.OpenAIResponsesRequest) (any, error) {
+	request, err := prepareResponsesRequest(request)
+	if err != nil {
+		return nil, err
+	}
 	chatRequest, err := openaicompat.ConvertResponsesRequestToChat(c, request)
 	if err != nil {
 		return nil, err
 	}
 	return a.ConvertOpenAIRequest(c, info, chatRequest)
+}
+
+func prepareResponsesRequest(request dto.OpenAIResponsesRequest) (dto.OpenAIResponsesRequest, error) {
+	if len(request.ToolChoice) > 0 && common.GetJsonType(request.ToolChoice) == "object" {
+		var toolChoice map[string]any
+		if err := common.Unmarshal(request.ToolChoice, &toolChoice); err != nil {
+			return request, err
+		}
+		if strings.TrimSpace(common.Interface2String(toolChoice["type"])) != "function" {
+			request.ToolChoice = nil
+		}
+	}
+
+	if len(request.Tools) > 0 && common.GetJsonType(request.Tools) == "array" {
+		var tools []map[string]any
+		if err := common.Unmarshal(request.Tools, &tools); err != nil {
+			return request, err
+		}
+		filteredTools := make([]map[string]any, 0, len(tools))
+		for _, tool := range tools {
+			toolType := strings.TrimSpace(common.Interface2String(tool["type"]))
+			if toolType == "function" || toolType == "namespace" {
+				filteredTools = append(filteredTools, tool)
+			}
+		}
+		request.Tools = nil
+		if len(filteredTools) > 0 {
+			filteredRaw, err := common.Marshal(filteredTools)
+			if err != nil {
+				return request, err
+			}
+			request.Tools = filteredRaw
+		}
+	}
+
+	if len(request.Input) == 0 || common.GetJsonType(request.Input) != "array" {
+		return request, nil
+	}
+	var items []map[string]any
+	if err := common.Unmarshal(request.Input, &items); err != nil {
+		return request, err
+	}
+	skippedCustomCallIDs := make(map[string]struct{})
+	for _, item := range items {
+		if strings.TrimSpace(common.Interface2String(item["type"])) != "custom_tool_call" {
+			continue
+		}
+		if callID := responsesItemCallID(item); callID != "" {
+			skippedCustomCallIDs[callID] = struct{}{}
+		}
+	}
+	filteredItems := make([]map[string]any, 0, len(items))
+	for _, item := range items {
+		itemType := strings.TrimSpace(common.Interface2String(item["type"]))
+		switch itemType {
+		case "custom_tool_call", "custom_tool_call_output":
+			continue
+		case "function_call_output":
+			if _, ok := skippedCustomCallIDs[responsesItemCallID(item)]; ok {
+				continue
+			}
+		}
+		filteredItems = append(filteredItems, item)
+	}
+	filteredRaw, err := common.Marshal(filteredItems)
+	if err != nil {
+		return request, err
+	}
+	request.Input = filteredRaw
+	return request, nil
+}
+
+func responsesItemCallID(item map[string]any) string {
+	if callID := strings.TrimSpace(common.Interface2String(item["call_id"])); callID != "" {
+		return callID
+	}
+	return strings.TrimSpace(common.Interface2String(item["id"]))
 }
 
 func (a *Adaptor) DoRequest(c *gin.Context, info *relaycommon.RelayInfo, requestBody io.Reader) (any, error) {
