@@ -39,11 +39,7 @@ export type ModelPricingFormValues = z.infer<
   ReturnType<typeof createModelPricingSchema>
 >
 
-export type PricingMode =
-  | 'per-token'
-  | 'per-request'
-  | 'tiered_expr'
-  | 'video_seconds'
+export type PricingMode = 'per-token' | 'per-request' | 'tiered_expr'
 
 export type LaneKey =
   | 'completion'
@@ -66,19 +62,6 @@ export type ModelRatioData = {
   billingMode?: PricingMode
   billingExpr?: string
   requestRuleExpr?: string
-  videoPrice?: VideoPricingConfig
-}
-
-export type VideoPricingConfig = {
-  base_fps?: number
-  input_content_price?: number
-  prices?: Record<string, number>
-}
-
-export type VideoPriceRow = {
-  id: number
-  resolution: string
-  price: string
 }
 
 export type PreviewRow = {
@@ -224,58 +207,6 @@ export function createInitialLaneState(data?: ModelRatioData | null) {
   }
 }
 
-export function createInitialVideoRows(data?: ModelRatioData | null): {
-  baseFps: string
-  inputContentPrice: string
-  rows: VideoPriceRow[]
-} {
-  const config = data?.videoPrice
-  const prices = config?.prices || {}
-  const entries = Object.entries(prices)
-  if (entries.length === 0) {
-    return {
-      baseFps: formatPricingNumber(config?.base_fps || 24),
-      inputContentPrice: formatPricingNumber(config?.input_content_price),
-      rows: [
-        { id: 1, resolution: '720p', price: '' },
-        { id: 2, resolution: '1080p', price: '' },
-      ],
-    }
-  }
-  return {
-    baseFps: formatPricingNumber(config?.base_fps || 24),
-    inputContentPrice: formatPricingNumber(config?.input_content_price),
-    rows: entries.map(([resolution, price], index) => ({
-      id: index + 1,
-      resolution,
-      price: formatPricingNumber(price),
-    })),
-  }
-}
-
-export function videoRowsToConfig(
-  baseFps: string,
-  inputContentPrice: string,
-  rows: VideoPriceRow[]
-): VideoPricingConfig {
-  const prices: Record<string, number> = {}
-  rows.forEach((row) => {
-    const resolution = row.resolution.trim()
-    const price = toNumberOrNull(row.price)
-    if (!resolution || price === null) return
-    prices[resolution] = price
-  })
-  const config: VideoPricingConfig = {
-    base_fps: toNumberOrNull(baseFps) || 24,
-    prices,
-  }
-  const contentPrice = toNumberOrNull(inputContentPrice)
-  if (contentPrice !== null && contentPrice > 0) {
-    config.input_content_price = contentPrice
-  }
-  return config
-}
-
 export function buildPreviewRows(
   values: ModelPricingFormValues,
   mode: PricingMode,
@@ -295,17 +226,6 @@ export function buildPreviewRows(
         label: t('Expression'),
         value: effectiveExpr || t('Empty'),
         multiline: true,
-      },
-    ]
-  }
-
-  if (mode === 'video_seconds') {
-    return [
-      { key: 'mode', label: 'BillingMode', value: 'video_seconds' },
-      {
-        key: 'video',
-        label: t('Video pricing'),
-        value: t('Configured by resolution price per second.'),
       },
     ]
   }

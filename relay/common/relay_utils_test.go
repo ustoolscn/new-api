@@ -1,69 +1,59 @@
 package common
 
 import (
-	"bytes"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
 	"strings"
 	"testing"
 
 	"github.com/QuantumNous/new-api/constant"
 	"github.com/gin-gonic/gin"
+	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-	"golang.org/x/text/encoding/simplifiedchinese"
 )
 
-func TestValidateBasicTaskRequestDecodesGB18030JSONPrompt(t *testing.T) {
-	gin.SetMode(gin.TestMode)
-	body := `{"model":"doubao-seedance-2.0","prompt":"小猫在城市上空急速飞行","duration":5,"width":1280,"height":720}`
-	encodedBody, err := simplifiedchinese.GB18030.NewEncoder().Bytes([]byte(body))
+func TestSanitizeURLForLogMasksSensitiveQueryValues(t *testing.T) {
+	rawURL := "https://example.test/v1beta/models/gemini:streamGenerateContent?alt=sse&key=sk-secret&access_token=ya29-secret&api-version=2024-02-01"
+
+	got := SanitizeURLForLog(rawURL)
+
+	assert.NotContains(t, got, "sk-secret")
+	assert.NotContains(t, got, "ya29-secret")
+	parsedURL, err := url.Parse(got)
 	require.NoError(t, err)
-
-	recorder := httptest.NewRecorder()
-	ctx, _ := gin.CreateTestContext(recorder)
-	ctx.Request = httptest.NewRequest(http.MethodPost, "/v1/video/generations", bytes.NewReader(encodedBody))
-	ctx.Request.Header.Set("Content-Type", "application/json")
-
-	info := &RelayInfo{TaskRelayInfo: &TaskRelayInfo{}}
-	taskErr := ValidateBasicTaskRequest(ctx, info, constant.TaskActionGenerate)
-	require.Nil(t, taskErr)
-
-	req, err := GetTaskRequest(ctx)
-	require.NoError(t, err)
-	require.Equal(t, "小猫在城市上空急速飞行", req.Prompt)
-	require.Equal(t, "doubao-seedance-2.0", req.Model)
-	require.Equal(t, 5, req.Duration)
-	require.Equal(t, 1280, req.Width)
-	require.Equal(t, 720, req.Height)
+	query := parsedURL.Query()
+	assert.Equal(t, "***masked***", query.Get("key"))
+	assert.Equal(t, "***masked***", query.Get("access_token"))
+	assert.Equal(t, "sse", query.Get("alt"))
+	assert.Equal(t, "2024-02-01", query.Get("api-version"))
 }
 
-func TestValidateBasicTaskRequestAcceptsImageObjects(t *testing.T) {
-	gin.SetMode(gin.TestMode)
-	body := `{
-		"model":"doubao-seedance-2.0",
-		"prompt":"hello",
-		"images":[
-			{"url":"https://example.com/first.jpeg","role":"first_frame"},
-			{"image_url":{"url":"https://example.com/last.jpeg"},"role":"last_frame"}
-		],
-		"duration":5
-	}`
+func TestSanitizeURLForLogMasksAWSAndSecretLikeQueryKeys(t *testing.T) {
+	rawURL := "https://example.test/path?X-Amz-Credential=credential&X-Amz-Signature=signature&session_token=session&client_secret=secret&model=gpt-test"
 
-	recorder := httptest.NewRecorder()
-	ctx, _ := gin.CreateTestContext(recorder)
-	ctx.Request = httptest.NewRequest(http.MethodPost, "/v1/video/generations", bytes.NewReader([]byte(body)))
-	ctx.Request.Header.Set("Content-Type", "application/json")
+	got := SanitizeURLForLog(rawURL)
 
-	info := &RelayInfo{TaskRelayInfo: &TaskRelayInfo{}}
-	taskErr := ValidateBasicTaskRequest(ctx, info, constant.TaskActionGenerate)
-	require.Nil(t, taskErr)
-
-	req, err := GetTaskRequest(ctx)
+	assert.NotContains(t, got, "X-Amz-Credential=credential")
+	assert.NotContains(t, got, "X-Amz-Signature=signature")
+	assert.NotContains(t, got, "session_token=session")
+	assert.NotContains(t, got, "client_secret=secret")
+	parsedURL, err := url.Parse(got)
 	require.NoError(t, err)
-	require.Equal(t, []string{"https://example.com/first.jpeg", "https://example.com/last.jpeg"}, req.Images)
-	require.Len(t, req.ImageInputs, 2)
-	require.Equal(t, "first_frame", req.ImageInputs[0].Role)
-	require.Equal(t, "last_frame", req.ImageInputs[1].Role)
+	query := parsedURL.Query()
+	assert.Equal(t, "***masked***", query.Get("X-Amz-Credential"))
+	assert.Equal(t, "***masked***", query.Get("X-Amz-Signature"))
+	assert.Equal(t, "***masked***", query.Get("session_token"))
+	assert.Equal(t, "***masked***", query.Get("client_secret"))
+	assert.Equal(t, "gpt-test", query.Get("model"))
+}
+
+func TestSanitizeURLForLogKeepsURLWithoutSensitiveQuery(t *testing.T) {
+	rawURL := "https://example.test/v1/chat/completions?api-version=2024-02-01&alt=sse"
+
+	got := SanitizeURLForLog(rawURL)
+
+	assert.Equal(t, rawURL, got)
 }
 
 func TestValidateMultipartDirectNormalizesImageField(t *testing.T) {

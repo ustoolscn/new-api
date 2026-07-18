@@ -78,16 +78,11 @@ export function filterByQuotaType(
   quotaType: string
 ): PricingModel[] {
   if (quotaType === QUOTA_TYPES.ALL) return models
-  if (quotaType === QUOTA_TYPES.VIDEO) {
-    return models.filter((m) => m.billing_mode === 'video_seconds')
-  }
   const targetType =
     quotaType === QUOTA_TYPES.TOKEN
       ? QUOTA_TYPE_VALUES.TOKEN
       : QUOTA_TYPE_VALUES.REQUEST
-  return models.filter(
-    (m) => m.billing_mode !== 'video_seconds' && m.quota_type === targetType
-  )
+  return models.filter((m) => m.quota_type === targetType)
 }
 
 /**
@@ -98,13 +93,6 @@ export function filterByEndpointType(
   endpointType: string
 ): PricingModel[] {
   if (endpointType === ENDPOINT_TYPES.ALL) return models
-  if (endpointType === ENDPOINT_TYPES.OPENAI_VIDEO) {
-    return models.filter(
-      (m) =>
-        m.supported_endpoint_types?.includes(endpointType) ||
-        m.billing_mode === 'video_seconds'
-    )
-  }
   return models.filter((m) =>
     m.supported_endpoint_types?.includes(endpointType)
   )
@@ -114,12 +102,6 @@ export function filterByEndpointType(
  * Get model price for sorting
  */
 function getModelPrice(model: PricingModel): number {
-  if (model.billing_mode === 'video_seconds') {
-    const prices = Object.values(model.video_price?.prices || {})
-      .map(Number)
-      .filter((price) => Number.isFinite(price) && price > 0)
-    return prices.length > 0 ? Math.min(...prices) : 0
-  }
   return model.quota_type === 0 ? model.model_ratio : model.model_price || 0
 }
 
@@ -201,7 +183,7 @@ export function extractAllTags(models: PricingModel[]): string[] {
     }
   })
 
-  return Array.from(tagSet).sort((a, b) => a.localeCompare(b))
+  return [...tagSet].sort((a, b) => a.localeCompare(b))
 }
 
 /**

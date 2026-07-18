@@ -40,8 +40,6 @@ import { sideDrawerContentClassName } from '@/components/drawer-layout'
 import { GroupBadge } from '@/components/group-badge'
 import { PublicLayout } from '@/components/layout'
 import { Button } from '@/components/ui/button'
-import { useCopyToClipboard } from '@/hooks/use-copy-to-clipboard'
-import { useStatus } from '@/hooks/use-status'
 import {
   Sheet,
   SheetContent,
@@ -51,14 +49,6 @@ import {
 } from '@/components/ui/sheet'
 import { Skeleton } from '@/components/ui/skeleton'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
-import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from '@/components/ui/table'
 import { getPerfMetrics } from '@/features/performance-metrics/api'
 import {
   formatLatency,
@@ -66,6 +56,8 @@ import {
   formatUptimePct,
   getSuccessRateTextClass,
 } from '@/features/performance-metrics/lib/format'
+import { useCopyToClipboard } from '@/hooks/use-copy-to-clipboard'
+import { useStatus } from '@/hooks/use-status'
 import { getLobeIcon } from '@/lib/lobe-icon'
 import { cn } from '@/lib/utils'
 
@@ -83,13 +75,7 @@ import {
   isTokenBasedModel,
   replaceModelInPath,
 } from '../lib/model-helpers'
-import {
-  formatFixedPrice,
-  formatGroupPrice,
-  formatVideoInputContentPrice,
-  formatVideoSecondPrice,
-  getVideoPriceEntries,
-} from '../lib/price'
+import { formatFixedPrice, formatGroupPrice } from '../lib/price'
 import type {
   ModelCapability,
   PriceType,
@@ -579,11 +565,9 @@ function ModelHeader(props: { model: PricingModel }) {
         )}
         <span className='text-muted-foreground/30'>·</span>
         <span className='text-muted-foreground/70'>
-          {model.billing_mode === 'video_seconds'
-            ? t('Video per-second')
-            : model.quota_type === QUOTA_TYPE_VALUES.TOKEN
-              ? t('Token-based')
-              : t('Per Request')}
+          {model.quota_type === QUOTA_TYPE_VALUES.TOKEN
+            ? t('Token-based')
+            : t('Per Request')}
         </span>
         {model.billing_mode === 'tiered_expr' && model.billing_expr && (
           <>
@@ -666,67 +650,6 @@ function PriceSection(props: {
         props.model.audio_completion_ratio != null,
     },
   ]
-
-  if (props.model.billing_mode === 'video_seconds') {
-    const entries = getVideoPriceEntries(props.model)
-    const hasInputContentPrice =
-      Number(props.model.video_price?.input_content_price) > 0
-    return (
-      <section>
-        <SectionTitle>{t('Base Price')}</SectionTitle>
-        {entries.length > 0 || hasInputContentPrice ? (
-          <div className='bg-muted/20 rounded-lg border px-3 py-2.5'>
-            <div className='space-y-1.5'>
-              {hasInputContentPrice && (
-                <div className='flex items-baseline justify-between gap-4'>
-                  <span className='text-muted-foreground/70 text-sm'>
-                    {t('Input content price')}
-                  </span>
-                  <span className='text-foreground font-mono text-sm font-semibold tabular-nums'>
-                    {formatVideoInputContentPrice(
-                      props.model,
-                      props.showRechargePrice,
-                      props.priceRate,
-                      props.usdExchangeRate
-                    )}
-                  </span>
-                </div>
-              )}
-              {entries.map((entry) => (
-                <div
-                  key={entry.resolution}
-                  className='flex items-baseline justify-between gap-4'
-                >
-                  <span className='text-muted-foreground/70 text-sm'>
-                    {entry.resolution}
-                  </span>
-                  <span className='text-foreground font-mono text-sm font-semibold tabular-nums'>
-                    {formatVideoSecondPrice(
-                      {
-                        ...props.model,
-                        video_price: {
-                          ...props.model.video_price,
-                          prices: { [entry.resolution]: entry.price },
-                        },
-                      },
-                      props.showRechargePrice,
-                      props.priceRate,
-                      props.usdExchangeRate
-                    )}
-                    <span className='text-muted-foreground/40 ml-1 text-xs font-normal'>
-                      / {t('second')}
-                    </span>
-                  </span>
-                </div>
-              ))}
-            </div>
-          </div>
-        ) : (
-          <p className='text-muted-foreground text-sm'>-</p>
-        )}
-      </section>
-    )
-  }
 
   if (dynamicSummary) {
     if (dynamicSummary.isSpecialExpression) {
@@ -951,7 +874,7 @@ function ModelEndpointsSection(props: {
                 className='text-foreground hover:text-primary focus-visible:ring-ring grid min-w-0 grid-cols-[minmax(0,1fr)_auto] items-start gap-1 rounded-sm text-left font-mono text-sm leading-relaxed whitespace-normal focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:outline-none'
                 aria-label={t('Copy')}
               >
-                <span className='block min-w-0 whitespace-normal break-all [overflow-wrap:anywhere]'>
+                <span className='block min-w-0 [overflow-wrap:anywhere] break-all whitespace-normal'>
                   {endpoint.href}
                 </span>
                 {copiedText === endpoint.href ? (
@@ -961,7 +884,7 @@ function ModelEndpointsSection(props: {
                 )}
               </button>
             ) : (
-              <code className='text-foreground min-w-0 break-all whitespace-normal [overflow-wrap:anywhere] font-mono text-sm'>
+              <code className='text-foreground min-w-0 font-mono text-sm [overflow-wrap:anywhere] break-all whitespace-normal'>
                 {endpoint.type}
               </code>
             )}
@@ -1011,13 +934,13 @@ function getDynamicPriceFields(
   tiers: DynamicPricingTier[],
   options: DynamicPriceOptions
 ) {
-  return Array.from(
-    new Map(
+  return [
+    ...new Map(
       tiers
         .flatMap((tier) => getDynamicPriceEntries(tier, options))
         .map((entry) => [entry.field, entry])
-    ).values()
-  )
+    ).values(),
+  ]
 }
 
 function getDynamicFormattedPricesByTier(
@@ -1064,19 +987,24 @@ function GroupPricingSection(props: {
 
   const extraPriceTypes = useMemo(() => {
     const types: { label: string; type: PriceType }[] = []
-    if (props.model.cache_ratio != null)
+    if (props.model.cache_ratio != null) {
       types.push({ label: t('Cache'), type: 'cache' })
-    if (props.model.create_cache_ratio != null)
+    }
+    if (props.model.create_cache_ratio != null) {
       types.push({ label: t('Cache Write'), type: 'create_cache' })
-    if (props.model.image_ratio != null)
+    }
+    if (props.model.image_ratio != null) {
       types.push({ label: t('Image'), type: 'image' })
-    if (props.model.audio_ratio != null)
+    }
+    if (props.model.audio_ratio != null) {
       types.push({ label: t('Audio In'), type: 'audio_input' })
+    }
     if (
       props.model.audio_ratio != null &&
       props.model.audio_completion_ratio != null
-    )
+    ) {
       types.push({ label: t('Audio Out'), type: 'audio_output' })
+    }
     return types
   }, [props.model, t])
 
@@ -1096,90 +1024,6 @@ function GroupPricingSection(props: {
 
   const thClass =
     'text-muted-foreground py-2 text-[10px] font-medium tracking-wider uppercase'
-
-  if (props.model.billing_mode === 'video_seconds') {
-    const videoEntries = getVideoPriceEntries(props.model)
-    const hasInputContentPrice =
-      Number(props.model.video_price?.input_content_price) > 0
-    return (
-      <section>
-        <SectionTitle>{t('Pricing by Group')}</SectionTitle>
-        <AutoGroupChain model={props.model} autoGroups={props.autoGroups} />
-        <div className='-mx-4 overflow-x-auto sm:mx-0'>
-          <Table className='text-sm'>
-            <TableHeader>
-              <TableRow className='hover:bg-transparent'>
-                <TableHead className={thClass}>{t('Group')}</TableHead>
-                <TableHead className={thClass}>{t('Ratio')}</TableHead>
-                {hasInputContentPrice && (
-                  <TableHead className={`${thClass} text-right`}>
-                    {t('Input content price')}
-                  </TableHead>
-                )}
-                {videoEntries.map((entry) => (
-                  <TableHead
-                    key={entry.resolution}
-                    className={`${thClass} text-right`}
-                  >
-                    {entry.resolution}
-                  </TableHead>
-                ))}
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {availableGroups.map((group) => {
-                const ratio = props.groupRatio[group] || 1
-                return (
-                  <TableRow key={group}>
-                    <TableCell className='py-2.5'>
-                      <GroupBadge group={group} size='sm' />
-                    </TableCell>
-                    <TableCell className='text-muted-foreground py-2.5 font-mono text-xs'>
-                      {ratio}x
-                    </TableCell>
-                    {hasInputContentPrice && (
-                      <TableCell className='py-2.5 text-right font-mono'>
-                        {formatVideoInputContentPrice(
-                          props.model,
-                          showRechargePrice,
-                          props.priceRate,
-                          props.usdExchangeRate,
-                          ratio
-                        )}
-                      </TableCell>
-                    )}
-                    {videoEntries.map((entry) => (
-                      <TableCell
-                        key={entry.resolution}
-                        className='py-2.5 text-right font-mono'
-                      >
-                        {formatVideoSecondPrice(
-                          {
-                            ...props.model,
-                            video_price: {
-                              ...props.model.video_price,
-                              prices: { [entry.resolution]: entry.price },
-                            },
-                          },
-                          showRechargePrice,
-                          props.priceRate,
-                          props.usdExchangeRate,
-                          ratio
-                        )}
-                      </TableCell>
-                    ))}
-                  </TableRow>
-                )
-              })}
-            </TableBody>
-          </Table>
-          <p className='text-muted-foreground/40 mt-1.5 px-4 text-[10px] sm:px-0'>
-            {t('Prices shown per second')}
-          </p>
-        </div>
-      </section>
-    )
-  }
 
   if (isDynamicPricingModel(props.model)) {
     const dynamicTiers = getDynamicPricingTiers(props.model)
@@ -1474,7 +1318,6 @@ export function ModelDetailsContent(props: ModelDetailsContentProps) {
         <TabsContent value='performance' className='outline-none'>
           <ModelDetailsPerformance model={props.model} />
         </TabsContent>
-
       </Tabs>
     </div>
   )
@@ -1553,13 +1396,13 @@ export function ModelDetails() {
             <Skeleton className='h-4 w-full max-w-md' />
           </div>
           <div className='mt-6 grid grid-cols-2 gap-2 sm:grid-cols-4'>
-            {Array.from({ length: 4 }).map((_, i) => (
-              <Skeleton key={i} className='h-16 w-full' />
+            {['summary-a', 'summary-b', 'summary-c', 'summary-d'].map((key) => (
+              <Skeleton key={key} className='h-16 w-full' />
             ))}
           </div>
           <div className='mt-6 space-y-3'>
-            {Array.from({ length: 4 }).map((_, i) => (
-              <Skeleton key={i} className='h-24 w-full' />
+            {['section-a', 'section-b', 'section-c', 'section-d'].map((key) => (
+              <Skeleton key={key} className='h-24 w-full' />
             ))}
           </div>
         </div>

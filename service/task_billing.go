@@ -10,7 +10,6 @@ import (
 	"github.com/QuantumNous/new-api/logger"
 	"github.com/QuantumNous/new-api/model"
 	relaycommon "github.com/QuantumNous/new-api/relay/common"
-	"github.com/QuantumNous/new-api/setting/billing_setting"
 	"github.com/QuantumNous/new-api/setting/ratio_setting"
 	"github.com/QuantumNous/new-api/types"
 	"github.com/gin-gonic/gin"
@@ -41,27 +40,6 @@ func LogTaskConsumption(c *gin.Context, info *relaycommon.RelayInfo) {
 	other["is_task"] = true
 	other["request_path"] = c.Request.URL.Path
 	other["model_price"] = info.PriceData.ModelPrice
-	if billingMode := billing_setting.GetBillingMode(info.OriginModelName); billingMode == billing_setting.BillingModeVideoSeconds {
-		other["billing_mode"] = billingMode
-		other["video_total_price"] = info.PriceData.ModelPrice
-		if trace := info.PriceData.VideoSecondsTrace; trace != nil {
-			other["video_resolution"] = trace.Resolution
-			other["video_duration"] = trace.Duration
-			other["video_billable_duration"] = trace.BillableDuration
-			other["video_price_per_second"] = trace.PricePerSecond
-			other["video_generated_price"] = trace.GeneratedVideoPrice
-			if trace.InputContentCharged {
-				other["video_input_content_price"] = trace.InputContentPrice
-			}
-			if trace.InputVideoDuration > 0 {
-				other["video_input_duration"] = trace.InputVideoDuration
-			}
-			other["video_fps"] = trace.FPS
-			other["video_base_fps"] = trace.BaseFPS
-			other["video_fps_multiplier"] = trace.FPSMultiplier
-		}
-		logContent = fmt.Sprintf("%s，视频按秒计费", logContent)
-	}
 	if info.PriceData.ModelRatio > 0 {
 		other["model_ratio"] = info.PriceData.ModelRatio
 	}

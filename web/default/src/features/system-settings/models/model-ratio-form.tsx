@@ -56,7 +56,6 @@ type ModelFormValues = {
   ImageRatio: string
   AudioRatio: string
   AudioCompletionRatio: string
-  VideoPrice: string
   ExposeRatioEnabled: boolean
   BillingMode: string
   BillingExpr: string
@@ -81,7 +80,6 @@ type ModelJsonFieldName =
   | 'ImageRatio'
   | 'AudioRatio'
   | 'AudioCompletionRatio'
-  | 'VideoPrice'
 
 const modelJsonFields: Array<{
   name: ModelJsonFieldName
@@ -131,12 +129,6 @@ const modelJsonFields: Array<{
     name: 'AudioCompletionRatio',
     labelKey: 'Audio completion ratio',
     descriptionKey: 'Ratio applied to audio completions for streaming models.',
-  },
-  {
-    name: 'VideoPrice',
-    labelKey: 'Video per-second pricing',
-    descriptionKey:
-      'JSON map of model → resolution prices in USD per generated second.',
   },
 ]
 
@@ -280,7 +272,6 @@ export const ModelRatioForm = memo(function ModelRatioForm({
               savedAudioCompletionRatio={savedValues.AudioCompletionRatio}
               savedBillingMode={savedValues.BillingMode}
               savedBillingExpr={savedValues.BillingExpr}
-              savedVideoPrice={savedValues.VideoPrice}
               modelPrice={form.watch('ModelPrice')}
               modelRatio={form.watch('ModelRatio')}
               cacheRatio={form.watch('CacheRatio')}
@@ -291,7 +282,6 @@ export const ModelRatioForm = memo(function ModelRatioForm({
               audioCompletionRatio={form.watch('AudioCompletionRatio')}
               billingMode={form.watch('BillingMode')}
               billingExpr={form.watch('BillingExpr')}
-              videoPrice={form.watch('VideoPrice')}
               candidateModelNames={
                 isUnsetVariant ? enabledModelsQuery.data?.data : undefined
               }
@@ -305,7 +295,6 @@ export const ModelRatioForm = memo(function ModelRatioForm({
                 const fieldMap: Record<string, keyof ModelFormValues> = {
                   'billing_setting.billing_mode': 'BillingMode',
                   'billing_setting.billing_expr': 'BillingExpr',
-                  'billing_setting.video_price': 'VideoPrice',
                 }
                 const formField =
                   fieldMap[field] || (field as keyof ModelFormValues)

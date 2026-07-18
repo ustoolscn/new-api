@@ -161,18 +161,17 @@ function buildTypeDetailSegments(
     : undefined
   if (moderation) {
     const action = moderation.action || (moderation.flagged ? 'warn' : 'pass')
-    const actionLabel =
-      action === 'block'
-        ? t('Blocked')
-        : action === 'warn'
-          ? t('Flagged')
-          : action === 'error'
-            ? t('Failed')
-            : t('Passed')
-    const categories =
-      moderation.blocked_categories?.length
-        ? moderation.blocked_categories
-        : moderation.flagged_categories
+    let actionLabel = t('Passed')
+    if (action === 'block') {
+      actionLabel = t('Blocked')
+    } else if (action === 'warn') {
+      actionLabel = t('Flagged')
+    } else if (action === 'error') {
+      actionLabel = t('Failed')
+    }
+    const categories = moderation.blocked_categories?.length
+      ? moderation.blocked_categories
+      : moderation.flagged_categories
     segments.push({
       text: categories?.length
         ? `${t('Moderation')}: ${actionLabel} (${categories.join(', ')})`
@@ -244,10 +243,6 @@ function buildTypeDetailSegments(
         muted: true,
       })
     }
-  } else if (other.billing_mode === 'video_seconds') {
-    segments.push({
-      text: `${t('Video per-second')} · ${formatBillingCurrencyFromUSD(other.video_total_price ?? other.model_price ?? 0, priceOpts)}`,
-    })
   } else {
     const modelPrice = other.model_price
     const isPerCall = isPerCallBilling(modelPrice)

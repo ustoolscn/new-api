@@ -166,13 +166,12 @@ func validateMultipartTaskRequest(c *gin.Context, info *RelayInfo, action string
 
 	formData := c.Request.PostForm
 	req = TaskSubmitReq{
-		Prompt:     formData.Get("prompt"),
-		Model:      formData.Get("model"),
-		Mode:       formData.Get("mode"),
-		Image:      formData.Get("image"),
-		InputVideo: formData.Get("input_video"),
-		Size:       formData.Get("size"),
-		Metadata:   make(map[string]interface{}),
+		Prompt:   formData.Get("prompt"),
+		Model:    formData.Get("model"),
+		Mode:     formData.Get("mode"),
+		Image:    formData.Get("image"),
+		Size:     formData.Get("size"),
+		Metadata: make(map[string]interface{}),
 	}
 
 	if durationStr := formData.Get("seconds"); durationStr != "" {
@@ -183,18 +182,6 @@ func validateMultipartTaskRequest(c *gin.Context, info *RelayInfo, action string
 
 	if images := formData["images"]; len(images) > 0 {
 		req.Images = images
-		req.ImageInputs = make([]TaskImageInput, 0, len(images))
-		for _, image := range images {
-			req.ImageInputs = append(req.ImageInputs, TaskImageInput{URL: image})
-		}
-	}
-	if videos := formData["input_videos"]; len(videos) > 0 {
-		req.InputVideos = videos
-	}
-	if durationStr := formData.Get("input_video_duration"); durationStr != "" {
-		if duration, err := strconv.ParseFloat(durationStr, 64); err == nil {
-			req.InputVideoDuration = duration
-		}
 	}
 
 	for key, values := range formData {
@@ -232,12 +219,9 @@ func ValidateMultipartDirect(c *gin.Context, info *RelayInfo) *dto.TaskError {
 	}
 	if req.InputReference != "" {
 		req.Images = []string{req.InputReference}
-		req.ImageInputs = []TaskImageInput{{URL: req.InputReference}}
 	} else if len(req.Images) == 0 && strings.TrimSpace(req.Image) != "" {
 		// 兼容单图上传
-		image := strings.TrimSpace(req.Image)
-		req.Images = []string{image}
-		req.ImageInputs = []TaskImageInput{{URL: image}}
+		req.Images = []string{strings.TrimSpace(req.Image)}
 	}
 
 	if strings.TrimSpace(req.Model) == "" {
@@ -286,17 +270,14 @@ func ValidateMultipartDirect(c *gin.Context, info *RelayInfo) *dto.TaskError {
 
 func isKnownTaskField(field string) bool {
 	knownFields := map[string]bool{
-		"prompt":               true,
-		"model":                true,
-		"mode":                 true,
-		"image":                true,
-		"images":               true,
-		"input_video":          true,
-		"input_videos":         true,
-		"input_video_duration": true,
-		"size":                 true,
-		"duration":             true,
-		"input_reference":      true, // Sora 特有字段
+		"prompt":          true,
+		"model":           true,
+		"mode":            true,
+		"image":           true,
+		"images":          true,
+		"size":            true,
+		"duration":        true,
+		"input_reference": true, // Sora 特有字段
 	}
 	return knownFields[field]
 }
@@ -311,7 +292,7 @@ func ValidateBasicTaskRequest(c *gin.Context, info *RelayInfo, action string) *d
 			return createTaskError(err, "invalid_multipart_form", http.StatusBadRequest, true)
 		}
 	}
-	// 为了metadata字段的兼容性，统一UnmarshalBodyReusable
+	// 为了metadata字段的兼容性，统一读取可复用请求体；额外兼容非 UTF-8 JSON。
 	if strings.HasPrefix(contentType, "application/json") {
 		err = unmarshalTaskJSONBody(c, &req)
 	} else {
@@ -332,7 +313,6 @@ func ValidateBasicTaskRequest(c *gin.Context, info *RelayInfo, action string) *d
 	if len(req.Images) == 0 && strings.TrimSpace(req.Image) != "" {
 		// 兼容单图上传
 		req.Images = []string{req.Image}
-		req.ImageInputs = []TaskImageInput{{URL: req.Image}}
 	}
 
 	storeTaskRequest(c, info, action, req)

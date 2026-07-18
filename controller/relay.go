@@ -180,16 +180,6 @@ func Relay(c *gin.Context, relayFormat types.RelayFormat) {
 
 	relayInfo.SetEstimatePromptTokens(tokens)
 
-	if helper.HasVideoSecondsBillingConfig(relayInfo.OriginModelName) {
-		newAPIError = types.NewErrorWithStatusCode(
-			fmt.Errorf("model %s is configured for video per-second billing; please use the video generation endpoint", relayInfo.OriginModelName),
-			types.ErrorCodeInvalidRequest,
-			http.StatusBadRequest,
-			types.ErrOptionWithSkipRetry(),
-		)
-		return
-	}
-
 	priceData, err := helper.ModelPriceHelper(c, relayInfo, tokens, meta)
 	if err != nil {
 		newAPIError = types.NewError(err, types.ErrorCodeModelPriceError, types.ErrOptionWithStatusCode(http.StatusBadRequest))
@@ -745,9 +735,6 @@ func RelayTask(c *gin.Context) {
 			OtherRatios:     relayInfo.PriceData.OtherRatios(),
 			OriginModelName: relayInfo.OriginModelName,
 			PerCallBilling:  common.StringsContains(constant.TaskPricePatches, relayInfo.OriginModelName) || relayInfo.PriceData.UsePrice,
-		}
-		if taskReq, reqErr := relaycommon.GetTaskRequest(c); reqErr == nil {
-			task.Properties.Input = taskReq.Prompt
 		}
 		task.Quota = result.Quota
 		task.Data = result.TaskData

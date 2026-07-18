@@ -28,7 +28,7 @@ import { GroupBadge } from '@/components/group-badge'
 import { StatusBadge } from '@/components/status-badge'
 import { getLobeIcon } from '@/lib/lobe-icon'
 
-import { DEFAULT_TOKEN_UNIT, QUOTA_TYPE_VALUES } from '../constants'
+import { DEFAULT_TOKEN_UNIT } from '../constants'
 import {
   getDynamicDisplayGroupRatio,
   getDynamicPricingSummary,
@@ -38,11 +38,10 @@ import { isTokenBasedModel } from '../lib/model-helpers'
 import {
   formatPrice,
   formatRequestPrice,
-  formatVideoSecondPrice,
-  getVideoPriceEntries,
   stripTrailingZeros,
 } from '../lib/price'
 import type { PricingModel, TokenUnit } from '../types'
+import { ModelBillingModeBadge } from './model-billing-mode-badge'
 
 // ----------------------------------------------------------------------------
 // Pricing Table Columns
@@ -99,21 +98,10 @@ export function usePricingColumns(
     {
       accessorKey: 'quota_type',
       header: t('Type'),
-      cell: ({ row }) => {
-        const isTokenBased = row.original.quota_type === QUOTA_TYPE_VALUES.TOKEN
-        const isVideo = row.original.billing_mode === 'video_seconds'
-        return (
-          <StatusBadge
-            label={
-              isVideo ? t('Video') : isTokenBased ? t('Token') : t('Request')
-            }
-            variant={isVideo ? 'success' : isTokenBased ? 'info' : 'neutral'}
-            copyable={false}
-            className='-ml-1.5'
-          />
-        )
-      },
-      size: 80,
+      cell: ({ row }) => (
+        <ModelBillingModeBadge model={row.original} className='-ml-1.5' />
+      ),
+      size: 110,
       enableSorting: false,
     },
 
@@ -178,27 +166,6 @@ export function usePricingColumns(
                   ` · ${t('{{count}} tiers', {
                     count: dynamicSummary.tierCount,
                   })}`}
-              </div>
-            </div>
-          )
-        }
-
-        if (model.billing_mode === 'video_seconds') {
-          const price = stripTrailingZeros(
-            formatVideoSecondPrice(
-              model,
-              showRechargePrice,
-              priceRate,
-              usdExchangeRate
-            )
-          )
-          const firstEntry = getVideoPriceEntries(model)[0]
-          return (
-            <div className='min-w-[120px]'>
-              <span className='font-mono text-sm tabular-nums'>{price}</span>
-              <div className='text-muted-foreground/50 text-[10px]'>
-                / {t('second')}
-                {firstEntry ? ` 路 ${firstEntry.resolution}` : ''}
               </div>
             </div>
           )
