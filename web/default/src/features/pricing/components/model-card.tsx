@@ -32,7 +32,12 @@ import {
 } from '../lib/dynamic-price'
 import { parseTags } from '../lib/filters'
 import { isTokenBasedModel } from '../lib/model-helpers'
-import { formatPrice, formatRequestPrice } from '../lib/price'
+import {
+  formatPrice,
+  formatRequestPrice,
+  formatVideoSecondPrice,
+  getVideoPriceEntries,
+} from '../lib/price'
 import type { PricingModel, TokenUnit } from '../types'
 import { ModelPerfBadge, type ModelPerfBadgeData } from './model-perf-badge'
 
@@ -55,6 +60,13 @@ export const ModelCard = memo(function ModelCard(props: ModelCardProps) {
   const usdExchangeRate = props.usdExchangeRate ?? 1
   const showRechargePrice = props.showRechargePrice ?? false
   const isTokenBased = isTokenBasedModel(props.model)
+  const isVideoPricing = props.model.billing_mode === 'video_seconds'
+  let billingModeLabel = t('Per Request')
+  if (isVideoPricing) {
+    billingModeLabel = t('Video per-second')
+  } else if (isTokenBased) {
+    billingModeLabel = t('Token-based')
+  }
   const tokenUnitLabel = tokenUnit === 'K' ? '1K' : '1M'
   const tags = parseTags(props.model.tags)
   const groups = props.model.enable_groups || []
@@ -125,6 +137,23 @@ export const ModelCard = memo(function ModelCard(props: ModelCardProps) {
         </span>
       )
     }
+  } else if (isVideoPricing) {
+    const firstResolution = getVideoPriceEntries(props.model)[0]?.resolution
+    priceSummary = (
+      <span className='text-muted-foreground whitespace-nowrap'>
+        <span className='text-foreground font-mono font-semibold'>
+          {formatVideoSecondPrice(
+            props.model,
+            showRechargePrice,
+            priceRate,
+            usdExchangeRate,
+            props.selectedGroup
+          )}
+        </span>{' '}
+        / {t('second')}
+        {firstResolution ? ` · ${firstResolution}` : ''}
+      </span>
+    )
   } else if (isTokenBased) {
     priceSummary = (
       <>
@@ -254,7 +283,7 @@ export const ModelCard = memo(function ModelCard(props: ModelCardProps) {
             </span>
           )}
           <span className='text-muted-foreground max-w-full truncate text-xs font-medium whitespace-nowrap'>
-            {isTokenBased ? t('Token-based') : t('Per Request')}
+            {billingModeLabel}
           </span>
           {isDynamicPricing && (
             <StatusBadge
@@ -279,9 +308,11 @@ export const ModelCard = memo(function ModelCard(props: ModelCardProps) {
               {item}
             </span>
           ))}
-          <span className='text-muted-foreground/50 text-xs whitespace-nowrap'>
-            {tokenUnitLabel}
-          </span>
+          {!isVideoPricing && (
+            <span className='text-muted-foreground/50 text-xs whitespace-nowrap'>
+              {tokenUnitLabel}
+            </span>
+          )}
           {hiddenCount > 0 && (
             <span className='text-muted-foreground/40 text-xs whitespace-nowrap'>
               +{hiddenCount}

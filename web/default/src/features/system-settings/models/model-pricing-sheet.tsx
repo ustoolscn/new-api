@@ -68,18 +68,25 @@ import {
   EMPTY_LANE_PRICES,
   buildPreviewRows,
   createInitialLaneState,
+  createInitialVideoState,
   createModelPricingSchema,
   hasValue,
   laneConfigs,
   numericDraftRegex,
   ratioFieldByLane,
   toNumberOrNull,
+  videoStateToConfig,
   type LaneKey,
   type ModelPricingFormValues,
   type ModelRatioData,
   type PricingMode,
+  type VideoPriceRow,
 } from './model-pricing-core'
-import { PriceInput, PriceLane } from './model-pricing-inputs'
+import {
+  PriceInput,
+  PriceLane,
+  VideoPricingEditor,
+} from './model-pricing-inputs'
 import { formatPricingNumber } from './pricing-format'
 import { TieredPricingEditor } from './tiered-pricing-editor'
 
@@ -155,6 +162,11 @@ export const ModelPricingEditorPanel = forwardRef<
   })
   const [billingExpr, setBillingExpr] = useState('')
   const [requestRuleExpr, setRequestRuleExpr] = useState('')
+  const [videoBaseFps, setVideoBaseFps] = useState('24')
+  const [videoInputContentPrice, setVideoInputContentPrice] = useState('')
+  const [videoInputPricePerSecond, setVideoInputPricePerSecond] = useState('')
+  const [videoRows, setVideoRows] = useState<VideoPriceRow[]>([])
+  const [nextVideoRowId, setNextVideoRowId] = useState(3)
   const [editorReloadToken, setEditorReloadToken] = useState(0)
   const isEditMode = !!editData
 
@@ -175,6 +187,7 @@ export const ModelPricingEditorPanel = forwardRef<
 
   useEffect(() => {
     const nextLaneState = createInitialLaneState(editData)
+    const nextVideoState = createInitialVideoState(editData)
 
     if (editData) {
       form.reset({
@@ -191,6 +204,8 @@ export const ModelPricingEditorPanel = forwardRef<
       let nextPricingMode: PricingMode = 'per-token'
       if (editData.billingMode === 'tiered_expr') {
         nextPricingMode = 'tiered_expr'
+      } else if (editData.billingMode === 'video_seconds') {
+        nextPricingMode = 'video_seconds'
       } else if (editData.price) {
         nextPricingMode = 'per-request'
       }
@@ -217,6 +232,11 @@ export const ModelPricingEditorPanel = forwardRef<
     setPromptPrice(nextLaneState.promptPrice)
     setLanePrices(nextLaneState.prices)
     setLaneEnabled(nextLaneState.enabled)
+    setVideoBaseFps(nextVideoState.baseFps)
+    setVideoInputContentPrice(nextVideoState.inputContentPrice)
+    setVideoInputPricePerSecond(nextVideoState.inputVideoPricePerSecond)
+    setVideoRows(nextVideoState.rows)
+    setNextVideoRowId(nextVideoState.rows.length + 1)
     setEditorReloadToken((token) => token + 1)
   }, [editData, form])
 
@@ -338,6 +358,11 @@ export const ModelPricingEditorPanel = forwardRef<
     if (nextMode === 'tiered_expr' && !billingExpr) {
       setBillingExpr('tier("base", p * 0 + c * 0)')
     }
+    if (nextMode === 'video_seconds' && videoRows.length === 0) {
+      const nextVideoState = createInitialVideoState(editData)
+      setVideoRows(nextVideoState.rows)
+      setNextVideoRowId(nextVideoState.rows.length + 1)
+    }
   }
 
   const watchedValues = form.watch()
@@ -407,8 +432,34 @@ export const ModelPricingEditorPanel = forwardRef<
       nextWarnings.push(t('Audio output price requires an audio input price.'))
     }
 
+    if (pricingMode === 'video_seconds') {
+      const baseFps = toNumberOrNull(videoBaseFps)
+      if (baseFps === null || baseFps <= 0 || baseFps > 120) {
+        nextWarnings.push(t('Base FPS must be between 1 and 120.'))
+      }
+      if (
+        !videoRows.some(
+          (row) =>
+            row.resolution.trim() &&
+            toNumberOrNull(row.price) !== null &&
+            Number(row.price) >= 0
+        )
+      ) {
+        nextWarnings.push(t('Add at least one resolution price.'))
+      }
+    }
+
     return nextWarnings
-  }, [editData, laneEnabled, lanePrices, pricingMode, promptPrice, t])
+  }, [
+    editData,
+    laneEnabled,
+    lanePrices,
+    pricingMode,
+    promptPrice,
+    t,
+    videoBaseFps,
+    videoRows,
+  ])
 
   const validatePricingValues = useCallback(() => {
     if (
@@ -435,8 +486,33 @@ export const ModelPricingEditorPanel = forwardRef<
       return false
     }
 
+    if (pricingMode === 'video_seconds') {
+      const baseFps = toNumberOrNull(videoBaseFps)
+      const validRows = videoRows.filter(
+        (row) =>
+          row.resolution.trim() &&
+          toNumberOrNull(row.price) !== null &&
+          Number(row.price) >= 0
+      )
+      if (baseFps === null || baseFps <= 0 || baseFps > 120) {
+        return false
+      }
+      if (validRows.length === 0) {
+        return false
+      }
+    }
+
     return true
-  }, [form, laneEnabled, lanePrices, pricingMode, promptPrice, t])
+  }, [
+    form,
+    laneEnabled,
+    lanePrices,
+    pricingMode,
+    promptPrice,
+    t,
+    videoBaseFps,
+    videoRows,
+  ])
 
   const buildSubmitData = useCallback(
     (values: ModelPricingFormValues) => {
@@ -458,9 +534,26 @@ export const ModelPricingEditorPanel = forwardRef<
         data.requestRuleExpr = requestRuleExpr
       }
 
+      if (pricingMode === 'video_seconds') {
+        data.videoPrice = videoStateToConfig(
+          videoBaseFps,
+          videoInputContentPrice,
+          videoInputPricePerSecond,
+          videoRows
+        )
+      }
+
       return data
     },
-    [billingExpr, pricingMode, requestRuleExpr]
+    [
+      billingExpr,
+      pricingMode,
+      requestRuleExpr,
+      videoBaseFps,
+      videoInputContentPrice,
+      videoInputPricePerSecond,
+      videoRows,
+    ]
   )
 
   useImperativeHandle(
@@ -544,7 +637,7 @@ export const ModelPricingEditorPanel = forwardRef<
                   onValueChange={handleModeChange}
                   className='gap-4'
                 >
-                  <TabsList className='grid w-full grid-cols-3'>
+                  <TabsList className='grid w-full grid-cols-4'>
                     <TabsTrigger value='per-token'>
                       {t('Per-token')}
                     </TabsTrigger>
@@ -553,6 +646,9 @@ export const ModelPricingEditorPanel = forwardRef<
                     </TabsTrigger>
                     <TabsTrigger value='tiered_expr'>
                       {t('Expression')}
+                    </TabsTrigger>
+                    <TabsTrigger value='video_seconds'>
+                      {t('Video per-second')}
                     </TabsTrigger>
                   </TabsList>
 
@@ -650,6 +746,23 @@ export const ModelPricingEditorPanel = forwardRef<
                         onRequestRuleExprChange={setRequestRuleExpr}
                       />
                     </FieldGroup>
+                  </TabsContent>
+
+                  <TabsContent value='video_seconds' className='pt-0'>
+                    <VideoPricingEditor
+                      baseFps={videoBaseFps}
+                      inputContentPrice={videoInputContentPrice}
+                      inputVideoPricePerSecond={videoInputPricePerSecond}
+                      rows={videoRows}
+                      nextRowId={nextVideoRowId}
+                      onBaseFpsChange={setVideoBaseFps}
+                      onInputContentPriceChange={setVideoInputContentPrice}
+                      onInputVideoPricePerSecondChange={
+                        setVideoInputPricePerSecond
+                      }
+                      onRowsChange={setVideoRows}
+                      onNextRowIdChange={setNextVideoRowId}
+                    />
                   </TabsContent>
                 </Tabs>
               </FieldGroup>

@@ -155,12 +155,30 @@ func (a *TaskAdaptor) BuildRequestBody(c *gin.Context, info *relaycommon.RelayIn
 	contentType := c.GetHeader("Content-Type")
 
 	if strings.HasPrefix(contentType, "application/json") {
-		var bodyMap map[string]interface{}
-		if err := common.Unmarshal(cachedBody, &bodyMap); err == nil {
-			bodyMap["model"] = info.UpstreamModelName
-			if newBody, err := common.Marshal(bodyMap); err == nil {
-				return bytes.NewReader(newBody), nil
-			}
+		taskReq, reqErr := relaycommon.GetTaskRequest(c)
+		if reqErr != nil {
+			return nil, reqErr
+		}
+		bodyMap := make(map[string]interface{}, len(taskReq.Metadata)+8)
+		for key, value := range taskReq.Metadata {
+			bodyMap[key] = value
+		}
+		bodyMap["model"] = info.UpstreamModelName
+		bodyMap["prompt"] = taskReq.Prompt
+		if taskReq.Seconds != "" {
+			bodyMap["seconds"] = taskReq.Seconds
+		}
+		if taskReq.Size != "" {
+			bodyMap["size"] = taskReq.Size
+		}
+		if len(taskReq.Images) > 0 {
+			bodyMap["input_reference"] = taskReq.Images[0]
+		}
+		if taskReq.InputVideo != "" {
+			bodyMap["input_video"] = taskReq.InputVideo
+		}
+		if newBody, marshalErr := common.Marshal(bodyMap); marshalErr == nil {
+			return bytes.NewReader(newBody), nil
 		}
 		return bytes.NewReader(cachedBody), nil
 	}
@@ -170,11 +188,48 @@ func (a *TaskAdaptor) BuildRequestBody(c *gin.Context, info *relaycommon.RelayIn
 		if err != nil {
 			return bytes.NewReader(cachedBody), nil
 		}
+		taskReq, reqErr := relaycommon.GetTaskRequest(c)
+		if reqErr != nil {
+			return nil, reqErr
+		}
 		var buf bytes.Buffer
 		writer := multipart.NewWriter(&buf)
 		writer.WriteField("model", info.UpstreamModelName)
+		writer.WriteField("prompt", taskReq.Prompt)
+		if taskReq.Seconds != "" {
+			writer.WriteField("seconds", taskReq.Seconds)
+		}
+		if taskReq.Size != "" {
+			writer.WriteField("size", taskReq.Size)
+		}
+		if taskReq.Image != "" {
+			writer.WriteField("input_reference", taskReq.Image)
+		}
+		if taskReq.InputVideo != "" {
+			writer.WriteField("input_video", taskReq.InputVideo)
+		}
+		for key, value := range taskReq.Metadata {
+			if stringValue, ok := value.(string); ok {
+				writer.WriteField(key, stringValue)
+				continue
+			}
+			if encoded, marshalErr := common.Marshal(value); marshalErr == nil {
+				writer.WriteField(key, string(encoded))
+			}
+		}
+		standardFields := map[string]bool{
+			"model": true, "prompt": true, "seconds": true, "duration": true,
+			"size": true, "resolution": true, "width": true, "height": true,
+			"image": true, "images": true, "input_reference": true,
+			"input_video": true, "input_videos": true, "video": true,
+			"input_video_seconds": true, "input_video_duration": true,
+			"inputVideoDuration": true,
+			"fps":                true, "frame_rate": true, "framespersecond": true,
+			"framesPerSecond": true, "seed": true, "negative_prompt": true,
+			"generate_audio": true, "metadata": true,
+		}
 		for key, values := range formData.Value {
-			if key == "model" {
+			if standardFields[key] {
 				continue
 			}
 			for _, v := range values {
@@ -182,6 +237,10 @@ func (a *TaskAdaptor) BuildRequestBody(c *gin.Context, info *relaycommon.RelayIn
 			}
 		}
 		for fieldName, fileHeaders := range formData.File {
+			upstreamFieldName := fieldName
+			if fieldName == "image" {
+				upstreamFieldName = "input_reference"
+			}
 			for _, fh := range fileHeaders {
 				f, err := fh.Open()
 				if err != nil {
@@ -200,7 +259,7 @@ func (a *TaskAdaptor) BuildRequestBody(c *gin.Context, info *relaycommon.RelayIn
 					}
 				}
 				h := make(textproto.MIMEHeader)
-				h.Set("Content-Disposition", fmt.Sprintf(`form-data; name="%s"; filename="%s"`, fieldName, fh.Filename))
+				h.Set("Content-Disposition", fmt.Sprintf(`form-data; name="%s"; filename="%s"`, upstreamFieldName, fh.Filename))
 				h.Set("Content-Type", ct)
 				part, err := writer.CreatePart(h)
 				if err != nil {

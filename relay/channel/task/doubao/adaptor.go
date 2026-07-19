@@ -140,8 +140,11 @@ func (a *TaskAdaptor) EstimateBilling(c *gin.Context, info *relaycommon.RelayInf
 	if err != nil {
 		return nil
 	}
-	hasVideo := hasVideoInMetadata(req.Metadata)
+	hasVideo := req.HasInputVideo() || hasVideoInMetadata(req.Metadata)
 	resolution, _ := req.Metadata["resolution"].(string)
+	if resolution == "" {
+		resolution = taskcommon.NormalizeVideoResolution(req.Size)
+	}
 	ratio, ok := GetVideoInputRatio(info.OriginModelName, resolution, hasVideo)
 	if !ok || ratio == 1.0 {
 		return nil
@@ -276,25 +279,40 @@ func (a *TaskAdaptor) convertToRequestPayload(req *relaycommon.TaskSubmitReq) (*
 		Content: []ContentItem{},
 	}
 
-	// Add images if present
-	if req.HasImage() {
-		for _, imgURL := range req.Images {
-			r.Content = append(r.Content, ContentItem{
-				Type: "image_url",
-				ImageURL: &MediaURL{
-					URL: imgURL,
-				},
-			})
-		}
-	}
-
 	metadata := req.Metadata
 	if err := taskcommon.UnmarshalMetadata(metadata, &r); err != nil {
 		return nil, errors.Wrap(err, "unmarshal metadata failed")
 	}
+	if req.HasImage() {
+		r.Content = lo.Reject(r.Content, func(c ContentItem, _ int) bool { return c.Type == "image_url" })
+		for _, imgURL := range req.Images {
+			r.Content = append(r.Content, ContentItem{
+				Type:     "image_url",
+				ImageURL: &MediaURL{URL: imgURL},
+			})
+		}
+	}
+	if len(req.InputVideos) > 0 {
+		r.Content = lo.Reject(r.Content, func(c ContentItem, _ int) bool { return c.Type == "video_url" })
+		for _, videoURL := range req.InputVideos {
+			r.Content = append(r.Content, ContentItem{
+				Type:     "video_url",
+				VideoURL: &MediaURL{URL: videoURL},
+			})
+		}
+	}
 
 	if sec, _ := strconv.Atoi(req.Seconds); sec > 0 {
 		r.Duration = lo.ToPtr(dto.IntValue(sec))
+	}
+	if req.Size != "" {
+		r.Resolution = taskcommon.NormalizeVideoResolution(req.Size)
+	}
+	if req.Seed != nil {
+		r.Seed = lo.ToPtr(dto.IntValue(*req.Seed))
+	}
+	if req.GenerateAudio != nil {
+		r.GenerateAudio = lo.ToPtr(dto.BoolValue(*req.GenerateAudio))
 	}
 
 	r.Content = lo.Reject(r.Content, func(c ContentItem, _ int) bool { return c.Type == "text" })

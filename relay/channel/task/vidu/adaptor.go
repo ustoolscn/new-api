@@ -87,6 +87,9 @@ func (a *TaskAdaptor) ValidateRequestAndSetAction(c *gin.Context, info *relaycom
 	if err := relaycommon.ValidateBasicTaskRequest(c, info, constant.TaskActionGenerate); err != nil {
 		return err
 	}
+	if err := relaycommon.ValidateNoTaskInputVideo(c, "Vidu"); err != nil {
+		return err
+	}
 	req, err := relaycommon.GetTaskRequest(c)
 	if err != nil {
 		return service.TaskErrorWrapper(err, "get_task_request_failed", http.StatusBadRequest)
@@ -230,12 +233,29 @@ func (a *TaskAdaptor) convertToRequestPayload(req *relaycommon.TaskSubmitReq, in
 		Images:            req.Images,
 		Prompt:            req.Prompt,
 		Duration:          taskcommon.DefaultInt(req.Duration, 5),
-		Resolution:        taskcommon.DefaultString(req.Size, "1080p"),
+		Resolution:        taskcommon.DefaultString(taskcommon.NormalizeVideoResolution(req.Size), "1080p"),
 		MovementAmplitude: "auto",
 		Bgm:               false,
 	}
 	if err := taskcommon.UnmarshalMetadata(req.Metadata, &r); err != nil {
 		return nil, errors.Wrap(err, "unmarshal metadata failed")
+	}
+	r.Model = taskcommon.DefaultString(info.UpstreamModelName, "viduq1")
+	r.Prompt = req.Prompt
+	if req.HasImage() {
+		r.Images = append([]string(nil), req.Images...)
+	}
+	if req.Duration > 0 {
+		r.Duration = req.Duration
+	}
+	if req.Size != "" {
+		r.Resolution = taskcommon.NormalizeVideoResolution(req.Size)
+	}
+	if req.Seed != nil {
+		r.Seed = *req.Seed
+	}
+	if req.GenerateAudio != nil {
+		r.Bgm = *req.GenerateAudio
 	}
 	return &r, nil
 }

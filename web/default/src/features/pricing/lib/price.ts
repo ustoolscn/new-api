@@ -118,6 +118,12 @@ const REQUEST_PRICE_FORMAT_OPTIONS: CurrencyFormatOptions = {
   abbreviate: false,
 }
 
+const VIDEO_PRICE_FORMAT_OPTIONS: CurrencyFormatOptions = {
+  digitsLarge: 4,
+  digitsSmall: 6,
+  abbreviate: false,
+}
+
 function formatPaymentCurrency(
   amount: number,
   options: CurrencyFormatOptions
@@ -257,5 +263,53 @@ export function formatRequestPrice(
     showWithRecharge,
     priceRate,
     REQUEST_PRICE_FORMAT_OPTIONS
+  )
+}
+
+export function getVideoPriceEntries(
+  model: PricingModel
+): Array<{ resolution: string; price: number }> {
+  return Object.entries(model.video_price?.prices || {})
+    .map(([resolution, price]) => ({ resolution, price: Number(price) }))
+    .filter((entry) => Number.isFinite(entry.price) && entry.price >= 0)
+    .sort((a, b) => a.price - b.price || a.resolution.localeCompare(b.resolution))
+}
+
+export function formatVideoSecondPrice(
+  model: PricingModel,
+  showWithRecharge = false,
+  priceRate = 1,
+  _usdExchangeRate = 1,
+  selectedGroup?: string,
+  resolution?: string
+): string {
+  const entries = getVideoPriceEntries(model)
+  const entry = resolution
+    ? entries.find((item) => item.resolution === resolution)
+    : entries[0]
+  if (!entry) return '-'
+  return formatPricingCurrency(
+    entry.price * getDisplayGroupRatio(model, selectedGroup),
+    showWithRecharge,
+    priceRate,
+    VIDEO_PRICE_FORMAT_OPTIONS
+  )
+}
+
+export function formatVideoInputPrice(
+  model: PricingModel,
+  field: 'input_content_price' | 'input_video_price_per_second',
+  showWithRecharge = false,
+  priceRate = 1,
+  _usdExchangeRate = 1,
+  selectedGroup?: string
+): string {
+  const price = Number(model.video_price?.[field])
+  if (!Number.isFinite(price) || price <= 0) return '-'
+  return formatPricingCurrency(
+    price * getDisplayGroupRatio(model, selectedGroup),
+    showWithRecharge,
+    priceRate,
+    VIDEO_PRICE_FORMAT_OPTIONS
   )
 }

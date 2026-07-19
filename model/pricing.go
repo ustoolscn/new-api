@@ -16,26 +16,27 @@ import (
 )
 
 type Pricing struct {
-	ModelName              string                  `json:"model_name"`
-	Description            string                  `json:"description,omitempty"`
-	Icon                   string                  `json:"icon,omitempty"`
-	Tags                   string                  `json:"tags,omitempty"`
-	VendorID               int                     `json:"vendor_id,omitempty"`
-	QuotaType              int                     `json:"quota_type"`
-	ModelRatio             float64                 `json:"model_ratio"`
-	ModelPrice             float64                 `json:"model_price"`
-	OwnerBy                string                  `json:"owner_by"`
-	CompletionRatio        float64                 `json:"completion_ratio"`
-	CacheRatio             *float64                `json:"cache_ratio,omitempty"`
-	CreateCacheRatio       *float64                `json:"create_cache_ratio,omitempty"`
-	ImageRatio             *float64                `json:"image_ratio,omitempty"`
-	AudioRatio             *float64                `json:"audio_ratio,omitempty"`
-	AudioCompletionRatio   *float64                `json:"audio_completion_ratio,omitempty"`
-	EnableGroup            []string                `json:"enable_groups"`
-	SupportedEndpointTypes []constant.EndpointType `json:"supported_endpoint_types"`
-	BillingMode            string                  `json:"billing_mode,omitempty"`
-	BillingExpr            string                  `json:"billing_expr,omitempty"`
-	PricingVersion         string                  `json:"pricing_version,omitempty"`
+	ModelName              string                            `json:"model_name"`
+	Description            string                            `json:"description,omitempty"`
+	Icon                   string                            `json:"icon,omitempty"`
+	Tags                   string                            `json:"tags,omitempty"`
+	VendorID               int                               `json:"vendor_id,omitempty"`
+	QuotaType              int                               `json:"quota_type"`
+	ModelRatio             float64                           `json:"model_ratio"`
+	ModelPrice             float64                           `json:"model_price"`
+	OwnerBy                string                            `json:"owner_by"`
+	CompletionRatio        float64                           `json:"completion_ratio"`
+	CacheRatio             *float64                          `json:"cache_ratio,omitempty"`
+	CreateCacheRatio       *float64                          `json:"create_cache_ratio,omitempty"`
+	ImageRatio             *float64                          `json:"image_ratio,omitempty"`
+	AudioRatio             *float64                          `json:"audio_ratio,omitempty"`
+	AudioCompletionRatio   *float64                          `json:"audio_completion_ratio,omitempty"`
+	EnableGroup            []string                          `json:"enable_groups"`
+	SupportedEndpointTypes []constant.EndpointType           `json:"supported_endpoint_types"`
+	BillingMode            string                            `json:"billing_mode,omitempty"`
+	BillingExpr            string                            `json:"billing_expr,omitempty"`
+	VideoPrice             *billing_setting.VideoPriceConfig `json:"video_price,omitempty"`
+	PricingVersion         string                            `json:"pricing_version,omitempty"`
 }
 
 type PricingVendor struct {
@@ -304,6 +305,17 @@ func updatePricing() {
 			}
 		}
 	}
+	for modelName := range modelGroupsMap {
+		if billing_setting.GetBillingMode(modelName) != billing_setting.BillingModeVideoSeconds {
+			continue
+		}
+		if cfg, ok := billing_setting.GetVideoPriceConfig(modelName); ok && len(cfg.Prices) > 0 {
+			modelSupportEndpointsStr[modelName] = appendPricingEndpoint(
+				modelSupportEndpointsStr[modelName],
+				string(constant.EndpointTypeOpenAIVideo),
+			)
+		}
+	}
 
 	modelSupportEndpointTypes = make(map[string][]constant.EndpointType)
 	for model, endpoints := range modelSupportEndpointsStr {
@@ -400,10 +412,15 @@ func updatePricing() {
 			audioCompletionRatio := ratio_setting.GetAudioCompletionRatio(model)
 			pricing.AudioCompletionRatio = &audioCompletionRatio
 		}
-		if billingMode := billing_setting.GetBillingMode(model); billingMode == "tiered_expr" {
+		if billingMode := billing_setting.GetBillingMode(model); billingMode == billing_setting.BillingModeTieredExpr {
 			if expr, ok := billing_setting.GetBillingExpr(model); ok && strings.TrimSpace(expr) != "" {
 				pricing.BillingMode = billingMode
 				pricing.BillingExpr = expr
+			}
+		} else if billingMode == billing_setting.BillingModeVideoSeconds {
+			if cfg, ok := billing_setting.GetVideoPriceConfig(model); ok && len(cfg.Prices) > 0 {
+				pricing.BillingMode = billingMode
+				pricing.VideoPrice = &cfg
 			}
 		}
 		pricingMap = append(pricingMap, pricing)
@@ -411,7 +428,7 @@ func updatePricing() {
 
 	// 防止大更新后数据不通用
 	if len(pricingMap) > 0 {
-		pricingMap[0].PricingVersion = "5a90f2b86c08bd983a9a2e6d66c255f4eaef9c4bc934386d2b6ae84ef0ff1f1f"
+		pricingMap[0].PricingVersion = "21a9a2318f5b3c2a1f861baf70e2e815194d33f54f9afb6edbef5d90b318c185"
 	}
 
 	// 刷新缓存映射，供高并发快速查询

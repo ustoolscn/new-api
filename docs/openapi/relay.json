@@ -547,7 +547,7 @@
       "post": {
         "summary": "创建视频 ",
         "deprecated": false,
-        "description": "OpenAI 兼容的视频生成接口。\n\n参考文档: https://platform.openai.com/docs/api-reference/videos/create\n",
+        "description": "OpenAI 兼容别名，与 `POST /v1/video/generations` 使用相同的参数归一化和计费逻辑。新接入建议使用 `/v1/video/generations`。\n\n参考文档: https://platform.openai.com/docs/api-reference/videos/create\n",
         "operationId": "createVideo",
         "tags": [
           "视频生成/Sora兼容格式"
@@ -555,6 +555,11 @@
         "parameters": [],
         "requestBody": {
           "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/VideoRequest"
+              }
+            },
             "multipart/form-data": {
               "schema": {
                 "type": "object",
@@ -831,6 +836,9 @@
           }
         ]
       }
+    },
+    "/v1/video/generations/{task_id}/content": {
+      "$ref": "#/paths/~1v1~1videos~1{task_id}~1content"
     },
     "/kling/v1/videos/text2video": {
       "post": {
@@ -1167,7 +1175,7 @@
       "post": {
         "summary": "创建视频生成任务",
         "deprecated": false,
-        "description": "提交视频生成任务，支持文生视频和图生视频。\n\n返回任务 ID，可通过 GET 接口查询任务状态。\n",
+        "description": "统一的视频生成端点，支持文生视频、图生视频和供应商支持的视频输入。`/v1/videos` 保留为 OpenAI 兼容别名，并使用相同的请求参数、校验和计费逻辑。\n\n返回任务 ID，可通过 GET 接口查询任务状态。\n",
         "operationId": "createVideoGeneration",
         "tags": [
           "视频生成"
@@ -1182,9 +1190,15 @@
               "example": {
                 "model": "kling-v1",
                 "prompt": "宇航员在月球上漫步",
-                "duration": 5,
-                "width": 1280,
-                "height": 720
+                "seconds": 5,
+                "size": "1280x720",
+                "fps": 24,
+                "generate_audio": true
+              }
+            },
+            "multipart/form-data": {
+              "schema": {
+                "$ref": "#/components/schemas/VideoRequest"
               }
             }
           },
@@ -4167,7 +4181,7 @@
       },
       "VideoRequest": {
         "type": "object",
-        "description": "视频生成请求",
+        "description": "统一视频生成请求。供应商专有参数放入 metadata；duration、resolution、width/height、input_reference 和 input_video_duration 作为兼容别名保留。",
         "properties": {
           "model": {
             "type": "string",
@@ -4184,53 +4198,154 @@
             "description": "图片输入 (URL 或 Base64)",
             "example": "https://example.com/image.jpg"
           },
-          "duration": {
-            "type": "number",
-            "description": "视频时长（秒）",
+          "images": {
+            "type": "array",
+            "description": "多个图片输入 (URL 或 Base64)",
+            "items": {
+              "oneOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "object",
+                  "properties": {
+                    "url": {
+                      "type": "string"
+                    },
+                    "role": {
+                      "type": "string"
+                    }
+                  }
+                }
+              ]
+            }
+          },
+          "input_video": {
+            "type": "string",
+            "description": "输入视频 (URL 或 Base64)"
+          },
+          "input_videos": {
+            "type": "array",
+            "description": "多个输入视频 (URL 或 Base64)",
+            "items": {
+              "type": "string"
+            }
+          },
+          "video": {
+            "type": "string",
+            "deprecated": true,
+            "description": "兼容别名：会归一化为 input_video"
+          },
+          "seconds": {
+            "description": "输出视频时长（秒），接受 JSON 数字或数字字符串",
+            "oneOf": [
+              {
+                "type": "integer",
+                "minimum": 1,
+                "maximum": 3600
+              },
+              {
+                "type": "string",
+                "pattern": "^[0-9]+$"
+              }
+            ],
             "example": 5
+          },
+          "input_video_seconds": {
+            "description": "输入视频时长（秒）。模型配置输入视频按秒价格时必填",
+            "oneOf": [
+              {
+                "type": "number",
+                "minimum": 1,
+                "maximum": 3600
+              },
+              {
+                "type": "string",
+                "pattern": "^[0-9]+(?:\\.[0-9]+)?$"
+              }
+            ]
+          },
+          "size": {
+            "type": "string",
+            "description": "输出尺寸或分辨率，例如 1280x720、720p",
+            "example": "1280x720"
+          },
+          "duration": {
+            "type": "integer",
+            "deprecated": true,
+            "description": "兼容别名：输出视频时长（秒），会归一化为 seconds",
+            "example": 5
+          },
+          "resolution": {
+            "type": "string",
+            "deprecated": true,
+            "description": "兼容别名：会归一化为 size"
           },
           "width": {
             "type": "integer",
             "description": "视频宽度",
+            "minimum": 1,
             "example": 1280
           },
           "height": {
             "type": "integer",
             "description": "视频高度",
+            "minimum": 1,
             "example": 720
           },
           "fps": {
             "type": "integer",
             "description": "视频帧率",
+            "minimum": 1,
+            "maximum": 120,
             "example": 30
+          },
+          "frame_rate": {
+            "type": "integer",
+            "deprecated": true,
+            "description": "兼容别名：会归一化为 fps",
+            "minimum": 1,
+            "maximum": 120
           },
           "seed": {
             "type": "integer",
             "description": "随机种子",
             "example": 20231234
           },
-          "n": {
-            "type": "integer",
-            "description": "生成视频数量",
-            "example": 1
-          },
-          "response_format": {
+          "negative_prompt": {
             "type": "string",
-            "description": "响应格式",
-            "example": "url"
+            "description": "反向提示词"
           },
-          "user": {
+          "generate_audio": {
+            "type": "boolean",
+            "description": "是否生成音频"
+          },
+          "input_reference": {
             "type": "string",
-            "description": "用户标识",
-            "example": "user-1234"
+            "deprecated": true,
+            "description": "兼容别名：参考图片，会归一化为 image"
+          },
+          "input_video_duration": {
+            "type": "number",
+            "deprecated": true,
+            "description": "兼容别名：会归一化为 input_video_seconds"
+          },
+          "inputVideoDuration": {
+            "type": "number",
+            "deprecated": true,
+            "description": "兼容别名：会归一化为 input_video_seconds"
           },
           "metadata": {
             "type": "object",
-            "description": "扩展参数 (如 negative_prompt, style, quality_level 等)",
+            "description": "供应商专有扩展参数",
             "additionalProperties": true,
             "properties": {}
           }
-        }
+        },
+        "required": [
+          "model",
+          "prompt"
+        ]
       },
       "VideoResponse": {
         "type": "object",

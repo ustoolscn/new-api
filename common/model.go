@@ -17,6 +17,21 @@ var (
 		"flux-",
 		"flux.1-",
 	}
+	VideoGenerationModelPrefixes = []string{
+		"sora-",
+		"veo-",
+		"wan2.",
+		"wanx2.",
+		"kling-",
+		"vidu",
+		"doubao-seedance-",
+		"seedance-",
+		"jimeng_",
+		"minimax-hailuo-",
+		"t2v-",
+		"i2v-",
+		"s2v-",
+	}
 	OpenAITextModels = []string{
 		"gpt-",
 		"o1",
@@ -42,6 +57,16 @@ func IsImageGenerationModel(modelName string) bool {
 			return true
 		}
 		if strings.HasPrefix(m, "prefix:") && strings.HasPrefix(modelName, strings.TrimPrefix(m, "prefix:")) {
+			return true
+		}
+	}
+	return false
+}
+
+func IsVideoGenerationModel(modelName string) bool {
+	modelName = strings.ToLower(strings.TrimSpace(modelName))
+	for _, prefix := range VideoGenerationModelPrefixes {
+		if strings.HasPrefix(modelName, prefix) {
 			return true
 		}
 	}

@@ -243,6 +243,16 @@ function buildTypeDetailSegments(
         muted: true,
       })
     }
+  } else if (other.billing_mode === 'video_seconds') {
+    segments.push({
+      text: `${t('Video per-second')} · ${formatBillingCurrencyFromUSD(other.video_total_price ?? other.model_price ?? 0, priceOpts)}`,
+    })
+    if (other.video_resolution && other.video_output_seconds) {
+      segments.push({
+        text: `${other.video_resolution} · ${other.video_output_seconds}s`,
+        muted: true,
+      })
+    }
   } else {
     const modelPrice = other.model_price
     const isPerCall = isPerCallBilling(modelPrice)

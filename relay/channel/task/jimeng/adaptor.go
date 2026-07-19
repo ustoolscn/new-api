@@ -98,7 +98,10 @@ func (a *TaskAdaptor) Init(info *relaycommon.RelayInfo) {
 
 // ValidateRequestAndSetAction parses body, validates fields and sets default action.
 func (a *TaskAdaptor) ValidateRequestAndSetAction(c *gin.Context, info *relaycommon.RelayInfo) (taskErr *dto.TaskError) {
-	return relaycommon.ValidateBasicTaskRequest(c, info, constant.TaskActionGenerate)
+	if taskErr = relaycommon.ValidateBasicTaskRequest(c, info, constant.TaskActionGenerate); taskErr != nil {
+		return taskErr
+	}
+	return relaycommon.ValidateNoTaskInputVideo(c, "Jimeng")
 }
 
 // BuildRequestURL constructs the upstream URL.
@@ -402,6 +405,32 @@ func (a *TaskAdaptor) convertToRequestPayload(req *relaycommon.TaskSubmitReq, in
 	if err := taskcommon.UnmarshalMetadata(req.Metadata, &r); err != nil {
 		return nil, errors.Wrap(err, "unmarshal metadata failed")
 	}
+	r.ReqKey = info.UpstreamModelName
+	r.Prompt = req.Prompt
+	if req.HasImage() {
+		r.ImageUrls = nil
+		r.BinaryDataBase64 = nil
+		if strings.HasPrefix(req.Images[0], "http") {
+			r.ImageUrls = req.Images
+		} else {
+			r.BinaryDataBase64 = req.Images
+		}
+	}
+	if req.Seed != nil {
+		r.Seed = int64(*req.Seed)
+	}
+	if req.Size != "" {
+		if aspectRatio := videoAspectRatio(req.Size); aspectRatio != "" {
+			r.AspectRatio = aspectRatio
+		}
+	}
+	if req.Duration > 0 {
+		if req.Duration == 10 {
+			r.Frames = 241
+		} else {
+			r.Frames = 121
+		}
+	}
 
 	// 即梦视频3.0 ReqKey转换
 	// https://www.volcengine.com/docs/85621/1792707
@@ -423,6 +452,20 @@ func (a *TaskAdaptor) convertToRequestPayload(req *relaycommon.TaskSubmitReq, in
 	}
 
 	return &r, nil
+}
+
+func videoAspectRatio(size string) string {
+	normalized := strings.ToLower(strings.ReplaceAll(strings.TrimSpace(size), " ", ""))
+	switch normalized {
+	case "1024x1024", "512x512", "1:1":
+		return "1:1"
+	case "1280x720", "1920x1080", "16:9":
+		return "16:9"
+	case "720x1280", "1080x1920", "9:16":
+		return "9:16"
+	default:
+		return ""
+	}
 }
 
 func (a *TaskAdaptor) ParseTaskResult(respBody []byte) (*relaycommon.TaskInfo, error) {

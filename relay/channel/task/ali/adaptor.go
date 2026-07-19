@@ -363,22 +363,38 @@ func (a *TaskAdaptor) convertToAliRequest(info *relaycommon.RelayInfo, req relay
 			Watermark:    false,
 		},
 	}
+	if req.Metadata != nil {
+		if metadataBytes, err := common.Marshal(req.Metadata); err == nil {
+			if err := common.Unmarshal(metadataBytes, aliReq); err != nil {
+				return nil, errors.Wrap(err, "unmarshal metadata failed")
+			}
+		} else {
+			return nil, errors.Wrap(err, "marshal metadata failed")
+		}
+	}
+	if aliReq.Model != upstreamModel {
+		return nil, errors.New("can't change model with metadata")
+	}
+	aliReq.Input.Prompt = req.Prompt
+	if req.HasInputVideo() {
+		aliReq.Input.Media = []AliVideoMedia{{Type: "first_clip", URL: req.InputVideo}}
+		aliReq.Input.ImgURL = ""
+		aliReq.Input.FirstFrameURL = ""
+		aliReq.Input.LastFrameURL = ""
+	} else if req.HasImage() && len(aliReq.Input.Media) == 0 {
+		aliReq.Input.ImgURL = firstTaskImage(req)
+	}
 
 	// 处理分辨率映射
 	if req.Size != "" {
-		// text to video size must be contained *
-		if strings.Contains(req.Model, "t2v") && !strings.Contains(req.Size, "*") {
-			return nil, fmt.Errorf("invalid size: %s, example: %s", req.Size, "1920*1080")
-		}
-		if strings.Contains(req.Size, "*") {
-			aliReq.Parameters.Size = req.Size
-		} else {
-			resolution := strings.ToUpper(req.Size)
-			// 支持 480p, 720p, 1080p 或 480P, 720P, 1080P
-			if !strings.HasSuffix(resolution, "P") {
-				resolution = resolution + "P"
+		if strings.Contains(req.Model, "t2v") {
+			size := strings.NewReplacer("x", "*", "X", "*", "×", "*").Replace(req.Size)
+			if !strings.Contains(size, "*") {
+				return nil, fmt.Errorf("invalid size: %s, example: %s", req.Size, "1920x1080")
 			}
-			aliReq.Parameters.Resolution = resolution
+			aliReq.Parameters.Size = size
+		} else {
+			aliReq.Parameters.Resolution = strings.ToUpper(taskcommon.NormalizeVideoResolution(req.Size))
 		}
 	} else {
 		// 根据模型设置默认分辨率
@@ -420,20 +436,14 @@ func (a *TaskAdaptor) convertToAliRequest(info *relaycommon.RelayInfo, req relay
 		aliReq.Parameters.Duration = 5 // 默认5秒
 	}
 
-	// 从 metadata 中提取额外参数
-	if req.Metadata != nil {
-		if metadataBytes, err := common.Marshal(req.Metadata); err == nil {
-			err = common.Unmarshal(metadataBytes, aliReq)
-			if err != nil {
-				return nil, errors.Wrap(err, "unmarshal metadata failed")
-			}
-		} else {
-			return nil, errors.Wrap(err, "marshal metadata failed")
-		}
+	if req.NegativePrompt != "" {
+		aliReq.Input.NegativePrompt = req.NegativePrompt
 	}
-
-	if aliReq.Model != upstreamModel {
-		return nil, errors.New("can't change model with metadata")
+	if req.Seed != nil {
+		aliReq.Parameters.Seed = *req.Seed
+	}
+	if req.GenerateAudio != nil {
+		aliReq.Parameters.Audio = req.GenerateAudio
 	}
 
 	if err := normalizeWan27I2VInput(aliReq, req); err != nil {

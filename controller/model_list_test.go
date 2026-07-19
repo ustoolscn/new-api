@@ -121,6 +121,32 @@ func withTieredBillingConfig(t *testing.T, modes map[string]string, exprs map[st
 	model.InvalidatePricingCache()
 }
 
+func withVideoBillingConfig(t *testing.T, modes map[string]string, prices map[string]any) {
+	t.Helper()
+
+	saved := map[string]string{}
+	require.NoError(t, config.GlobalConfig.SaveToDB(func(key, value string) error {
+		if strings.HasPrefix(key, "billing_setting.") {
+			saved[key] = value
+		}
+		return nil
+	}))
+	t.Cleanup(func() {
+		require.NoError(t, config.GlobalConfig.LoadFromDB(saved))
+		model.InvalidatePricingCache()
+	})
+
+	modeBytes, err := common.Marshal(modes)
+	require.NoError(t, err)
+	priceBytes, err := common.Marshal(prices)
+	require.NoError(t, err)
+	require.NoError(t, config.GlobalConfig.LoadFromDB(map[string]string{
+		"billing_setting.billing_mode": string(modeBytes),
+		"billing_setting.video_price":  string(priceBytes),
+	}))
+	model.InvalidatePricingCache()
+}
+
 func withSelfUseModeDisabled(t *testing.T) {
 	t.Helper()
 
@@ -269,6 +295,46 @@ func TestListModelsIncludesTieredBillingModel(t *testing.T) {
 	require.True(t, ok)
 	require.Empty(t, missingExprPricing.BillingMode)
 	require.Empty(t, missingExprPricing.BillingExpr)
+}
+
+func TestListModelsIncludesVideoSecondsBillingModel(t *testing.T) {
+	withSelfUseModeDisabled(t)
+	withVideoBillingConfig(t, map[string]string{
+		"zz-video-priced-model": "video_seconds",
+	}, map[string]any{
+		"zz-video-priced-model": map[string]any{
+			"base_fps": 24,
+			"prices":   map[string]float64{"720p": 0.02},
+		},
+	})
+
+	db := setupModelListControllerTestDB(t)
+	require.NoError(t, db.Create(&model.User{
+		Id:       1004,
+		Username: "video-model-list-user",
+		Password: "password",
+		Group:    "default",
+		Status:   common.UserStatusEnabled,
+	}).Error)
+	require.NoError(t, db.Create(&model.Ability{
+		Group: "default", Model: "zz-video-priced-model", ChannelId: 1, Enabled: true,
+	}).Error)
+
+	recorder := httptest.NewRecorder()
+	ctx, _ := gin.CreateTestContext(recorder)
+	ctx.Request = httptest.NewRequest(http.MethodGet, "/v1/models", nil)
+	ctx.Set("id", 1004)
+
+	ListModels(ctx, constant.ChannelTypeOpenAI)
+
+	ids := decodeListModelsResponse(t, recorder)
+	require.Contains(t, ids, "zz-video-priced-model")
+	pricing, ok := pricingByModelName(model.GetPricing())["zz-video-priced-model"]
+	require.True(t, ok)
+	assert.Equal(t, "video_seconds", pricing.BillingMode)
+	require.NotNil(t, pricing.VideoPrice)
+	assert.InDelta(t, 0.02, pricing.VideoPrice.Prices["720p"], 0.0001)
+	assert.Contains(t, pricing.SupportedEndpointTypes, constant.EndpointTypeOpenAIVideo)
 }
 
 func TestListModelsUsesAdvancedCustomEndpointTypesFromPricingCache(t *testing.T) {

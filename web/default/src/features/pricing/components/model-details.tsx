@@ -72,10 +72,17 @@ import {
 import { parseTags } from '../lib/filters'
 import {
   getAvailableGroups,
+  getConfiguredGroupRatio,
   isTokenBasedModel,
   replaceModelInPath,
 } from '../lib/model-helpers'
-import { formatFixedPrice, formatGroupPrice } from '../lib/price'
+import {
+  formatFixedPrice,
+  formatGroupPrice,
+  formatVideoInputPrice,
+  formatVideoSecondPrice,
+  getVideoPriceEntries,
+} from '../lib/price'
 import type {
   ModelCapability,
   PriceType,
@@ -729,6 +736,82 @@ function PriceSection(props: {
     )
   }
 
+  if (props.model.billing_mode === 'video_seconds') {
+    const entries = getVideoPriceEntries(props.model)
+    const baseModel = {
+      ...props.model,
+      group_ratio: baseGroupRatioMap,
+    }
+    const inputContentPrice = formatVideoInputPrice(
+      baseModel,
+      'input_content_price',
+      props.showRechargePrice,
+      props.priceRate,
+      props.usdExchangeRate,
+      baseGroupKey
+    )
+    const inputVideoPrice = formatVideoInputPrice(
+      baseModel,
+      'input_video_price_per_second',
+      props.showRechargePrice,
+      props.priceRate,
+      props.usdExchangeRate,
+      baseGroupKey
+    )
+    return (
+      <section>
+        <SectionTitle>{t('Base Price')}</SectionTitle>
+        <div className='grid grid-cols-2 gap-2'>
+          {entries.map((entry) => (
+            <div
+              key={entry.resolution}
+              className='bg-muted/20 rounded-lg border p-3'
+            >
+              <div className='text-muted-foreground text-xs'>
+                {entry.resolution}
+              </div>
+              <div className='text-foreground mt-1 font-mono text-base font-semibold tabular-nums'>
+                {formatVideoSecondPrice(
+                  baseModel,
+                  props.showRechargePrice,
+                  props.priceRate,
+                  props.usdExchangeRate,
+                  baseGroupKey,
+                  entry.resolution
+                )}
+                <span className='text-muted-foreground/40 ml-1 text-xs font-normal'>
+                  / {t('second')}
+                </span>
+              </div>
+            </div>
+          ))}
+        </div>
+        {(inputContentPrice !== '-' || inputVideoPrice !== '-') && (
+          <div className='bg-muted/20 mt-3 space-y-1.5 rounded-lg border px-3 py-2.5'>
+            {inputContentPrice !== '-' && (
+              <div className='flex justify-between gap-4 text-sm'>
+                <span className='text-muted-foreground'>
+                  {t('Input content price')}
+                </span>
+                <span className='font-mono'>{inputContentPrice}</span>
+              </div>
+            )}
+            {inputVideoPrice !== '-' && (
+              <div className='flex justify-between gap-4 text-sm'>
+                <span className='text-muted-foreground'>
+                  {t('Input video price')}
+                </span>
+                <span className='font-mono'>
+                  {inputVideoPrice} / {t('second')}
+                </span>
+              </div>
+            )}
+          </div>
+        )}
+      </section>
+    )
+  }
+
   if (!isTokenBased) {
     return (
       <section>
@@ -1024,6 +1107,58 @@ function GroupPricingSection(props: {
 
   const thClass =
     'text-muted-foreground py-2 text-[10px] font-medium tracking-wider uppercase'
+
+  if (props.model.billing_mode === 'video_seconds') {
+    const entries = getVideoPriceEntries(props.model)
+    return (
+      <section>
+        <SectionTitle>{t('Pricing by Group')}</SectionTitle>
+        <AutoGroupChain model={props.model} autoGroups={props.autoGroups} />
+        <StaticDataTable
+          className='-mx-4 rounded-none border-0 sm:mx-0'
+          tableClassName='text-sm'
+          headerRowClassName='hover:bg-transparent'
+          data={availableGroups}
+          getRowKey={(group) => group}
+          columns={[
+            {
+              id: 'group',
+              header: t('Group'),
+              className: thClass,
+              cellClassName: 'py-2.5',
+              cell: (group) => <GroupBadge group={group} size='sm' />,
+            },
+            {
+              id: 'ratio',
+              header: t('Ratio'),
+              className: thClass,
+              cellClassName: 'text-muted-foreground py-2.5 font-mono',
+              cell: (group) =>
+                `${getConfiguredGroupRatio(props.groupRatio, group)}x`,
+            },
+            ...entries.map((entry) => ({
+              id: entry.resolution,
+              header: entry.resolution,
+              className: `${thClass} text-right`,
+              cellClassName: 'py-2.5 text-right font-mono',
+              cell: (group: string) =>
+                formatVideoSecondPrice(
+                  { ...props.model, group_ratio: props.groupRatio },
+                  showRechargePrice,
+                  props.priceRate,
+                  props.usdExchangeRate,
+                  group,
+                  entry.resolution
+                ),
+            })),
+          ]}
+        />
+        <p className='text-muted-foreground/40 mt-1.5 px-4 text-[10px] sm:px-0'>
+          {t('Prices shown per second')}
+        </p>
+      </section>
+    )
+  }
 
   if (isDynamicPricingModel(props.model)) {
     const dynamicTiers = getDynamicPricingTiers(props.model)

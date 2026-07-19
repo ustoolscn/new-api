@@ -2,6 +2,7 @@ package common
 
 import (
 	"fmt"
+	"math"
 	"net/http"
 	"net/url"
 	"strconv"
@@ -147,13 +148,43 @@ func validatePrompt(prompt string) *dto.TaskError {
 // overflow quota calculation into a negative charge.
 const MaxTaskDurationSeconds = 3600
 
-func validateTaskDurationBounds(req TaskSubmitReq) *dto.TaskError {
-	seconds := req.Duration
-	if seconds == 0 && req.Seconds != "" {
-		seconds, _ = strconv.Atoi(req.Seconds)
+const MaxTaskFPS = 120
+
+// NormalizeVideoResolution converts dimensions such as 1280x720 to the
+// provider-neutral short-side form (720p).
+func NormalizeVideoResolution(size string) string {
+	normalized := strings.ToLower(strings.ReplaceAll(strings.TrimSpace(size), " ", ""))
+	parts := strings.FieldsFunc(normalized, func(r rune) bool {
+		return r == 'x' || r == '*' || r == '×'
+	})
+	if len(parts) == 2 {
+		width, widthErr := strconv.Atoi(parts[0])
+		height, heightErr := strconv.Atoi(parts[1])
+		if widthErr == nil && heightErr == nil && width > 0 && height > 0 {
+			return fmt.Sprintf("%dp", min(width, height))
+		}
 	}
-	if seconds < 0 || seconds > MaxTaskDurationSeconds {
-		return createTaskError(fmt.Errorf("seconds must be between 1 and %d", MaxTaskDurationSeconds), "invalid_seconds", http.StatusBadRequest, true)
+	if normalized != "" && !strings.HasSuffix(normalized, "p") {
+		if _, err := strconv.Atoi(normalized); err == nil {
+			return normalized + "p"
+		}
+	}
+	return normalized
+}
+
+func validateTaskDurationBounds(req TaskSubmitReq) *dto.TaskError {
+	seconds := req.OutputSeconds()
+	if req.Seconds != "" && (seconds <= 0 || seconds > MaxTaskDurationSeconds || math.Trunc(seconds) != seconds || math.IsNaN(seconds) || math.IsInf(seconds, 0)) {
+		return createTaskError(fmt.Errorf("seconds must be a whole number between 1 and %d", MaxTaskDurationSeconds), "invalid_seconds", http.StatusBadRequest, true)
+	}
+	if req.InputVideoSeconds != nil {
+		inputSeconds := *req.InputVideoSeconds
+		if inputSeconds <= 0 || inputSeconds > MaxTaskDurationSeconds || math.IsNaN(inputSeconds) || math.IsInf(inputSeconds, 0) {
+			return createTaskError(fmt.Errorf("input_video_seconds must be between 1 and %d", MaxTaskDurationSeconds), "invalid_input_video_seconds", http.StatusBadRequest, true)
+		}
+	}
+	if req.FPS != nil && (*req.FPS <= 0 || *req.FPS > MaxTaskFPS) {
+		return createTaskError(fmt.Errorf("fps must be between 1 and %d", MaxTaskFPS), "invalid_fps", http.StatusBadRequest, true)
 	}
 	return nil
 }
@@ -166,22 +197,112 @@ func validateMultipartTaskRequest(c *gin.Context, info *RelayInfo, action string
 
 	formData := c.Request.PostForm
 	req = TaskSubmitReq{
-		Prompt:   formData.Get("prompt"),
-		Model:    formData.Get("model"),
-		Mode:     formData.Get("mode"),
-		Image:    formData.Get("image"),
-		Size:     formData.Get("size"),
-		Metadata: make(map[string]interface{}),
+		Prompt:         formData.Get("prompt"),
+		Model:          formData.Get("model"),
+		Mode:           formData.Get("mode"),
+		Image:          formData.Get("image"),
+		InputVideo:     formData.Get("input_video"),
+		Size:           formData.Get("size"),
+		NegativePrompt: formData.Get("negative_prompt"),
+		InputReference: formData.Get("input_reference"),
+		Metadata:       make(map[string]interface{}),
+	}
+	if req.InputVideo == "" {
+		req.InputVideo = formData.Get("video")
+	}
+	if req.Size == "" {
+		req.Size = formData.Get("resolution")
 	}
 
-	if durationStr := formData.Get("seconds"); durationStr != "" {
-		if duration, err := strconv.Atoi(durationStr); err == nil {
-			req.Duration = duration
+	secondsValue := formData.Get("seconds")
+	if secondsValue == "" {
+		secondsValue = formData.Get("duration")
+	}
+	if secondsValue != "" {
+		seconds, err := strconv.ParseFloat(strings.TrimSpace(secondsValue), 64)
+		if err != nil {
+			return req, fmt.Errorf("seconds must be a number or numeric string")
 		}
+		req.Seconds = strconv.FormatFloat(seconds, 'f', -1, 64)
+		if math.Trunc(seconds) == seconds && seconds <= float64(math.MaxInt) && seconds >= float64(math.MinInt) {
+			req.Duration = int(seconds)
+		}
+	}
+
+	inputVideoSecondsValue := formData.Get("input_video_seconds")
+	if inputVideoSecondsValue == "" {
+		inputVideoSecondsValue = formData.Get("input_video_duration")
+	}
+	if inputVideoSecondsValue == "" {
+		inputVideoSecondsValue = formData.Get("inputVideoDuration")
+	}
+	if inputVideoSecondsValue != "" {
+		inputVideoSeconds, err := strconv.ParseFloat(strings.TrimSpace(inputVideoSecondsValue), 64)
+		if err != nil {
+			return req, fmt.Errorf("input_video_seconds must be a number or numeric string")
+		}
+		req.InputVideoSeconds = &inputVideoSeconds
+	}
+
+	if widthValue := strings.TrimSpace(formData.Get("width")); widthValue != "" {
+		width, err := strconv.Atoi(widthValue)
+		if err != nil || width <= 0 {
+			return req, fmt.Errorf("width must be a positive integer")
+		}
+		req.Width = &width
+	}
+	if heightValue := strings.TrimSpace(formData.Get("height")); heightValue != "" {
+		height, err := strconv.Atoi(heightValue)
+		if err != nil || height <= 0 {
+			return req, fmt.Errorf("height must be a positive integer")
+		}
+		req.Height = &height
+	}
+	if req.Size == "" && req.Width != nil && req.Height != nil {
+		req.Size = fmt.Sprintf("%dx%d", *req.Width, *req.Height)
+	}
+	fpsValue := formData.Get("fps")
+	if fpsValue == "" {
+		fpsValue = formData.Get("frame_rate")
+	}
+	if fpsValue == "" {
+		fpsValue = formData.Get("framespersecond")
+	}
+	if fpsValue == "" {
+		fpsValue = formData.Get("framesPerSecond")
+	}
+	if fpsValue = strings.TrimSpace(fpsValue); fpsValue != "" {
+		fps, err := strconv.Atoi(fpsValue)
+		if err != nil {
+			return req, fmt.Errorf("fps must be an integer")
+		}
+		req.FPS = &fps
+	}
+	if seedValue := strings.TrimSpace(formData.Get("seed")); seedValue != "" {
+		seed, err := strconv.Atoi(seedValue)
+		if err != nil {
+			return req, fmt.Errorf("seed must be an integer")
+		}
+		req.Seed = &seed
+	}
+	if generateAudioValue := strings.TrimSpace(formData.Get("generate_audio")); generateAudioValue != "" {
+		generateAudio, err := strconv.ParseBool(generateAudioValue)
+		if err != nil {
+			return req, fmt.Errorf("generate_audio must be a boolean")
+		}
+		req.GenerateAudio = &generateAudio
 	}
 
 	if images := formData["images"]; len(images) > 0 {
 		req.Images = images
+	}
+	if inputVideos := formData["input_videos"]; len(inputVideos) > 0 {
+		req.InputVideos = inputVideos
+	}
+	if metadataValue := strings.TrimSpace(formData.Get("metadata")); metadataValue != "" {
+		if err := common.UnmarshalJsonStr(metadataValue, &req.Metadata); err != nil {
+			return req, fmt.Errorf("metadata must be a JSON object: %w", err)
+		}
 	}
 
 	for key, values := range formData {
@@ -195,44 +316,23 @@ func validateMultipartTaskRequest(c *gin.Context, info *RelayInfo, action string
 			}
 		}
 	}
+	req.Normalize()
 	return req, nil
 }
 
 func ValidateMultipartDirect(c *gin.Context, info *RelayInfo) *dto.TaskError {
-	var prompt string
-	var model string
-	var seconds int
-	var size string
-	var hasInputReference bool
-
 	var req TaskSubmitReq
 	if err := common.UnmarshalBodyReusable(c, &req); err != nil {
 		return createTaskError(err, "invalid_json", http.StatusBadRequest, true)
 	}
 
-	prompt = req.Prompt
-	model = req.Model
-	size = req.Size
-	seconds, _ = strconv.Atoi(req.Seconds)
-	if seconds == 0 {
-		seconds = req.Duration
-	}
-	if req.InputReference != "" {
-		req.Images = []string{req.InputReference}
-	} else if len(req.Images) == 0 && strings.TrimSpace(req.Image) != "" {
-		// 兼容单图上传
-		req.Images = []string{strings.TrimSpace(req.Image)}
-	}
+	req.Normalize()
 
 	if strings.TrimSpace(req.Model) == "" {
 		return createTaskError(fmt.Errorf("model field is required"), "missing_model", http.StatusBadRequest, true)
 	}
 
-	if req.HasImage() {
-		hasInputReference = true
-	}
-
-	if taskErr := validatePrompt(prompt); taskErr != nil {
+	if taskErr := validatePrompt(req.Prompt); taskErr != nil {
 		return taskErr
 	}
 
@@ -241,23 +341,24 @@ func ValidateMultipartDirect(c *gin.Context, info *RelayInfo) *dto.TaskError {
 	}
 
 	action := constant.TaskActionTextGenerate
-	if hasInputReference {
+	if req.HasImage() || req.HasAnyInputVideo() {
 		action = constant.TaskActionGenerate
 	}
-	if strings.HasPrefix(model, "sora-2") {
+	if strings.HasPrefix(req.Model, "sora-2") {
 
-		if size == "" {
-			size = "720x1280"
+		if req.Size == "" {
+			req.Size = "720x1280"
 		}
 
-		if seconds <= 0 {
-			seconds = 4
+		if req.OutputSeconds() <= 0 {
+			req.Seconds = "4"
+			req.Duration = 4
 		}
 
-		if model == "sora-2" && !lo.Contains([]string{"720x1280", "1280x720"}, size) {
+		if req.Model == "sora-2" && !lo.Contains([]string{"720x1280", "1280x720"}, req.Size) {
 			return createTaskError(fmt.Errorf("sora-2 size is invalid"), "invalid_size", http.StatusBadRequest, true)
 		}
-		if model == "sora-2-pro" && !lo.Contains([]string{"720x1280", "1280x720", "1792x1024", "1024x1792"}, size) {
+		if req.Model == "sora-2-pro" && !lo.Contains([]string{"720x1280", "1280x720", "1792x1024", "1024x1792"}, req.Size) {
 			return createTaskError(fmt.Errorf("sora-2 size is invalid"), "invalid_size", http.StatusBadRequest, true)
 		}
 		// OtherRatios 已移到 Sora adaptor 的 EstimateBilling 中设置
@@ -270,14 +371,32 @@ func ValidateMultipartDirect(c *gin.Context, info *RelayInfo) *dto.TaskError {
 
 func isKnownTaskField(field string) bool {
 	knownFields := map[string]bool{
-		"prompt":          true,
-		"model":           true,
-		"mode":            true,
-		"image":           true,
-		"images":          true,
-		"size":            true,
-		"duration":        true,
-		"input_reference": true, // Sora 特有字段
+		"prompt":               true,
+		"model":                true,
+		"mode":                 true,
+		"image":                true,
+		"images":               true,
+		"input_video":          true,
+		"input_videos":         true,
+		"video":                true,
+		"input_video_seconds":  true,
+		"input_video_duration": true,
+		"inputVideoDuration":   true,
+		"size":                 true,
+		"resolution":           true,
+		"width":                true,
+		"height":               true,
+		"seconds":              true,
+		"duration":             true,
+		"fps":                  true,
+		"frame_rate":           true,
+		"framespersecond":      true,
+		"framesPerSecond":      true,
+		"seed":                 true,
+		"negative_prompt":      true,
+		"generate_audio":       true,
+		"metadata":             true,
+		"input_reference":      true,
 	}
 	return knownFields[field]
 }
@@ -291,9 +410,8 @@ func ValidateBasicTaskRequest(c *gin.Context, info *RelayInfo, action string) *d
 		if err != nil {
 			return createTaskError(err, "invalid_multipart_form", http.StatusBadRequest, true)
 		}
-	}
-	// 为了metadata字段的兼容性，统一读取可复用请求体；额外兼容非 UTF-8 JSON。
-	if strings.HasPrefix(contentType, "application/json") {
+	} else if strings.HasPrefix(contentType, "application/json") {
+		// 为了metadata字段的兼容性，统一读取可复用请求体；额外兼容非 UTF-8 JSON。
 		err = unmarshalTaskJSONBody(c, &req)
 	} else {
 		err = common.UnmarshalBodyReusable(c, &req)
@@ -310,12 +428,28 @@ func ValidateBasicTaskRequest(c *gin.Context, info *RelayInfo, action string) *d
 		return taskErr
 	}
 
-	if len(req.Images) == 0 && strings.TrimSpace(req.Image) != "" {
-		// 兼容单图上传
-		req.Images = []string{req.Image}
+	req.Normalize()
+	if action == constant.TaskActionTextGenerate && (req.HasImage() || req.HasInputVideo()) {
+		action = constant.TaskActionGenerate
 	}
 
 	storeTaskRequest(c, info, action, req)
+	return nil
+}
+
+func ValidateNoTaskInputVideo(c *gin.Context, provider string) *dto.TaskError {
+	req, err := GetTaskRequest(c)
+	if err != nil {
+		return createTaskError(err, "invalid_request", http.StatusBadRequest, true)
+	}
+	if req.HasAnyInputVideo() {
+		return createTaskError(
+			fmt.Errorf("%s does not support input_video", provider),
+			"unsupported_input_video",
+			http.StatusBadRequest,
+			true,
+		)
+	}
 	return nil
 }
 

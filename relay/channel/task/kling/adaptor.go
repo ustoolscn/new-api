@@ -129,7 +129,10 @@ func (a *TaskAdaptor) Init(info *relaycommon.RelayInfo) {
 // ValidateRequestAndSetAction parses body, validates fields and sets default action.
 func (a *TaskAdaptor) ValidateRequestAndSetAction(c *gin.Context, info *relaycommon.RelayInfo) (taskErr *dto.TaskError) {
 	// Use the standard validation method for TaskSubmitReq
-	return relaycommon.ValidateBasicTaskRequest(c, info, constant.TaskActionGenerate)
+	if taskErr = relaycommon.ValidateBasicTaskRequest(c, info, constant.TaskActionGenerate); taskErr != nil {
+		return taskErr
+	}
+	return relaycommon.ValidateNoTaskInputVideo(c, "Kling")
 }
 
 // BuildRequestURL constructs the upstream URL.
@@ -267,6 +270,7 @@ func (a *TaskAdaptor) convertToRequestPayload(req *relaycommon.TaskSubmitReq, in
 	r := requestPayload{
 		Prompt:         req.Prompt,
 		Image:          req.Image,
+		NegativePrompt: req.NegativePrompt,
 		Mode:           taskcommon.DefaultString(req.Mode, "std"),
 		Duration:       fmt.Sprintf("%d", taskcommon.DefaultInt(req.Duration, 5)),
 		AspectRatio:    a.getAspectRatio(req.Size),
@@ -285,6 +289,28 @@ func (a *TaskAdaptor) convertToRequestPayload(req *relaycommon.TaskSubmitReq, in
 	}
 	if err := taskcommon.UnmarshalMetadata(req.Metadata, &r); err != nil {
 		return nil, errors.Wrap(err, "unmarshal metadata failed")
+	}
+	r.ModelName = taskcommon.DefaultString(info.UpstreamModelName, "kling-v1")
+	r.Model = r.ModelName
+	r.Prompt = req.Prompt
+	if req.HasImage() {
+		r.Image = req.Images[0]
+		r.ImageTail = ""
+		if len(req.Images) > 1 {
+			r.ImageTail = req.Images[1]
+		}
+	}
+	if req.Mode != "" {
+		r.Mode = req.Mode
+	}
+	if req.Duration > 0 {
+		r.Duration = fmt.Sprintf("%d", req.Duration)
+	}
+	if req.Size != "" {
+		r.AspectRatio = a.getAspectRatio(req.Size)
+	}
+	if req.NegativePrompt != "" {
+		r.NegativePrompt = req.NegativePrompt
 	}
 	return &r, nil
 }

@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"math"
 	"strconv"
 	"strings"
 	"time"
@@ -688,16 +689,56 @@ type TaskRelayInfo struct {
 }
 
 type TaskSubmitReq struct {
-	Prompt         string                 `json:"prompt"`
-	Model          string                 `json:"model,omitempty"`
-	Mode           string                 `json:"mode,omitempty"`
-	Image          string                 `json:"image,omitempty"`
-	Images         []string               `json:"images,omitempty"`
-	Size           string                 `json:"size,omitempty"`
-	Duration       int                    `json:"duration,omitempty"`
-	Seconds        string                 `json:"seconds,omitempty"`
-	InputReference string                 `json:"input_reference,omitempty"`
-	Metadata       map[string]interface{} `json:"metadata,omitempty"`
+	Prompt            string                 `json:"prompt"`
+	Model             string                 `json:"model,omitempty"`
+	Mode              string                 `json:"mode,omitempty"`
+	Image             string                 `json:"image,omitempty"`
+	Images            []string               `json:"images,omitempty"`
+	ImageInputs       []TaskImageInput       `json:"-"`
+	InputVideo        string                 `json:"input_video,omitempty"`
+	InputVideos       []string               `json:"input_videos,omitempty"`
+	InputVideoSeconds *float64               `json:"input_video_seconds,omitempty"`
+	Size              string                 `json:"size,omitempty"`
+	Width             *int                   `json:"width,omitempty"`
+	Height            *int                   `json:"height,omitempty"`
+	Duration          int                    `json:"duration,omitempty"`
+	Seconds           string                 `json:"seconds,omitempty"`
+	FPS               *int                   `json:"fps,omitempty"`
+	Seed              *int                   `json:"seed,omitempty"`
+	NegativePrompt    string                 `json:"negative_prompt,omitempty"`
+	GenerateAudio     *bool                  `json:"generate_audio,omitempty"`
+	InputReference    string                 `json:"input_reference,omitempty"`
+	Metadata          map[string]interface{} `json:"metadata,omitempty"`
+}
+
+type TaskImageInput struct {
+	URL  string `json:"url,omitempty"`
+	Role string `json:"role,omitempty"`
+}
+
+func (i *TaskImageInput) UnmarshalJSON(data []byte) error {
+	var url string
+	if err := common.Unmarshal(data, &url); err == nil {
+		i.URL = strings.TrimSpace(url)
+		return nil
+	}
+
+	var obj struct {
+		URL      string `json:"url,omitempty"`
+		Role     string `json:"role,omitempty"`
+		ImageURL *struct {
+			URL string `json:"url,omitempty"`
+		} `json:"image_url,omitempty"`
+	}
+	if err := common.Unmarshal(data, &obj); err != nil {
+		return err
+	}
+	i.URL = strings.TrimSpace(obj.URL)
+	i.Role = strings.TrimSpace(obj.Role)
+	if i.URL == "" && obj.ImageURL != nil {
+		i.URL = strings.TrimSpace(obj.ImageURL.URL)
+	}
+	return nil
 }
 
 func (t *TaskSubmitReq) GetPrompt() string {
@@ -705,35 +746,148 @@ func (t *TaskSubmitReq) GetPrompt() string {
 }
 
 func (t *TaskSubmitReq) HasImage() bool {
-	return len(t.Images) > 0
+	return strings.TrimSpace(t.Image) != "" || len(t.Images) > 0
+}
+
+func (t *TaskSubmitReq) HasInputVideo() bool {
+	return strings.TrimSpace(t.InputVideo) != "" || len(t.InputVideos) > 0
+}
+
+func (t *TaskSubmitReq) HasAnyInputVideo() bool {
+	return t.HasInputVideo() || metadataHasTaskMedia(t.Metadata, "video")
+}
+
+func (t *TaskSubmitReq) HasAnyInputContent() bool {
+	return t.HasImage() || t.HasAnyInputVideo() || metadataHasTaskMedia(t.Metadata, "")
+}
+
+func (t *TaskSubmitReq) OutputSeconds() float64 {
+	seconds, _ := strconv.ParseFloat(strings.TrimSpace(t.Seconds), 64)
+	if seconds > 0 {
+		return seconds
+	}
+	if t.Duration > 0 {
+		return float64(t.Duration)
+	}
+	return 0
 }
 
 func (t *TaskSubmitReq) UnmarshalJSON(data []byte) error {
-	type Alias TaskSubmitReq
-	aux := &struct {
-		Metadata json.RawMessage `json:"metadata,omitempty"`
-		Duration json.RawMessage `json:"duration,omitempty"`
-		*Alias
-	}{
-		Alias: (*Alias)(t),
+	var aux struct {
+		Prompt                  string          `json:"prompt"`
+		Model                   string          `json:"model,omitempty"`
+		Mode                    string          `json:"mode,omitempty"`
+		Image                   string          `json:"image,omitempty"`
+		Images                  json.RawMessage `json:"images,omitempty"`
+		InputVideo              string          `json:"input_video,omitempty"`
+		InputVideos             json.RawMessage `json:"input_videos,omitempty"`
+		Video                   string          `json:"video,omitempty"`
+		InputVideoSeconds       json.RawMessage `json:"input_video_seconds,omitempty"`
+		InputVideoDuration      json.RawMessage `json:"input_video_duration,omitempty"`
+		Size                    string          `json:"size,omitempty"`
+		Resolution              string          `json:"resolution,omitempty"`
+		Width                   *int            `json:"width,omitempty"`
+		Height                  *int            `json:"height,omitempty"`
+		Duration                json.RawMessage `json:"duration,omitempty"`
+		Seconds                 json.RawMessage `json:"seconds,omitempty"`
+		FPS                     *int            `json:"fps,omitempty"`
+		FrameRate               *int            `json:"frame_rate,omitempty"`
+		FramesPerSecond         *int            `json:"framespersecond,omitempty"`
+		FramesPerSecondCamel    *int            `json:"framesPerSecond,omitempty"`
+		Seed                    *int            `json:"seed,omitempty"`
+		NegativePrompt          string          `json:"negative_prompt,omitempty"`
+		GenerateAudio           *bool           `json:"generate_audio,omitempty"`
+		InputReference          string          `json:"input_reference,omitempty"`
+		Metadata                json.RawMessage `json:"metadata,omitempty"`
+		InputVideoDurationCamel json.RawMessage `json:"inputVideoDuration,omitempty"`
 	}
 
 	if err := common.Unmarshal(data, &aux); err != nil {
 		return err
 	}
 
-	if len(aux.Duration) > 0 {
-		var durationInt int
-		if err := common.Unmarshal(aux.Duration, &durationInt); err == nil {
-			t.Duration = durationInt
-		} else {
-			var durationStr string
-			if err := common.Unmarshal(aux.Duration, &durationStr); err == nil && durationStr != "" {
-				if v, err := strconv.Atoi(durationStr); err == nil {
-					t.Duration = v
-				}
+	t.Prompt = strings.TrimSpace(aux.Prompt)
+	t.Model = strings.TrimSpace(aux.Model)
+	t.Mode = strings.TrimSpace(aux.Mode)
+	t.Image = strings.TrimSpace(aux.Image)
+	t.InputVideo = strings.TrimSpace(aux.InputVideo)
+	if t.InputVideo == "" {
+		t.InputVideo = strings.TrimSpace(aux.Video)
+	}
+	t.Size = strings.TrimSpace(aux.Size)
+	if t.Size == "" {
+		t.Size = strings.TrimSpace(aux.Resolution)
+	}
+	t.Width = aux.Width
+	t.Height = aux.Height
+	if t.Size == "" && t.Width != nil && t.Height != nil && *t.Width > 0 && *t.Height > 0 {
+		t.Size = fmt.Sprintf("%dx%d", *t.Width, *t.Height)
+	}
+	t.FPS = aux.FPS
+	if t.FPS == nil {
+		t.FPS = aux.FrameRate
+	}
+	if t.FPS == nil {
+		t.FPS = aux.FramesPerSecond
+	}
+	if t.FPS == nil {
+		t.FPS = aux.FramesPerSecondCamel
+	}
+	t.Seed = aux.Seed
+	t.NegativePrompt = strings.TrimSpace(aux.NegativePrompt)
+	t.GenerateAudio = aux.GenerateAudio
+	t.InputReference = strings.TrimSpace(aux.InputReference)
+
+	seconds, present, err := parseTaskNumber(aux.Seconds, "seconds")
+	if err != nil {
+		return err
+	}
+	if !present {
+		seconds, present, err = parseTaskNumber(aux.Duration, "duration")
+		if err != nil {
+			return err
+		}
+	}
+	if present {
+		t.Seconds = strconv.FormatFloat(seconds, 'f', -1, 64)
+		if math.Trunc(seconds) == seconds && seconds <= float64(math.MaxInt) && seconds >= float64(math.MinInt) {
+			t.Duration = int(seconds)
+		}
+	}
+
+	inputSecondsRaw := aux.InputVideoSeconds
+	if len(inputSecondsRaw) == 0 {
+		inputSecondsRaw = aux.InputVideoDuration
+	}
+	if len(inputSecondsRaw) == 0 {
+		inputSecondsRaw = aux.InputVideoDurationCamel
+	}
+	inputVideoSeconds, present, err := parseTaskNumber(inputSecondsRaw, "input_video_seconds")
+	if err != nil {
+		return err
+	}
+	if present {
+		t.InputVideoSeconds = &inputVideoSeconds
+	}
+
+	if len(aux.Images) > 0 {
+		imageInputs, err := parseTaskImageInputs(aux.Images)
+		if err != nil {
+			return fmt.Errorf("invalid images: %w", err)
+		}
+		t.ImageInputs = imageInputs
+		for _, imageInput := range imageInputs {
+			if imageInput.URL != "" {
+				t.Images = append(t.Images, imageInput.URL)
 			}
 		}
+	}
+	if len(aux.InputVideos) > 0 {
+		inputVideos, err := parseTaskStringList(aux.InputVideos)
+		if err != nil {
+			return fmt.Errorf("invalid input_videos: %w", err)
+		}
+		t.InputVideos = inputVideos
 	}
 
 	if len(aux.Metadata) > 0 {
@@ -742,7 +896,6 @@ func (t *TaskSubmitReq) UnmarshalJSON(data []byte) error {
 			var metadataObj map[string]interface{}
 			if err := common.Unmarshal([]byte(metadataStr), &metadataObj); err == nil {
 				t.Metadata = metadataObj
-				return nil
 			}
 		}
 
@@ -752,8 +905,177 @@ func (t *TaskSubmitReq) UnmarshalJSON(data []byte) error {
 		}
 	}
 
+	t.Normalize()
 	return nil
 }
+
+func parseTaskNumber(data []byte, field string) (float64, bool, error) {
+	if len(data) == 0 || string(data) == "null" {
+		return 0, false, nil
+	}
+	var number float64
+	if err := common.Unmarshal(data, &number); err == nil {
+		return number, true, nil
+	}
+	var value string
+	if err := common.Unmarshal(data, &value); err != nil {
+		return 0, false, fmt.Errorf("%s must be a number or numeric string", field)
+	}
+	value = strings.TrimSpace(value)
+	if value == "" {
+		return 0, false, nil
+	}
+	number, err := strconv.ParseFloat(value, 64)
+	if err != nil {
+		return 0, false, fmt.Errorf("%s must be a number or numeric string", field)
+	}
+	return number, true, nil
+}
+
+func parseTaskImageInputs(data []byte) ([]TaskImageInput, error) {
+	var single TaskImageInput
+	if err := common.Unmarshal(data, &single); err == nil && single.URL != "" {
+		return []TaskImageInput{single}, nil
+	}
+	var images []TaskImageInput
+	if err := common.Unmarshal(data, &images); err != nil {
+		return nil, err
+	}
+	return images, nil
+}
+
+func parseTaskStringList(data []byte) ([]string, error) {
+	var single string
+	if err := common.Unmarshal(data, &single); err == nil {
+		if single = strings.TrimSpace(single); single != "" {
+			return []string{single}, nil
+		}
+		return nil, nil
+	}
+	var values []string
+	if err := common.Unmarshal(data, &values); err != nil {
+		return nil, err
+	}
+	result := make([]string, 0, len(values))
+	for _, value := range values {
+		if value = strings.TrimSpace(value); value != "" {
+			result = append(result, value)
+		}
+	}
+	return result, nil
+}
+
+func (t *TaskSubmitReq) Normalize() {
+	t.Image = strings.TrimSpace(t.Image)
+	t.InputReference = strings.TrimSpace(t.InputReference)
+	if t.Image == "" {
+		t.Image = t.InputReference
+	}
+	if len(t.Images) == 0 && t.Image != "" {
+		t.Images = []string{t.Image}
+	}
+	if t.InputReference == "" && len(t.Images) > 0 {
+		t.InputReference = t.Images[0]
+	}
+	t.InputVideo = strings.TrimSpace(t.InputVideo)
+	if len(t.InputVideos) == 0 && t.InputVideo != "" {
+		t.InputVideos = []string{t.InputVideo}
+	}
+	if t.InputVideo == "" && len(t.InputVideos) > 0 {
+		t.InputVideo = strings.TrimSpace(t.InputVideos[0])
+	}
+	if t.Metadata == nil {
+		t.Metadata = make(map[string]interface{})
+	}
+	if t.FPS != nil {
+		t.Metadata["fps"] = *t.FPS
+	}
+	if t.Seed != nil {
+		t.Metadata["seed"] = *t.Seed
+	}
+	if t.NegativePrompt != "" {
+		t.Metadata["negative_prompt"] = t.NegativePrompt
+	}
+	if t.GenerateAudio != nil {
+		t.Metadata["generate_audio"] = *t.GenerateAudio
+	}
+	if t.InputVideoSeconds != nil {
+		t.Metadata["input_video_seconds"] = *t.InputVideoSeconds
+	}
+}
+
+func metadataHasTaskMedia(value interface{}, mediaType string) bool {
+	switch item := value.(type) {
+	case map[string]interface{}:
+		for key, nested := range item {
+			normalizedKey := strings.ToLower(strings.TrimSpace(key))
+			if mediaType == "video" && isTaskMediaKey(normalizedKey, "video") && metadataValuePresent(nested) {
+				return true
+			}
+			if mediaType == "" && (isTaskMediaKey(normalizedKey, "image") || isTaskMediaKey(normalizedKey, "video")) && metadataValuePresent(nested) {
+				return true
+			}
+			if normalizedKey == "type" {
+				if typeName, ok := nested.(string); ok && taskMediaTypeMatches(typeName, mediaType) {
+					return true
+				}
+			}
+			if metadataHasTaskMedia(nested, mediaType) {
+				return true
+			}
+		}
+	case []interface{}:
+		for _, nested := range item {
+			if metadataHasTaskMedia(nested, mediaType) {
+				return true
+			}
+		}
+	}
+	return false
+}
+
+func taskMediaTypeMatches(typeName, mediaType string) bool {
+	normalized := strings.ToLower(strings.TrimSpace(typeName))
+	isVideo := strings.Contains(normalized, "video") || normalized == "first_clip" || normalized == "last_clip"
+	isImage := strings.Contains(normalized, "image") || normalized == "first_frame" || normalized == "last_frame"
+	if mediaType == "video" {
+		return isVideo
+	}
+	return isVideo || isImage
+}
+
+func isTaskMediaKey(key, mediaType string) bool {
+	if mediaType == "video" {
+		switch key {
+		case "video", "video_url", "input_video", "input_videos", "inputvideo", "inputvideos":
+			return true
+		}
+		return false
+	}
+	switch key {
+	case "image", "image_url", "images", "input_image", "input_images", "input_reference":
+		return true
+	}
+	return false
+}
+
+func metadataValuePresent(value interface{}) bool {
+	switch item := value.(type) {
+	case nil:
+		return false
+	case string:
+		return strings.TrimSpace(item) != ""
+	case []interface{}:
+		return len(item) > 0
+	case []string:
+		return len(item) > 0
+	case map[string]interface{}:
+		return len(item) > 0
+	default:
+		return true
+	}
+}
+
 func (t *TaskSubmitReq) UnmarshalMetadata(v any) error {
 	metadata := t.Metadata
 	if metadata != nil {

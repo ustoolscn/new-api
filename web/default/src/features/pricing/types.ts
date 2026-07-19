@@ -54,6 +54,8 @@ export type PricingModel = {
   billing_mode?: string
   /** Raw expression describing dynamic / tiered billing */
   billing_expr?: string
+  /** Video per-second pricing by resolution */
+  video_price?: VideoPricingConfig
   /** Pricing version returned by backend, useful for cache busting */
   pricing_version?: string
   /**
@@ -73,6 +75,13 @@ export type PricingModel = {
 export type PricingEndpointInfo = {
   path?: string
   method?: string
+}
+
+export type VideoPricingConfig = {
+  base_fps?: number
+  input_content_price?: number
+  input_video_price_per_second?: number
+  prices?: Record<string, number>
 }
 
 /** Input/output modalities supported by a model. */

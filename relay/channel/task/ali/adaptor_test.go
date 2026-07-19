@@ -138,6 +138,32 @@ func TestConvertToAliRequestWan27I2VKeepsExplicitMetadataMedia(t *testing.T) {
 	require.NotContains(t, string(body), `"img_url"`)
 }
 
+func TestConvertToAliRequestWan27I2VUsesCanonicalInputVideo(t *testing.T) {
+	adaptor := &TaskAdaptor{}
+	req := relaycommon.TaskSubmitReq{
+		Model:      "wan2.7-i2v",
+		Prompt:     "continue the clip",
+		InputVideo: "https://example.com/input.mp4",
+		Metadata: map[string]interface{}{
+			"input": map[string]interface{}{
+				"media": []interface{}{
+					map[string]interface{}{
+						"type": "first_clip",
+						"url":  "https://example.com/metadata.mp4",
+					},
+				},
+			},
+		},
+	}
+
+	aliReq, err := adaptor.convertToAliRequest(testRelayInfo(), req)
+
+	require.NoError(t, err)
+	require.Equal(t, []AliVideoMedia{
+		{Type: "first_clip", URL: "https://example.com/input.mp4"},
+	}, aliReq.Input.Media)
+}
+
 func TestConvertToAliRequestWan27I2VRequiresMedia(t *testing.T) {
 	adaptor := &TaskAdaptor{}
 	req := relaycommon.TaskSubmitReq{

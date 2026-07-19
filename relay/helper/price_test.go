@@ -13,8 +13,120 @@ import (
 	"github.com/QuantumNous/new-api/setting/ratio_setting"
 	"github.com/QuantumNous/new-api/types"
 	"github.com/gin-gonic/gin"
+	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
+
+func TestCalculateVideoSecondsBillingSeparatesOutputAndInputVideoPrices(t *testing.T) {
+	fps := 48
+	inputVideoSeconds := 3.5
+	req := relaycommon.TaskSubmitReq{
+		Seconds:           "4",
+		Size:              "1280x720",
+		FPS:               &fps,
+		Image:             "https://example.com/first.png",
+		InputVideo:        "https://example.com/input.mp4",
+		InputVideoSeconds: &inputVideoSeconds,
+	}
+	cfg := billing_setting.VideoPriceConfig{
+		BaseFPS:                  24,
+		InputContentPrice:        0.25,
+		InputVideoPricePerSecond: 0.1,
+		Prices:                   map[string]float64{"720p": 0.5},
+	}
+
+	trace, err := calculateVideoSecondsBilling(req, cfg)
+
+	require.NoError(t, err)
+	assert.Equal(t, "720p", trace.Resolution)
+	assert.InDelta(t, 2, trace.FPSMultiplier, 0.0001)
+	assert.InDelta(t, 4, trace.OutputPrice, 0.0001)
+	assert.InDelta(t, 0.35, trace.InputVideoPrice, 0.0001)
+	assert.InDelta(t, 0.25, trace.InputContentPrice, 0.0001)
+	assert.InDelta(t, 4.6, trace.TotalPrice, 0.0001)
+}
+
+func TestCalculateVideoSecondsBillingRequiresDeclaredInputDuration(t *testing.T) {
+	req := relaycommon.TaskSubmitReq{
+		Seconds:    "5",
+		Size:       "720p",
+		InputVideo: "https://example.com/input.mp4",
+	}
+	cfg := billing_setting.VideoPriceConfig{
+		InputVideoPricePerSecond: 0.1,
+		Prices:                   map[string]float64{"1280x720": 0.5},
+	}
+
+	_, err := calculateVideoSecondsBilling(req, cfg)
+
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "input_video_seconds is required")
+}
+
+func TestCalculateVideoSecondsBillingDetectsAliClipMetadata(t *testing.T) {
+	inputVideoSeconds := 2.5
+	req := relaycommon.TaskSubmitReq{
+		Seconds:           "5",
+		Size:              "720p",
+		InputVideoSeconds: &inputVideoSeconds,
+		Metadata: map[string]interface{}{
+			"input": map[string]interface{}{
+				"media": []interface{}{
+					map[string]interface{}{
+						"type": "first_clip",
+						"url":  "https://example.com/input.mp4",
+					},
+				},
+			},
+		},
+	}
+	cfg := billing_setting.VideoPriceConfig{
+		InputContentPrice:        0.25,
+		InputVideoPricePerSecond: 0.1,
+		Prices:                   map[string]float64{"720p": 0.5},
+	}
+
+	trace, err := calculateVideoSecondsBilling(req, cfg)
+
+	require.NoError(t, err)
+	assert.True(t, trace.InputContentCharged)
+	assert.InDelta(t, 0.25, trace.InputVideoPrice, 0.0001)
+	assert.InDelta(t, 3, trace.TotalPrice, 0.0001)
+}
+
+func TestModelPriceHelperPerCallUsesVideoSecondsBilling(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	saved := map[string]string{}
+	require.NoError(t, config.GlobalConfig.SaveToDB(func(key, value string) error {
+		saved[key] = value
+		return nil
+	}))
+	t.Cleanup(func() {
+		require.NoError(t, config.GlobalConfig.LoadFromDB(saved))
+	})
+	require.NoError(t, config.GlobalConfig.LoadFromDB(map[string]string{
+		"billing_setting.billing_mode":    `{"video-priced":"video_seconds"}`,
+		"billing_setting.video_price":     `{"video-priced":{"base_fps":24,"prices":{"720p":0.02}}}`,
+		"group_ratio_setting.group_ratio": `{"default":1}`,
+	}))
+
+	ctx, _ := gin.CreateTestContext(httptest.NewRecorder())
+	ctx.Set("group", "default")
+	ctx.Set("task_request", relaycommon.TaskSubmitReq{Seconds: "5", Size: "1280x720"})
+	info := &relaycommon.RelayInfo{
+		OriginModelName: "video-priced",
+		UserGroup:       "default",
+		UsingGroup:      "default",
+	}
+
+	priceData, err := ModelPriceHelperPerCall(ctx, info)
+
+	require.NoError(t, err)
+	assert.True(t, priceData.UsePrice)
+	assert.Equal(t, 50000, priceData.Quota)
+	require.NotNil(t, priceData.VideoSecondsTrace)
+	assert.InDelta(t, 0.1, priceData.ModelPrice, 0.0001)
+}
 
 func TestModelPriceHelperTieredUsesPreloadedRequestInput(t *testing.T) {
 	gin.SetMode(gin.TestMode)

@@ -248,7 +248,7 @@ export function useTaskLogsColumns(isAdmin: boolean): ColumnDef<TaskLog>[] {
         const isUrl = failReason?.startsWith('http')
 
         if (isSuccess && isVideoTask && isUrl) {
-          const videoUrl = `/v1/videos/${log.task_id}/content`
+          const videoUrl = `/v1/video/generations/${log.task_id}/content`
           return (
             <a
               href={videoUrl}

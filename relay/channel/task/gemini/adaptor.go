@@ -41,7 +41,10 @@ func (a *TaskAdaptor) Init(info *relaycommon.RelayInfo) {
 
 // ValidateRequestAndSetAction parses body, validates fields and sets default action.
 func (a *TaskAdaptor) ValidateRequestAndSetAction(c *gin.Context, info *relaycommon.RelayInfo) (taskErr *dto.TaskError) {
-	return relaycommon.ValidateBasicTaskRequest(c, info, constant.TaskActionTextGenerate)
+	if taskErr = relaycommon.ValidateBasicTaskRequest(c, info, constant.TaskActionTextGenerate); taskErr != nil {
+		return taskErr
+	}
+	return relaycommon.ValidateNoTaskInputVideo(c, "Gemini Veo")
 }
 
 // BuildRequestURL constructs the Gemini API predictLongRunning endpoint for Veo.
@@ -90,14 +93,21 @@ func (a *TaskAdaptor) BuildRequestBody(c *gin.Context, info *relaycommon.RelayIn
 	if err := taskcommon.UnmarshalMetadata(req.Metadata, params); err != nil {
 		return nil, errors.Wrap(err, "unmarshal metadata failed")
 	}
-	if params.DurationSeconds == 0 && req.Duration > 0 {
+	if req.Duration > 0 {
 		params.DurationSeconds = req.Duration
 	}
-	if params.Resolution == "" && req.Size != "" {
+	if req.Size != "" {
 		params.Resolution = SizeToVeoResolution(req.Size)
-	}
-	if params.AspectRatio == "" && req.Size != "" {
 		params.AspectRatio = SizeToVeoAspectRatio(req.Size)
+	}
+	if req.NegativePrompt != "" {
+		params.NegativePrompt = req.NegativePrompt
+	}
+	if req.Seed != nil {
+		params.Seed = req.Seed
+	}
+	if req.GenerateAudio != nil {
+		params.GenerateAudio = req.GenerateAudio
 	}
 	params.Resolution = strings.ToLower(params.Resolution)
 	params.SampleCount = 1

@@ -2,6 +2,7 @@ package helper
 
 import (
 	"fmt"
+	"math"
 	"strings"
 
 	"github.com/QuantumNous/new-api/common"
@@ -73,6 +74,9 @@ func ModelPriceHelper(c *gin.Context, info *relaycommon.RelayInfo, promptTokens 
 	modelPrice, usePrice := ratio_setting.GetModelPrice(info.OriginModelName, false)
 
 	groupRatioInfo := HandleGroupRatio(c, info)
+	if billing_setting.GetBillingMode(info.OriginModelName) == billing_setting.BillingModeVideoSeconds {
+		return types.PriceData{}, fmt.Errorf("model %s uses video per-second billing; use POST /v1/video/generations", info.OriginModelName)
+	}
 
 	// Check if this model uses tiered_expr billing
 	if billing_setting.GetBillingMode(info.OriginModelName) == billing_setting.BillingModeTieredExpr {
@@ -185,6 +189,9 @@ func ModelPriceHelper(c *gin.Context, info *relaycommon.RelayInfo, promptTokens 
 // ModelPriceHelperPerCall 按次/按量计费的 PriceHelper (MJ、Task)
 func ModelPriceHelperPerCall(c *gin.Context, info *relaycommon.RelayInfo) (types.PriceData, error) {
 	groupRatioInfo := HandleGroupRatio(c, info)
+	if billing_setting.GetBillingMode(info.OriginModelName) == billing_setting.BillingModeVideoSeconds {
+		return modelPriceHelperVideoSeconds(c, info, groupRatioInfo)
+	}
 
 	modelPrice, success := ratio_setting.GetModelPrice(info.OriginModelName, true)
 	usePrice := success
@@ -251,6 +258,159 @@ func ModelPriceHelperPerCall(c *gin.Context, info *relaycommon.RelayInfo) (types
 	return priceData, nil
 }
 
+func modelPriceHelperVideoSeconds(c *gin.Context, info *relaycommon.RelayInfo, groupRatioInfo types.GroupRatioInfo) (types.PriceData, error) {
+	cfg, ok := billing_setting.GetVideoPriceConfig(info.OriginModelName)
+	if !ok || len(cfg.Prices) == 0 {
+		return types.PriceData{}, fmt.Errorf("model %s video per-second price not configured", info.OriginModelName)
+	}
+	req, err := relaycommon.GetTaskRequest(c)
+	if err != nil {
+		return types.PriceData{}, err
+	}
+	markMultipartTaskMedia(c, &req)
+	trace, err := calculateVideoSecondsBilling(req, cfg)
+	if err != nil {
+		return types.PriceData{}, err
+	}
+	if groupRatioInfo.GroupRatio < 0 || math.IsNaN(groupRatioInfo.GroupRatio) || math.IsInf(groupRatioInfo.GroupRatio, 0) {
+		return types.PriceData{}, fmt.Errorf("group ratio is invalid for video per-second billing")
+	}
+	quota, clamp := common.QuotaRoundChecked(trace.TotalPrice * common.QuotaPerUnit * groupRatioInfo.GroupRatio)
+	if clamp != nil {
+		info.QuotaClamp = clamp
+		return types.PriceData{}, clamp
+	}
+	freeModel := false
+	if !operation_setting.GetQuotaSetting().EnableFreeModelPreConsume && (groupRatioInfo.GroupRatio == 0 || trace.TotalPrice == 0) {
+		freeModel = true
+		quota = 0
+	}
+	return types.PriceData{
+		FreeModel:         freeModel,
+		ModelPrice:        trace.TotalPrice,
+		UsePrice:          true,
+		Quota:             quota,
+		GroupRatioInfo:    groupRatioInfo,
+		VideoSecondsTrace: trace,
+	}, nil
+}
+
+func markMultipartTaskMedia(c *gin.Context, req *relaycommon.TaskSubmitReq) {
+	if c == nil || c.Request == nil || req == nil || !strings.Contains(strings.ToLower(c.GetHeader("Content-Type")), "multipart/") {
+		return
+	}
+	form, err := common.ParseMultipartFormReusable(c)
+	if err != nil {
+		return
+	}
+	for field, files := range form.File {
+		if len(files) == 0 {
+			continue
+		}
+		normalizedField := strings.ToLower(field)
+		if strings.Contains(normalizedField, "video") {
+			req.InputVideo = "__multipart_video__"
+		}
+		if normalizedField == "image" || normalizedField == "images" || normalizedField == "input_reference" {
+			req.Image = "__multipart_image__"
+		}
+	}
+}
+
+func calculateVideoSecondsBilling(req relaycommon.TaskSubmitReq, cfg billing_setting.VideoPriceConfig) (*types.VideoSecondsTrace, error) {
+	resolution := relaycommon.NormalizeVideoResolution(req.Size)
+	if resolution == "" && req.Width != nil && req.Height != nil && *req.Width > 0 && *req.Height > 0 {
+		resolution = relaycommon.NormalizeVideoResolution(fmt.Sprintf("%dx%d", *req.Width, *req.Height))
+	}
+	if resolution == "" {
+		return nil, fmt.Errorf("size is required for video per-second billing")
+	}
+	outputPricePerSecond, ok := lookupVideoResolutionPrice(cfg.Prices, resolution)
+	if !ok {
+		return nil, fmt.Errorf("video resolution %s price not configured", resolution)
+	}
+	if outputPricePerSecond < 0 || math.IsNaN(outputPricePerSecond) || math.IsInf(outputPricePerSecond, 0) {
+		return nil, fmt.Errorf("video resolution %s price is invalid", resolution)
+	}
+
+	outputSeconds := req.OutputSeconds()
+	if outputSeconds <= 0 || outputSeconds > relaycommon.MaxTaskDurationSeconds || math.IsNaN(outputSeconds) || math.IsInf(outputSeconds, 0) {
+		return nil, fmt.Errorf("seconds must be between 1 and %d for video per-second billing", relaycommon.MaxTaskDurationSeconds)
+	}
+	baseFPS := cfg.BaseFPS
+	if baseFPS == 0 {
+		baseFPS = 24
+	}
+	if baseFPS <= 0 || baseFPS > relaycommon.MaxTaskFPS || math.IsNaN(baseFPS) || math.IsInf(baseFPS, 0) {
+		return nil, fmt.Errorf("base_fps must be between 1 and %d", relaycommon.MaxTaskFPS)
+	}
+	fps := baseFPS
+	if req.FPS != nil {
+		fps = float64(*req.FPS)
+	}
+	if fps <= 0 || fps > relaycommon.MaxTaskFPS {
+		return nil, fmt.Errorf("fps must be between 1 and %d", relaycommon.MaxTaskFPS)
+	}
+	fpsMultiplier := fps / baseFPS
+	outputPrice := outputSeconds * outputPricePerSecond * fpsMultiplier
+
+	inputContentPrice := cfg.InputContentPrice
+	if inputContentPrice < 0 || math.IsNaN(inputContentPrice) || math.IsInf(inputContentPrice, 0) {
+		return nil, fmt.Errorf("input_content_price is invalid")
+	}
+	inputContentCharged := req.HasAnyInputContent() && inputContentPrice > 0
+	if !inputContentCharged {
+		inputContentPrice = 0
+	}
+
+	inputVideoPricePerSecond := cfg.InputVideoPricePerSecond
+	if inputVideoPricePerSecond < 0 || math.IsNaN(inputVideoPricePerSecond) || math.IsInf(inputVideoPricePerSecond, 0) {
+		return nil, fmt.Errorf("input_video_price_per_second is invalid")
+	}
+	inputVideoSeconds := 0.0
+	inputVideoPrice := 0.0
+	if req.HasAnyInputVideo() && inputVideoPricePerSecond > 0 {
+		if req.InputVideoSeconds == nil {
+			return nil, fmt.Errorf("input_video_seconds is required when input video per-second pricing is configured")
+		}
+		inputVideoSeconds = *req.InputVideoSeconds
+		if inputVideoSeconds <= 0 || inputVideoSeconds > relaycommon.MaxTaskDurationSeconds || math.IsNaN(inputVideoSeconds) || math.IsInf(inputVideoSeconds, 0) {
+			return nil, fmt.Errorf("input_video_seconds must be between 1 and %d", relaycommon.MaxTaskDurationSeconds)
+		}
+		inputVideoPrice = inputVideoSeconds * inputVideoPricePerSecond
+	}
+
+	totalPrice := outputPrice + inputVideoPrice + inputContentPrice
+	if totalPrice < 0 || math.IsNaN(totalPrice) || math.IsInf(totalPrice, 0) {
+		return nil, fmt.Errorf("calculated video price is invalid")
+	}
+	return &types.VideoSecondsTrace{
+		Resolution:               resolution,
+		OutputSeconds:            outputSeconds,
+		FPS:                      fps,
+		BaseFPS:                  baseFPS,
+		FPSMultiplier:            fpsMultiplier,
+		OutputPricePerSecond:     outputPricePerSecond,
+		OutputPrice:              outputPrice,
+		InputContentCharged:      inputContentCharged,
+		InputContentPrice:        inputContentPrice,
+		InputVideoSeconds:        inputVideoSeconds,
+		InputVideoPricePerSecond: inputVideoPricePerSecond,
+		InputVideoPrice:          inputVideoPrice,
+		TotalPrice:               totalPrice,
+	}, nil
+}
+
+func lookupVideoResolutionPrice(prices map[string]float64, resolution string) (float64, bool) {
+	normalized := relaycommon.NormalizeVideoResolution(resolution)
+	for key, price := range prices {
+		if relaycommon.NormalizeVideoResolution(key) == normalized {
+			return price, true
+		}
+	}
+	return 0, false
+}
+
 func HasModelBillingConfig(modelName string) bool {
 	if _, ok := ratio_setting.GetModelPrice(modelName, false); ok {
 		return true
@@ -258,11 +418,23 @@ func HasModelBillingConfig(modelName string) bool {
 	if _, ok, _ := ratio_setting.GetModelRatio(modelName); ok {
 		return true
 	}
-	if billing_setting.GetBillingMode(modelName) != billing_setting.BillingModeTieredExpr {
+	switch billing_setting.GetBillingMode(modelName) {
+	case billing_setting.BillingModeTieredExpr:
+		expr, ok := billing_setting.GetBillingExpr(modelName)
+		return ok && strings.TrimSpace(expr) != ""
+	case billing_setting.BillingModeVideoSeconds:
+		return HasVideoSecondsBillingConfig(modelName)
+	default:
 		return false
 	}
-	expr, ok := billing_setting.GetBillingExpr(modelName)
-	return ok && strings.TrimSpace(expr) != ""
+}
+
+func HasVideoSecondsBillingConfig(modelName string) bool {
+	if billing_setting.GetBillingMode(modelName) != billing_setting.BillingModeVideoSeconds {
+		return false
+	}
+	cfg, ok := billing_setting.GetVideoPriceConfig(modelName)
+	return ok && len(cfg.Prices) > 0
 }
 
 func modelPriceHelperTiered(c *gin.Context, info *relaycommon.RelayInfo, promptTokens int, meta *types.TokenCountMeta, groupRatioInfo types.GroupRatioInfo) (types.PriceData, error) {

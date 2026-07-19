@@ -103,6 +103,7 @@ Keep this index current. Whenever directories, major modules, routing boundaries
 - Database support must remain SQLite, MySQL, and PostgreSQL compatible. Check `model/main.go` for DB selection, migration, quoting, and boolean compatibility helpers.
 - Redis is optional. `REDIS_CONN_STRING` enables Redis; memory cache can also be enabled independently with `MEMORY_CACHE_ENABLED`.
 - Background jobs include option sync, quota data updates, channel tests, channel upstream model updates, Codex credential refresh, subscription quota reset, Midjourney/task polling, and optional batch updates.
+- Video generation uses `POST /v1/video/generations`, `GET /v1/video/generations/:task_id`, and `GET /v1/video/generations/:task_id/content` as the canonical endpoints; `/v1/videos` aliases remain for OpenAI compatibility. Unified request fields include `seconds`, `size`, `image(s)`, `input_video(s)`, `input_video_seconds`, `fps`, `seed`, `negative_prompt`, `generate_audio`, and `metadata`. Models with `billing_setting.billing_mode = video_seconds` use `billing_setting.video_price` for resolution-based output USD/second pricing plus optional input-content and input-video charges.
 - Default frontend build output is embedded from `web/default/dist`; classic build output is embedded from `web/classic/dist`.
 - Frontend environment variables must use the `VITE_` prefix. Prefer Bun commands inside `web/default/`.
 

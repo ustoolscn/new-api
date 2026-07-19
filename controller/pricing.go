@@ -76,7 +76,7 @@ func buildPricingResponse(group string) gin.H {
 		"usable_group":       usableGroup,
 		"supported_endpoint": model.GetSupportedEndpointMap(),
 		"auto_groups":        service.GetUserAutoGroup(group),
-		"pricing_version":    "a42d372ccf0b5dd13ecf71203521f9d2",
+		"pricing_version":    "df7258db3656ef692adc1c1874e80a38",
 	}
 }
 

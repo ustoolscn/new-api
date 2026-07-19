@@ -37,7 +37,10 @@ func (a *TaskAdaptor) Init(info *relaycommon.RelayInfo) {
 }
 
 func (a *TaskAdaptor) ValidateRequestAndSetAction(c *gin.Context, info *relaycommon.RelayInfo) (taskErr *dto.TaskError) {
-	return relaycommon.ValidateBasicTaskRequest(c, info, constant.TaskActionGenerate)
+	if taskErr = relaycommon.ValidateBasicTaskRequest(c, info, constant.TaskActionGenerate); taskErr != nil {
+		return taskErr
+	}
+	return relaycommon.ValidateNoTaskInputVideo(c, "Hailuo")
 }
 
 func (a *TaskAdaptor) BuildRequestURL(info *relaycommon.RelayInfo) (string, error) {
@@ -161,6 +164,21 @@ func (a *TaskAdaptor) convertToRequestPayload(req *relaycommon.TaskSubmitReq, in
 	}
 	if err := req.UnmarshalMetadata(&videoRequest); err != nil {
 		return nil, errors.Wrap(err, "unmarshal metadata to video request failed")
+	}
+	videoRequest.Model = info.UpstreamModelName
+	videoRequest.Prompt = req.Prompt
+	if req.HasImage() {
+		videoRequest.FirstFrameImage = req.Images[0]
+		videoRequest.LastFrameImage = ""
+		if len(req.Images) > 1 {
+			videoRequest.LastFrameImage = req.Images[1]
+		}
+	}
+	if req.Duration > 0 {
+		videoRequest.Duration = &req.Duration
+	}
+	if req.Size != "" {
+		videoRequest.Resolution = a.parseResolutionFromSize(req.Size, modelConfig)
 	}
 
 	return videoRequest, nil

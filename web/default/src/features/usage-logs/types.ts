@@ -175,6 +175,18 @@ export interface LogOtherData {
   model_ratio?: number
   completion_ratio?: number
   model_price?: number
+  video_total_price?: number
+  video_resolution?: string
+  video_output_seconds?: number
+  video_output_price_per_second?: number
+  video_output_price?: number
+  video_input_content_price?: number
+  video_input_seconds?: number
+  video_input_price_per_second?: number
+  video_input_price?: number
+  video_fps?: number
+  video_base_fps?: number
+  video_fps_multiplier?: number
   group_ratio?: number
   user_group_ratio?: number
   cache_ratio?: number

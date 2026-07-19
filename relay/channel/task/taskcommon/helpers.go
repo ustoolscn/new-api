@@ -45,6 +45,12 @@ func DefaultInt(val, fallback int) int {
 	return val
 }
 
+// NormalizeVideoResolution converts dimensions such as 1280x720 to the
+// provider-neutral short-side form (720p).
+func NormalizeVideoResolution(size string) string {
+	return relaycommon.NormalizeVideoResolution(size)
+}
+
 // EncodeLocalTaskID encodes an upstream operation name to a URL-safe base64 string.
 // Used by Gemini/Vertex to store upstream names as task IDs.
 func EncodeLocalTaskID(name string) string {
@@ -61,9 +67,9 @@ func DecodeLocalTaskID(id string) (string, error) {
 }
 
 // BuildProxyURL constructs the video proxy URL using the public task ID.
-// e.g., "https://your-server.com/v1/videos/task_xxxx/content"
+// e.g., "https://your-server.com/v1/video/generations/task_xxxx/content"
 func BuildProxyURL(taskID string) string {
-	return fmt.Sprintf("%s/v1/videos/%s/content", system_setting.ServerAddress, taskID)
+	return fmt.Sprintf("%s/v1/video/generations/%s/content", system_setting.ServerAddress, taskID)
 }
 
 // Status-to-progress mapping constants for polling updates.

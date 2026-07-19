@@ -10,6 +10,7 @@ import (
 	"github.com/QuantumNous/new-api/logger"
 	"github.com/QuantumNous/new-api/model"
 	relaycommon "github.com/QuantumNous/new-api/relay/common"
+	"github.com/QuantumNous/new-api/setting/billing_setting"
 	"github.com/QuantumNous/new-api/setting/ratio_setting"
 	"github.com/QuantumNous/new-api/types"
 	"github.com/gin-gonic/gin"
@@ -21,7 +22,10 @@ func LogTaskConsumption(c *gin.Context, info *relaycommon.RelayInfo) {
 	tokenName := c.GetString("token_name")
 	logContent := fmt.Sprintf("操作 %s", info.Action)
 	// 支持任务仅按次计费
-	if common.StringsContains(constant.TaskPricePatches, info.OriginModelName) {
+	billingMode := billing_setting.GetBillingMode(info.OriginModelName)
+	if billingMode == billing_setting.BillingModeVideoSeconds {
+		logContent = fmt.Sprintf("%s，视频按秒计费", logContent)
+	} else if common.StringsContains(constant.TaskPricePatches, info.OriginModelName) {
 		logContent = fmt.Sprintf("%s，按次计费", logContent)
 	} else {
 		if otherRatios := info.PriceData.OtherRatios(); len(otherRatios) > 0 {
@@ -40,6 +44,27 @@ func LogTaskConsumption(c *gin.Context, info *relaycommon.RelayInfo) {
 	other["is_task"] = true
 	other["request_path"] = c.Request.URL.Path
 	other["model_price"] = info.PriceData.ModelPrice
+	if billingMode == billing_setting.BillingModeVideoSeconds {
+		other["billing_mode"] = billingMode
+		other["video_total_price"] = info.PriceData.ModelPrice
+		if trace := info.PriceData.VideoSecondsTrace; trace != nil {
+			other["video_resolution"] = trace.Resolution
+			other["video_output_seconds"] = trace.OutputSeconds
+			other["video_output_price_per_second"] = trace.OutputPricePerSecond
+			other["video_output_price"] = trace.OutputPrice
+			other["video_fps"] = trace.FPS
+			other["video_base_fps"] = trace.BaseFPS
+			other["video_fps_multiplier"] = trace.FPSMultiplier
+			if trace.InputContentCharged {
+				other["video_input_content_price"] = trace.InputContentPrice
+			}
+			if trace.InputVideoSeconds > 0 {
+				other["video_input_seconds"] = trace.InputVideoSeconds
+				other["video_input_price_per_second"] = trace.InputVideoPricePerSecond
+				other["video_input_price"] = trace.InputVideoPrice
+			}
+		}
+	}
 	if info.PriceData.ModelRatio > 0 {
 		other["model_ratio"] = info.PriceData.ModelRatio
 	}
