@@ -4222,17 +4222,20 @@
           },
           "input_video": {
             "type": "string",
-            "description": "输入视频 (URL 或 Base64)"
+            "format": "uri",
+            "description": "输入视频 URL，仅支持 HTTP/HTTPS。配置输入视频按秒价格时，服务端通过受限 Range 请求自动探测时长"
           },
           "input_videos": {
             "type": "array",
-            "description": "多个输入视频 (URL 或 Base64)",
+            "description": "多个输入视频 URL，最多 4 个，仅支持 HTTP/HTTPS",
             "items": {
-              "type": "string"
+              "type": "string",
+              "format": "uri"
             }
           },
           "video": {
             "type": "string",
+            "format": "uri",
             "deprecated": true,
             "description": "兼容别名：会归一化为 input_video"
           },
@@ -4252,7 +4255,8 @@
             "example": 5
           },
           "input_video_seconds": {
-            "description": "输入视频时长（秒）。模型配置输入视频按秒价格时必填",
+            "deprecated": true,
+            "description": "兼容字段。输入视频计费时长由服务端从 URL 自动探测并向上取整，不信任此字段作为计费依据",
             "oneOf": [
               {
                 "type": "number",
@@ -4328,12 +4332,12 @@
           "input_video_duration": {
             "type": "number",
             "deprecated": true,
-            "description": "兼容别名：会归一化为 input_video_seconds"
+            "description": "兼容别名：会归一化为 input_video_seconds，但不作为计费依据"
           },
           "inputVideoDuration": {
             "type": "number",
             "deprecated": true,
-            "description": "兼容别名：会归一化为 input_video_seconds"
+            "description": "兼容别名：会归一化为 input_video_seconds，但不作为计费依据"
           },
           "metadata": {
             "type": "object",

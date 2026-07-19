@@ -1,6 +1,7 @@
 package helper
 
 import (
+	"context"
 	"fmt"
 	"math"
 	"strings"
@@ -10,6 +11,7 @@ import (
 	"github.com/QuantumNous/new-api/model"
 	"github.com/QuantumNous/new-api/pkg/billingexpr"
 	relaycommon "github.com/QuantumNous/new-api/relay/common"
+	"github.com/QuantumNous/new-api/service"
 	"github.com/QuantumNous/new-api/setting/billing_setting"
 	"github.com/QuantumNous/new-api/setting/operation_setting"
 	"github.com/QuantumNous/new-api/setting/ratio_setting"
@@ -268,6 +270,17 @@ func modelPriceHelperVideoSeconds(c *gin.Context, info *relaycommon.RelayInfo, g
 		return types.PriceData{}, err
 	}
 	markMultipartTaskMedia(c, &req)
+	if req.HasAnyInputVideo() && cfg.InputVideoPricePerSecond > 0 {
+		inputVideoURLs := req.InputVideoURLs()
+		if len(inputVideoURLs) == 0 {
+			return types.PriceData{}, fmt.Errorf("input video URL is required for duration detection")
+		}
+		billedSeconds, probeErr := probeInputVideoBillingSeconds(c.Request.Context(), inputVideoURLs, service.ProbeVideoDurationURL)
+		if probeErr != nil {
+			return types.PriceData{}, probeErr
+		}
+		req.InputVideoSeconds = &billedSeconds
+	}
 	trace, err := calculateVideoSecondsBilling(req, cfg)
 	if err != nil {
 		return types.PriceData{}, err
@@ -295,6 +308,32 @@ func modelPriceHelperVideoSeconds(c *gin.Context, info *relaycommon.RelayInfo, g
 	}, nil
 }
 
+func probeInputVideoBillingSeconds(
+	ctx context.Context,
+	inputVideoURLs []string,
+	probe func(context.Context, string) (float64, error),
+) (float64, error) {
+	totalSeconds := 0.0
+	for _, inputVideoURL := range inputVideoURLs {
+		duration, err := probe(ctx, inputVideoURL)
+		if err != nil {
+			return 0, fmt.Errorf("failed to detect input video duration: %w", err)
+		}
+		if duration <= 0 || math.IsNaN(duration) || math.IsInf(duration, 0) {
+			return 0, fmt.Errorf("detected input video duration is invalid")
+		}
+		totalSeconds += duration
+		if totalSeconds > relaycommon.MaxTaskDurationSeconds {
+			return 0, fmt.Errorf("input video duration must not exceed %d seconds", relaycommon.MaxTaskDurationSeconds)
+		}
+	}
+	billedSeconds := math.Ceil(totalSeconds)
+	if billedSeconds <= 0 || billedSeconds > relaycommon.MaxTaskDurationSeconds {
+		return 0, fmt.Errorf("input video duration must be between 1 and %d seconds", relaycommon.MaxTaskDurationSeconds)
+	}
+	return billedSeconds, nil
+}
+
 func markMultipartTaskMedia(c *gin.Context, req *relaycommon.TaskSubmitReq) {
 	if c == nil || c.Request == nil || req == nil || !strings.Contains(strings.ToLower(c.GetHeader("Content-Type")), "multipart/") {
 		return
@@ -308,9 +347,6 @@ func markMultipartTaskMedia(c *gin.Context, req *relaycommon.TaskSubmitReq) {
 			continue
 		}
 		normalizedField := strings.ToLower(field)
-		if strings.Contains(normalizedField, "video") {
-			req.InputVideo = "__multipart_video__"
-		}
 		if normalizedField == "image" || normalizedField == "images" || normalizedField == "input_reference" {
 			req.Image = "__multipart_image__"
 		}
@@ -371,7 +407,7 @@ func calculateVideoSecondsBilling(req relaycommon.TaskSubmitReq, cfg billing_set
 	inputVideoPrice := 0.0
 	if req.HasAnyInputVideo() && inputVideoPricePerSecond > 0 {
 		if req.InputVideoSeconds == nil {
-			return nil, fmt.Errorf("input_video_seconds is required when input video per-second pricing is configured")
+			return nil, fmt.Errorf("input video duration was not detected")
 		}
 		inputVideoSeconds = *req.InputVideoSeconds
 		if inputVideoSeconds <= 0 || inputVideoSeconds > relaycommon.MaxTaskDurationSeconds || math.IsNaN(inputVideoSeconds) || math.IsInf(inputVideoSeconds, 0) {

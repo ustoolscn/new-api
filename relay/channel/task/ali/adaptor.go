@@ -131,7 +131,10 @@ func (a *TaskAdaptor) Init(info *relaycommon.RelayInfo) {
 
 func (a *TaskAdaptor) ValidateRequestAndSetAction(c *gin.Context, info *relaycommon.RelayInfo) (taskErr *dto.TaskError) {
 	// ValidateMultipartDirect 负责解析并将原始 TaskSubmitReq 存入 context
-	return relaycommon.ValidateMultipartDirect(c, info)
+	if taskErr = relaycommon.ValidateMultipartDirect(c, info); taskErr != nil {
+		return taskErr
+	}
+	return relaycommon.ValidateTaskInputVideoCount(c, "Ali video", 1)
 }
 
 func (a *TaskAdaptor) BuildRequestURL(info *relaycommon.RelayInfo) (string, error) {

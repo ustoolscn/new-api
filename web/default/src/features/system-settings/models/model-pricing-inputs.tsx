@@ -209,7 +209,7 @@ export function VideoPricingEditor(props: {
             </InputGroupAddon>
           </InputGroup>
           <FieldDescription>
-            {t('Requires input_video_seconds when an input video is used.')}
+            {t('Input video duration is detected automatically from the URL.')}
           </FieldDescription>
         </Field>
       </div>

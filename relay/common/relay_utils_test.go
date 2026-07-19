@@ -228,6 +228,75 @@ func TestValidateNoTaskInputVideoRejectsCanonicalAndMetadataInputs(t *testing.T)
 	}
 }
 
+func TestValidateBasicTaskRequestRequiresInputVideoURL(t *testing.T) {
+	request := httptest.NewRequest(
+		http.MethodPost,
+		"/v1/video/generations",
+		strings.NewReader(`{"model":"wan2.7-i2v","prompt":"continue","input_video":"data:video/mp4;base64,AAAA"}`),
+	)
+	request.Header.Set("Content-Type", "application/json")
+	context, _ := gin.CreateTestContext(httptest.NewRecorder())
+	context.Request = request
+	info := &RelayInfo{TaskRelayInfo: &TaskRelayInfo{}}
+
+	taskErr := ValidateBasicTaskRequest(context, info, constant.TaskActionGenerate)
+
+	require.NotNil(t, taskErr)
+	assert.Equal(t, "invalid_input_video", taskErr.Code)
+}
+
+func TestValidateBasicTaskRequestCountsDuplicateInputVideoURLs(t *testing.T) {
+	request := httptest.NewRequest(
+		http.MethodPost,
+		"/v1/video/generations",
+		strings.NewReader(`{"model":"doubao-seedance","prompt":"continue","input_videos":["https://example.com/input.mp4","https://example.com/input.mp4","https://example.com/input.mp4","https://example.com/input.mp4","https://example.com/input.mp4"]}`),
+	)
+	request.Header.Set("Content-Type", "application/json")
+	context, _ := gin.CreateTestContext(httptest.NewRecorder())
+	context.Request = request
+	info := &RelayInfo{TaskRelayInfo: &TaskRelayInfo{}}
+
+	taskErr := ValidateBasicTaskRequest(context, info, constant.TaskActionGenerate)
+
+	require.NotNil(t, taskErr)
+	assert.Equal(t, "invalid_input_video", taskErr.Code)
+}
+
+func TestValidateBasicTaskRequestRejectsMultipartVideoFile(t *testing.T) {
+	var body bytes.Buffer
+	writer := multipart.NewWriter(&body)
+	require.NoError(t, writer.WriteField("model", "sora-2"))
+	require.NoError(t, writer.WriteField("prompt", "continue"))
+	part, err := writer.CreateFormFile("input_video", "input.mp4")
+	require.NoError(t, err)
+	_, err = part.Write([]byte("video-data"))
+	require.NoError(t, err)
+	require.NoError(t, writer.Close())
+
+	request := httptest.NewRequest(http.MethodPost, "/v1/video/generations", &body)
+	request.Header.Set("Content-Type", writer.FormDataContentType())
+	context, _ := gin.CreateTestContext(httptest.NewRecorder())
+	context.Request = request
+	info := &RelayInfo{TaskRelayInfo: &TaskRelayInfo{}}
+
+	taskErr := ValidateBasicTaskRequest(context, info, constant.TaskActionGenerate)
+
+	require.NotNil(t, taskErr)
+	assert.Equal(t, "invalid_multipart_form", taskErr.Code)
+}
+
+func TestTaskSubmitRequestExtractsMetadataInputVideoURL(t *testing.T) {
+	var req TaskSubmitReq
+	err := rootcommon.Unmarshal([]byte(`{
+		"model":"wan2.7-i2v",
+		"prompt":"continue",
+		"metadata":{"input":{"media":[{"type":"first_clip","url":"https://example.com/input.mp4"}]}}
+	}`), &req)
+
+	require.NoError(t, err)
+	assert.Equal(t, []string{"https://example.com/input.mp4"}, req.InputVideoURLs())
+}
+
 // TestTaskDurationBounds guards the billing invariant that user-supplied
 // video duration (a quota multiplier via OtherRatio "seconds") is bounded, so
 // it can never overflow quota calculation into a negative charge.

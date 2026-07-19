@@ -3,6 +3,7 @@ package common
 import (
 	"fmt"
 	"math"
+	"mime/multipart"
 	"net/http"
 	"net/url"
 	"strconv"
@@ -150,6 +151,8 @@ const MaxTaskDurationSeconds = 3600
 
 const MaxTaskFPS = 120
 
+const MaxTaskInputVideos = 4
+
 // NormalizeVideoResolution converts dimensions such as 1280x720 to the
 // provider-neutral short-side form (720p).
 func NormalizeVideoResolution(size string) string {
@@ -189,9 +192,61 @@ func validateTaskDurationBounds(req TaskSubmitReq) *dto.TaskError {
 	return nil
 }
 
+func validateTaskInputVideoURLs(req TaskSubmitReq) *dto.TaskError {
+	if !req.HasAnyInputVideo() {
+		return nil
+	}
+	if len(req.InputVideos) > MaxTaskInputVideos {
+		return createTaskError(fmt.Errorf("input_videos supports at most %d URLs", MaxTaskInputVideos), "invalid_input_video", http.StatusBadRequest, true)
+	}
+	for _, rawURL := range req.InputVideos {
+		if strings.TrimSpace(rawURL) == "" {
+			return createTaskError(fmt.Errorf("input_videos must not contain empty values"), "invalid_input_video", http.StatusBadRequest, true)
+		}
+	}
+	if len(req.InputVideos) > 0 && strings.TrimSpace(req.InputVideo) != "" && strings.TrimSpace(req.InputVideo) != strings.TrimSpace(req.InputVideos[0]) {
+		return createTaskError(fmt.Errorf("input_video conflicts with input_videos"), "invalid_input_video", http.StatusBadRequest, true)
+	}
+	urls := req.InputVideoURLs()
+	if len(urls) == 0 {
+		return createTaskError(fmt.Errorf("input video must contain an HTTP or HTTPS URL"), "invalid_input_video", http.StatusBadRequest, true)
+	}
+	if len(urls) > MaxTaskInputVideos {
+		return createTaskError(fmt.Errorf("input_videos supports at most %d URLs", MaxTaskInputVideos), "invalid_input_video", http.StatusBadRequest, true)
+	}
+	for _, rawURL := range urls {
+		parsed, err := url.Parse(rawURL)
+		if err != nil || parsed.Host == "" || (parsed.Scheme != "http" && parsed.Scheme != "https") {
+			return createTaskError(fmt.Errorf("input video must be an HTTP or HTTPS URL"), "invalid_input_video", http.StatusBadRequest, true)
+		}
+	}
+	return nil
+}
+
+func validateMultipartTaskVideoFiles(form *multipart.Form) error {
+	if form == nil {
+		return nil
+	}
+	for field, files := range form.File {
+		for _, file := range files {
+			contentType := strings.ToLower(file.Header.Get("Content-Type"))
+			fileName := strings.ToLower(file.Filename)
+			if strings.Contains(strings.ToLower(field), "video") || strings.HasPrefix(contentType, "video/") ||
+				strings.HasSuffix(fileName, ".mp4") || strings.HasSuffix(fileName, ".mov") || strings.HasSuffix(fileName, ".webm") {
+				return fmt.Errorf("input video files are not supported; provide an HTTP or HTTPS URL")
+			}
+		}
+	}
+	return nil
+}
+
 func validateMultipartTaskRequest(c *gin.Context, info *RelayInfo, action string) (TaskSubmitReq, error) {
 	var req TaskSubmitReq
-	if _, err := c.MultipartForm(); err != nil {
+	form, err := c.MultipartForm()
+	if err != nil {
+		return req, err
+	}
+	if err := validateMultipartTaskVideoFiles(form); err != nil {
 		return req, err
 	}
 
@@ -325,6 +380,16 @@ func ValidateMultipartDirect(c *gin.Context, info *RelayInfo) *dto.TaskError {
 	if err := common.UnmarshalBodyReusable(c, &req); err != nil {
 		return createTaskError(err, "invalid_json", http.StatusBadRequest, true)
 	}
+	if strings.Contains(strings.ToLower(c.GetHeader("Content-Type")), "multipart/") {
+		form, err := common.ParseMultipartFormReusable(c)
+		if err != nil {
+			return createTaskError(err, "invalid_multipart_form", http.StatusBadRequest, true)
+		}
+		defer form.RemoveAll()
+		if err := validateMultipartTaskVideoFiles(form); err != nil {
+			return createTaskError(err, "invalid_input_video", http.StatusBadRequest, true)
+		}
+	}
 
 	req.Normalize()
 
@@ -337,6 +402,9 @@ func ValidateMultipartDirect(c *gin.Context, info *RelayInfo) *dto.TaskError {
 	}
 
 	if taskErr := validateTaskDurationBounds(req); taskErr != nil {
+		return taskErr
+	}
+	if taskErr := validateTaskInputVideoURLs(req); taskErr != nil {
 		return taskErr
 	}
 
@@ -429,6 +497,9 @@ func ValidateBasicTaskRequest(c *gin.Context, info *RelayInfo, action string) *d
 	}
 
 	req.Normalize()
+	if taskErr := validateTaskInputVideoURLs(req); taskErr != nil {
+		return taskErr
+	}
 	if action == constant.TaskActionTextGenerate && (req.HasImage() || req.HasInputVideo()) {
 		action = constant.TaskActionGenerate
 	}
@@ -446,6 +517,22 @@ func ValidateNoTaskInputVideo(c *gin.Context, provider string) *dto.TaskError {
 		return createTaskError(
 			fmt.Errorf("%s does not support input_video", provider),
 			"unsupported_input_video",
+			http.StatusBadRequest,
+			true,
+		)
+	}
+	return nil
+}
+
+func ValidateTaskInputVideoCount(c *gin.Context, provider string, maxVideos int) *dto.TaskError {
+	req, err := GetTaskRequest(c)
+	if err != nil {
+		return createTaskError(err, "invalid_request", http.StatusBadRequest, true)
+	}
+	if count := len(req.InputVideoURLs()); count > maxVideos {
+		return createTaskError(
+			fmt.Errorf("%s supports at most %d input video URL(s)", provider, maxVideos),
+			"unsupported_input_video_count",
 			http.StatusBadRequest,
 			true,
 		)

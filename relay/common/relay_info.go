@@ -761,6 +761,30 @@ func (t *TaskSubmitReq) HasAnyInputContent() bool {
 	return t.HasImage() || t.HasAnyInputVideo() || metadataHasTaskMedia(t.Metadata, "")
 }
 
+func (t *TaskSubmitReq) InputVideoURLs() []string {
+	urls := make([]string, 0, len(t.InputVideos)+1)
+	add := func(value string) {
+		value = strings.TrimSpace(value)
+		if value == "" {
+			return
+		}
+		urls = append(urls, value)
+	}
+
+	if len(t.InputVideos) > 0 {
+		for _, value := range t.InputVideos {
+			add(value)
+		}
+		return urls
+	}
+	if strings.TrimSpace(t.InputVideo) != "" {
+		add(t.InputVideo)
+		return urls
+	}
+	collectMetadataInputVideoURLs(t.Metadata, add)
+	return urls
+}
+
 func (t *TaskSubmitReq) OutputSeconds() float64 {
 	seconds, _ := strconv.ParseFloat(strings.TrimSpace(t.Seconds), 64)
 	if seconds > 0 {
@@ -1032,6 +1056,48 @@ func metadataHasTaskMedia(value interface{}, mediaType string) bool {
 		}
 	}
 	return false
+}
+
+func collectMetadataInputVideoURLs(value interface{}, add func(string)) {
+	switch item := value.(type) {
+	case map[string]interface{}:
+		if typeName, ok := item["type"].(string); ok && taskMediaTypeMatches(typeName, "video") {
+			for _, key := range []string{"url", "file_url", "video_url", "input_video"} {
+				collectTaskURLValues(item[key], add)
+			}
+			return
+		}
+		for key, nested := range item {
+			normalizedKey := strings.ToLower(strings.TrimSpace(key))
+			if isTaskMediaKey(normalizedKey, "video") {
+				collectTaskURLValues(nested, add)
+			}
+			collectMetadataInputVideoURLs(nested, add)
+		}
+	case []interface{}:
+		for _, nested := range item {
+			collectMetadataInputVideoURLs(nested, add)
+		}
+	}
+}
+
+func collectTaskURLValues(value interface{}, add func(string)) {
+	switch item := value.(type) {
+	case string:
+		add(item)
+	case []string:
+		for _, nested := range item {
+			add(nested)
+		}
+	case []interface{}:
+		for _, nested := range item {
+			collectTaskURLValues(nested, add)
+		}
+	case map[string]interface{}:
+		for _, key := range []string{"url", "file_url", "video_url"} {
+			collectTaskURLValues(item[key], add)
+		}
+	}
 }
 
 func taskMediaTypeMatches(typeName, mediaType string) bool {

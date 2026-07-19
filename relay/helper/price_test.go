@@ -1,6 +1,8 @@
 package helper
 
 import (
+	"context"
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"testing"
@@ -46,7 +48,7 @@ func TestCalculateVideoSecondsBillingSeparatesOutputAndInputVideoPrices(t *testi
 	assert.InDelta(t, 4.6, trace.TotalPrice, 0.0001)
 }
 
-func TestCalculateVideoSecondsBillingRequiresDeclaredInputDuration(t *testing.T) {
+func TestCalculateVideoSecondsBillingRequiresResolvedInputDuration(t *testing.T) {
 	req := relaycommon.TaskSubmitReq{
 		Seconds:    "5",
 		Size:       "720p",
@@ -60,7 +62,58 @@ func TestCalculateVideoSecondsBillingRequiresDeclaredInputDuration(t *testing.T)
 	_, err := calculateVideoSecondsBilling(req, cfg)
 
 	require.Error(t, err)
-	assert.Contains(t, err.Error(), "input_video_seconds is required")
+	assert.Contains(t, err.Error(), "duration was not detected")
+}
+
+func TestProbeInputVideoBillingSecondsRoundsTotalDurationUp(t *testing.T) {
+	durations := map[string]float64{
+		"https://example.com/first.mp4":  2.25,
+		"https://example.com/second.mp4": 3.5,
+	}
+	probe := func(_ context.Context, rawURL string) (float64, error) {
+		return durations[rawURL], nil
+	}
+
+	seconds, err := probeInputVideoBillingSeconds(context.Background(), []string{
+		"https://example.com/first.mp4",
+		"https://example.com/second.mp4",
+	}, probe)
+
+	require.NoError(t, err)
+	assert.Equal(t, 6.0, seconds)
+}
+
+func TestProbeInputVideoBillingSecondsBillsRepeatedInputsSeparately(t *testing.T) {
+	probeCalls := 0
+	probe := func(_ context.Context, rawURL string) (float64, error) {
+		probeCalls++
+		assert.Equal(t, "https://example.com/input.mp4", rawURL)
+		return 2.25, nil
+	}
+
+	seconds, err := probeInputVideoBillingSeconds(context.Background(), []string{
+		"https://example.com/input.mp4",
+		"https://example.com/input.mp4",
+	}, probe)
+
+	require.NoError(t, err)
+	assert.Equal(t, 5.0, seconds)
+	assert.Equal(t, 2, probeCalls)
+}
+
+func TestProbeInputVideoBillingSecondsRejectsProbeFailure(t *testing.T) {
+	probe := func(context.Context, string) (float64, error) {
+		return 0, errors.New("range unsupported")
+	}
+
+	_, err := probeInputVideoBillingSeconds(
+		context.Background(),
+		[]string{"https://example.com/input.mp4"},
+		probe,
+	)
+
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "failed to detect input video duration")
 }
 
 func TestCalculateVideoSecondsBillingDetectsAliClipMetadata(t *testing.T) {

@@ -2369,6 +2369,7 @@
     "Input price is required before saving dependent prices.": "儲存依賴價格前必須先填寫輸入價格。",
     "Input tokens": "輸入 token",
     "Input Tokens": "輸入 Token",
+    "Input video duration is detected automatically from the URL.": "輸入影片時長會根據 URL 自動偵測。",
     "Input video price": "輸入影片價格",
     "Inset": "內嵌",
     "Inspect requests, errors, and billing details": "查看請求、錯誤和收費詳情",

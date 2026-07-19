@@ -2369,6 +2369,7 @@
     "Input price is required before saving dependent prices.": "Перед сохранением зависимых цен укажите входную цену.",
     "Input tokens": "Входные токены",
     "Input Tokens": "Входные токены",
+    "Input video duration is detected automatically from the URL.": "Длительность входного видео определяется автоматически по URL.",
     "Input video price": "Цена входного видео",
     "Inset": "Встроенная",
     "Inspect requests, errors, and billing details": "Проверяйте запросы, ошибки и детали оплаты",
