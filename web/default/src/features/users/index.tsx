@@ -16,6 +16,7 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 
 For commercial licensing, please contact support@quantumnous.com
 */
+import { BarChart3 } from 'lucide-react'
 import { useState } from 'react'
 import { useTranslation } from 'react-i18next'
 
@@ -23,6 +24,7 @@ import { SectionPageLayout } from '@/components/layout'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 
 import { RegisteredDevicesTable } from './components/registered-devices-table'
+import { RegistrationStatistics } from './components/registration-statistics'
 import { UsersDeleteDialog } from './components/users-delete-dialog'
 import { UsersMutateDrawer } from './components/users-mutate-drawer'
 import { UsersPrimaryButtons } from './components/users-primary-buttons'
@@ -32,7 +34,9 @@ import { UsersTable } from './components/users-table'
 function UsersContent() {
   const { t } = useTranslation()
   const { open, setOpen, currentRow } = useUsers()
-  const [activeTab, setActiveTab] = useState('users')
+  const [activeTab, setActiveTab] = useState<
+    'users' | 'devices' | 'statistics'
+  >('users')
 
   return (
     <>
@@ -42,16 +46,34 @@ function UsersContent() {
           {activeTab === 'users' && <UsersPrimaryButtons />}
         </SectionPageLayout.Actions>
         <SectionPageLayout.Content>
-          <Tabs value={activeTab} onValueChange={setActiveTab} className='h-full min-h-0'>
+          <Tabs
+            value={activeTab}
+            onValueChange={(value) =>
+              setActiveTab(value as 'users' | 'devices' | 'statistics')
+            }
+            className='h-full min-h-0'
+          >
             <TabsList>
               <TabsTrigger value='users'>{t('Users')}</TabsTrigger>
-              <TabsTrigger value='devices'>{t('Registered devices')}</TabsTrigger>
+              <TabsTrigger value='devices'>
+                {t('Registered devices')}
+              </TabsTrigger>
+              <TabsTrigger value='statistics'>
+                <BarChart3 data-icon='inline-start' />
+                {t('Statistics')}
+              </TabsTrigger>
             </TabsList>
             <TabsContent value='users' className='min-h-0 flex-1'>
               <UsersTable />
             </TabsContent>
             <TabsContent value='devices' className='min-h-0 flex-1'>
               <RegisteredDevicesTable />
+            </TabsContent>
+            <TabsContent
+              value='statistics'
+              className='min-h-0 flex-1 overflow-auto'
+            >
+              <RegistrationStatistics />
             </TabsContent>
           </Tabs>
         </SectionPageLayout.Content>

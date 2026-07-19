@@ -147,6 +147,28 @@ export interface GetRegisteredDevicesResponse {
   }
 }
 
+export type UserRegistrationStatsGranularity = 'day' | 'month' | 'year'
+
+export interface UserRegistrationStatisticsItem {
+  bucket_start: number
+  bucket_label: string
+  registration_count: number
+}
+
+export interface UserRegistrationStatisticsResult {
+  start_timestamp: number
+  end_timestamp: number
+  granularity: UserRegistrationStatsGranularity
+  total_registrations: number
+  items: UserRegistrationStatisticsItem[]
+}
+
+export interface GetUserRegistrationStatisticsParams {
+  start_timestamp: number
+  end_timestamp: number
+  granularity: UserRegistrationStatsGranularity
+}
+
 export interface SearchUsersParams {
   keyword?: string
   group?: string

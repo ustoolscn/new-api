@@ -199,6 +199,8 @@ func generateDefaultSidebarConfigForRole(userRole int) string {
 	defaultConfig["personal"] = map[string]interface{}{
 		"enabled":  true,
 		"topup":    true,
+		"orders":   true,
+		"referral": true,
 		"personal": true,
 	}
 
@@ -211,6 +213,7 @@ func generateDefaultSidebarConfigForRole(userRole int) string {
 			"models":     true,
 			"redemption": true,
 			"user":       true,
+			"invoice":    true,
 			"setting":    false, // 管理员不能访问系统设置
 		}
 	} else if userRole == common.RoleRootUser {
@@ -221,6 +224,7 @@ func generateDefaultSidebarConfigForRole(userRole int) string {
 			"models":     true,
 			"redemption": true,
 			"user":       true,
+			"invoice":    true,
 			"setting":    true,
 		}
 	}

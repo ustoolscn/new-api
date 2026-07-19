@@ -30,6 +30,8 @@ import type {
   ApiResponse,
   GetRegisteredDevicesParams,
   GetRegisteredDevicesResponse,
+  GetUserRegistrationStatisticsParams,
+  UserRegistrationStatisticsResult,
 } from './types'
 
 // ============================================================================
@@ -102,6 +104,13 @@ export async function setRegisteredDeviceBanned(
 ): Promise<ApiResponse> {
   const action = banned ? 'ban' : 'unban'
   const res = await api.post(`/api/user/device/${id}/${action}`)
+  return res.data
+}
+
+export async function getUserRegistrationStatistics(
+  params: GetUserRegistrationStatisticsParams
+): Promise<ApiResponse<UserRegistrationStatisticsResult>> {
+  const res = await api.get('/api/user/registration-statistics', { params })
   return res.data
 }
 

@@ -124,6 +124,14 @@ export function SidebarModulesSection({
         title: t('Wallet'),
         description: t('Top up balance and view billing history.'),
       },
+      orders: {
+        title: t('My Orders'),
+        description: t('View recharge orders and manage invoice requests.'),
+      },
+      referral: {
+        title: t('Referrals'),
+        description: t('Review invited users and claim top-up commissions.'),
+      },
       personal: {
         title: t('Profile'),
         description: t('Personal settings and profile management.'),
@@ -145,6 +153,10 @@ export function SidebarModulesSection({
       user: {
         title: t('Users'),
         description: t('Administer user accounts and roles.'),
+      },
+      invoice: {
+        title: t('Invoice Management'),
+        description: t('Review invoice requests and upload issued PDFs.'),
       },
       setting: {
         title: t('System settings'),

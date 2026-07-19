@@ -16,7 +16,6 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 
 For commercial licensing, please contact support@quantumnous.com
 */
-import { useCallback, useEffect, useMemo, useState } from 'react'
 import {
   BarChart3,
   ChevronLeft,
@@ -28,11 +27,12 @@ import {
   Wallet,
   WalletCards,
 } from 'lucide-react'
-import { Bar, BarChart, CartesianGrid, XAxis, YAxis } from 'recharts'
+import { useCallback, useEffect, useMemo, useState } from 'react'
 import { useTranslation } from 'react-i18next'
+import { Bar, BarChart, CartesianGrid, XAxis, YAxis } from 'recharts'
 import { toast } from 'sonner'
-import dayjs from '@/lib/dayjs'
-import { cn } from '@/lib/utils'
+
+import { SectionPageLayout } from '@/components/layout'
 import { Button } from '@/components/ui/button'
 import {
   Card,
@@ -64,12 +64,17 @@ import {
   TableHeader,
   TableRow,
 } from '@/components/ui/table'
-import { SectionPageLayout } from '@/components/layout'
+import dayjs from '@/lib/dayjs'
+import { cn } from '@/lib/utils'
+
 import { getBillingStatistics } from './api'
 import type { BillingStatisticsResult, BillingStatsGranularity } from './types'
 
 type TimePreset = 'last_hour' | 'today' | 'this_week' | 'this_month'
-type ChartGranularity = Extract<BillingStatsGranularity, 'day' | 'month' | 'year'>
+type ChartGranularity = Extract<
+  BillingStatsGranularity,
+  'day' | 'month' | 'year'
+>
 
 const TIME_PRESETS: Array<{ value: TimePreset; label: string }> = [
   { value: 'last_hour', label: 'Last 1 Hour' },
@@ -88,17 +93,6 @@ const CHART_GRANULARITY_OPTIONS: Array<{
   { value: 'month', label: 'Monthly' },
   { value: 'year', label: 'Yearly' },
 ]
-
-const billingChartConfig = {
-  total_amount: {
-    label: 'Total Amount',
-    color: 'var(--chart-1)',
-  },
-  consume_amount: {
-    label: 'Total Usage Cost',
-    color: 'var(--chart-2)',
-  },
-} satisfies ChartConfig
 
 function formatDateTime(value: dayjs.Dayjs) {
   return value.format(DATE_TIME_FORMAT)
@@ -167,6 +161,20 @@ function BillingStatisticsChart(props: {
 }) {
   const { t } = useTranslation()
   const rows = props.data?.items ?? []
+  const chartConfig = useMemo(
+    () =>
+      ({
+        total_amount: {
+          label: t('Total Amount'),
+          color: 'var(--chart-1)',
+        },
+        consume_amount: {
+          label: t('Total Usage Cost'),
+          color: 'var(--chart-2)',
+        },
+      }) satisfies ChartConfig,
+    [t]
+  )
 
   return (
     <Card className='mt-4 rounded-lg'>
@@ -183,8 +191,8 @@ function BillingStatisticsChart(props: {
           </div>
         ) : (
           <ChartContainer
-            config={billingChartConfig}
-            className='h-72 w-full aspect-auto'
+            config={chartConfig}
+            className='aspect-auto h-72 w-full'
             initialDimension={{ width: 800, height: 288 }}
           >
             <BarChart data={rows} margin={{ top: 8, right: 8, left: 8 }}>
@@ -394,7 +402,9 @@ export function BillingStatistics() {
                   <Button
                     key={item.value}
                     type='button'
-                    variant={activePreset === item.value ? 'default' : 'outline'}
+                    variant={
+                      activePreset === item.value ? 'default' : 'outline'
+                    }
                     onClick={() => applyPreset(item.value)}
                   >
                     {t(item.label)}
@@ -461,7 +471,9 @@ export function BillingStatistics() {
                   <TableHead className='text-right'>
                     {t('Subscription Amount')}
                   </TableHead>
-                  <TableHead className='text-right'>{t('Usage Cost')}</TableHead>
+                  <TableHead className='text-right'>
+                    {t('Usage Cost')}
+                  </TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
@@ -530,7 +542,9 @@ export function BillingStatistics() {
                     </SelectGroup>
                   </SelectContent>
                 </Select>
-                <span className='text-sm font-medium'>{t('Rows per page')}</span>
+                <span className='text-sm font-medium'>
+                  {t('Rows per page')}
+                </span>
                 <Button
                   variant='outline'
                   size='sm'

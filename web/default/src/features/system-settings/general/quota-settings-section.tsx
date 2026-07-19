@@ -62,6 +62,9 @@ const quotaSchema = z.object({
   quota_setting: z.object({
     enable_free_model_pre_consume: z.boolean(),
   }),
+  payment_setting: z.object({
+    referral_commission_rate: z.coerce.number().min(0).max(100),
+  }),
 })
 
 type QuotaFormValues = z.infer<typeof quotaSchema>
@@ -231,6 +234,35 @@ export function QuotaSettingsSection({
                     {t('Quota given to invited users ({{formattedQuota}})', {
                       formattedQuota: formatQuotaInputValue(field.value),
                     })}
+                  </FormDescription>
+                  <FormMessage />
+                </FormItem>
+              )}
+            />
+
+            <FormField
+              control={form.control}
+              name='payment_setting.referral_commission_rate'
+              render={({ field }) => (
+                <FormItem>
+                  <FormLabel>{t('Referral commission rate')}</FormLabel>
+                  <FormControl>
+                    <Input
+                      type='number'
+                      min={0}
+                      max={100}
+                      step='0.01'
+                      value={field.value ?? ''}
+                      onChange={handleNumberChange(field.onChange)}
+                      name={field.name}
+                      onBlur={field.onBlur}
+                      ref={field.ref}
+                    />
+                  </FormControl>
+                  <FormDescription>
+                    {t(
+                      'Percentage of an invited user’s credited top-up balance that becomes claimable commission.'
+                    )}
                   </FormDescription>
                   <FormMessage />
                 </FormItem>

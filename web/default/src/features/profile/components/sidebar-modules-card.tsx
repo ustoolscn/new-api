@@ -116,6 +116,16 @@ export function SidebarModulesCard() {
           description: t('Balance and top-up management'),
         },
         {
+          key: 'orders',
+          title: t('My Orders'),
+          description: t('Recharge orders and invoice folder'),
+        },
+        {
+          key: 'referral',
+          title: t('Referrals'),
+          description: t('Invited users and top-up commissions'),
+        },
+        {
           key: 'personal',
           title: t('Personal Settings'),
           description: t('Personal info settings'),

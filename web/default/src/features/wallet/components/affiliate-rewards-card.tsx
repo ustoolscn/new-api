@@ -16,36 +16,27 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 
 For commercial licensing, please contact support@quantumnous.com
 */
-import { Share2 } from 'lucide-react'
+import { Link } from '@tanstack/react-router'
+import { ArrowRight, Share2 } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 
-import { CopyButton } from '@/components/copy-button'
-import { Button } from '@/components/ui/button'
 import { Card, CardContent } from '@/components/ui/card'
 import { IconBadge } from '@/components/ui/icon-badge'
-import { Input } from '@/components/ui/input'
 import { Skeleton } from '@/components/ui/skeleton'
+import type { ReferralOverview } from '@/features/referrals/types'
 import { formatQuota } from '@/lib/format'
 
 import type { UserWalletData } from '../types'
 
 interface AffiliateRewardsCardProps {
   user: UserWalletData | null
-  affiliateLink: string
-  onTransfer: () => void
-  complianceConfirmed?: boolean
+  overview?: ReferralOverview
   loading?: boolean
 }
 
-export function AffiliateRewardsCard({
-  user,
-  affiliateLink,
-  onTransfer,
-  complianceConfirmed = true,
-  loading,
-}: AffiliateRewardsCardProps) {
+export function AffiliateRewardsCard(props: AffiliateRewardsCardProps) {
   const { t } = useTranslation()
-  if (loading) {
+  if (props.loading) {
     return (
       <Card data-card-hover='false' className='bg-muted/20 py-0'>
         <CardContent className='grid gap-4 p-3 sm:p-4 lg:grid-cols-[minmax(220px,1fr)_minmax(220px,0.72fr)_minmax(320px,1.15fr)] lg:items-center'>
@@ -60,77 +51,65 @@ export function AffiliateRewardsCard({
     )
   }
 
-  const hasRewards = (user?.aff_quota ?? 0) > 0
-
   return (
-    <Card data-card-hover='false' className='bg-muted/20 py-0'>
-      <CardContent className='grid gap-3 p-3 sm:gap-4 sm:p-4 lg:grid-cols-[minmax(200px,1fr)_minmax(180px,0.65fr)_minmax(280px,1fr)] lg:items-center'>
-        <div className='flex min-w-0 items-center gap-2.5'>
-          <IconBadge tone='chart-3'>
-            <Share2 />
-          </IconBadge>
-          <div className='min-w-0'>
-            <h3 className='truncate text-sm font-semibold'>
-              {t('Referral Program')}
-            </h3>
-            <p className='text-muted-foreground line-clamp-1 text-xs'>
-              {t(
-                'Earn rewards when users join through your referral link. Transfer accumulated rewards to your balance anytime.'
-              )}
-            </p>
-          </div>
-        </div>
-
-        <div className='grid grid-cols-3 gap-1.5 text-center'>
-          {[
-            [t('Pending'), formatQuota(user?.aff_quota ?? 0)],
-            [t('Total Earned'), formatQuota(user?.aff_history_quota ?? 0)],
-            [t('Invites'), String(user?.aff_count ?? 0)],
-          ].map(([label, value]) => (
-            <div key={label}>
-              <div className='text-muted-foreground truncate text-[10px] font-medium tracking-wider uppercase'>
-                {label}
-              </div>
-              <div className='mt-0.5 truncate text-sm font-semibold tabular-nums'>
-                {value}
-              </div>
+    <Link
+      to='/referrals'
+      className='focus-visible:ring-ring block rounded-xl focus-visible:ring-2 focus-visible:outline-none'
+      aria-label={t('View referral details')}
+    >
+      <Card className='bg-muted/20 hover:bg-muted/35 py-0 transition-colors'>
+        <CardContent className='grid gap-4 p-3 sm:p-4 lg:grid-cols-[minmax(220px,1fr)_minmax(360px,1.2fr)_auto] lg:items-center'>
+          <div className='flex min-w-0 items-center gap-2.5'>
+            <IconBadge tone='chart-3'>
+              <Share2 />
+            </IconBadge>
+            <div className='min-w-0'>
+              <h3 className='truncate text-sm font-semibold'>
+                {t('Referral Program')}
+              </h3>
+              <p className='text-muted-foreground line-clamp-2 text-xs'>
+                {t(
+                  'Earn a fixed reward for each successful invite plus commission from eligible top-ups.'
+                )}
+              </p>
             </div>
-          ))}
-        </div>
+          </div>
 
-        <div className='flex items-center gap-2'>
-          <Input
-            value={affiliateLink}
-            readOnly
-            className='border-muted bg-background/70 h-9 min-w-0 flex-1 font-mono text-xs'
-          />
-          <CopyButton
-            value={affiliateLink}
-            variant='outline'
-            className='bg-background size-9 shrink-0'
-            iconClassName='size-4'
-            tooltip={t('Copy referral link')}
-            aria-label={t('Copy referral link')}
-          />
-          {hasRewards && (
-            <Button
-              onClick={onTransfer}
-              disabled={!complianceConfirmed}
-              className='h-9 shrink-0 px-3'
-              size='sm'
-            >
-              {t('Transfer to Balance')}
-            </Button>
-          )}
-        </div>
-        {!complianceConfirmed ? (
-          <p className='text-muted-foreground text-xs lg:col-span-3'>
-            {t(
-              'Referral reward transfer is disabled until the administrator confirms compliance terms.'
-            )}
-          </p>
-        ) : null}
-      </CardContent>
-    </Card>
+          <div className='grid grid-cols-2 gap-3 sm:grid-cols-4'>
+            {[
+              [t('Invite rewards'), formatQuota(props.user?.aff_quota ?? 0)],
+              [
+                t('Top-up commission'),
+                formatQuota(props.overview?.pending_quota ?? 0),
+              ],
+              [
+                t('Invited users'),
+                String(
+                  props.overview?.invite_count ?? props.user?.aff_count ?? 0
+                ),
+              ],
+              [
+                t('Commission rate'),
+                `${props.overview?.commission_rate ?? 0}%`,
+              ],
+            ].map(([label, value]) => (
+              <div key={label}>
+                <div className='text-muted-foreground truncate text-[10px] font-medium tracking-wider uppercase'>
+                  {label}
+                </div>
+                <div className='mt-0.5 truncate text-sm font-semibold tabular-nums'>
+                  {value}
+                </div>
+              </div>
+            ))}
+          </div>
+
+          <div className='text-primary flex items-center justify-end gap-2 text-sm font-medium'>
+            {t('View details')}
+            <ArrowRight className='size-4' />
+          </div>
+        </CardContent>
+      </Card>
+    </Link>
   )
 }

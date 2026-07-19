@@ -578,6 +578,38 @@ func GetAffCode(c *gin.Context) {
 	return
 }
 
+func GetReferralOverview(c *gin.Context) {
+	id := c.GetInt("id")
+	pageInfo := common.GetPageQuery(c)
+	overview, err := model.GetReferralOverview(id, pageInfo)
+	if err != nil {
+		common.ApiError(c, err)
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{
+		"success": true,
+		"message": "",
+		"data":    overview,
+	})
+}
+
+func ClaimReferralCommissions(c *gin.Context) {
+	if !requirePaymentCompliance(c) {
+		return
+	}
+	id := c.GetInt("id")
+	claimedQuota, err := model.ClaimReferralCommissions(id)
+	if err != nil {
+		common.ApiErrorI18n(c, i18n.MsgUserReferralClaimFailed, map[string]any{"Error": err.Error()})
+		return
+	}
+	if claimedQuota == 0 {
+		common.ApiSuccessI18n(c, i18n.MsgUserReferralNothingToClaim, gin.H{"claimed_quota": 0})
+		return
+	}
+	common.ApiSuccessI18n(c, i18n.MsgUserReferralClaimSuccess, gin.H{"claimed_quota": claimedQuota})
+}
+
 func GetSelf(c *gin.Context) {
 	id := c.GetInt("id")
 	userRole := c.GetInt("role")
@@ -687,6 +719,8 @@ func generateDefaultSidebarConfig(userRole int) string {
 	defaultConfig["personal"] = map[string]interface{}{
 		"enabled":  true,
 		"topup":    true,
+		"orders":   true,
+		"referral": true,
 		"personal": true,
 	}
 
@@ -699,6 +733,7 @@ func generateDefaultSidebarConfig(userRole int) string {
 			"models":     true,
 			"redemption": true,
 			"user":       true,
+			"invoice":    true,
 			"setting":    false, // 管理员不能访问系统设置
 		}
 	} else if userRole == common.RoleRootUser {
@@ -709,6 +744,7 @@ func generateDefaultSidebarConfig(userRole int) string {
 			"models":     true,
 			"redemption": true,
 			"user":       true,
+			"invoice":    true,
 			"setting":    true,
 		}
 	}

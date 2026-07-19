@@ -16,10 +16,13 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 
 For commercial licensing, please contact support@quantumnous.com
 */
+import { UserMultiple02Icon } from '@hugeicons/core-free-icons'
+import { HugeiconsIcon } from '@hugeicons/react'
 import {
   Activity,
   Box,
   CreditCard,
+  FileCheck2,
   FileText,
   FlaskConical,
   Key,
@@ -27,6 +30,7 @@ import {
   ListTodo,
   MessageSquare,
   Radio,
+  ReceiptText,
   ServerCog,
   Settings,
   Ticket,
@@ -35,10 +39,19 @@ import {
   Users,
   Wallet,
 } from 'lucide-react'
+import { createElement } from 'react'
 import { useTranslation } from 'react-i18next'
 
-import { type SidebarData } from '@/components/layout/types'
+import type { SidebarData } from '@/components/layout/types'
 import { ROLE } from '@/lib/roles'
+
+function ReferralNavIcon(props: { className?: string }) {
+  return createElement(HugeiconsIcon, {
+    icon: UserMultiple02Icon,
+    strokeWidth: 2,
+    className: props.className,
+  })
+}
 
 /**
  * Root navigation groups for the application sidebar.
@@ -110,6 +123,16 @@ export function useSidebarData(): SidebarData {
             icon: Wallet,
           },
           {
+            title: t('My Orders'),
+            url: '/orders',
+            icon: ReceiptText,
+          },
+          {
+            title: t('Referrals'),
+            url: '/referrals',
+            icon: ReferralNavIcon,
+          },
+          {
             title: t('Profile'),
             url: '/profile',
             icon: User,
@@ -144,6 +167,11 @@ export function useSidebarData(): SidebarData {
             title: t('Subscriptions'),
             url: '/subscriptions',
             icon: CreditCard,
+          },
+          {
+            title: t('Invoice Management'),
+            url: '/invoice-management',
+            icon: FileCheck2,
           },
           {
             title: t('Billing Statistics'),

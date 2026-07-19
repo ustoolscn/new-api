@@ -1377,6 +1377,498 @@
         ]
       }
     },
+    "/api/user/referrals": {
+      "get": {
+        "summary": "获取邀请返佣概览",
+        "deprecated": false,
+        "description": "🔐 需要登录（User权限）。返回返佣比例、待领取/已领取额度以及分页的受邀用户充值汇总",
+        "tags": [
+          "用户管理"
+        ],
+        "parameters": [
+          {
+            "name": "p",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "default": 1
+            }
+          },
+          {
+            "name": "page_size",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 100
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "成功",
+            "headers": {},
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "success": {
+                      "type": "boolean"
+                    },
+                    "data": {
+                      "type": "object",
+                      "properties": {
+                        "commission_rate": {
+                          "type": "number",
+                          "minimum": 0,
+                          "maximum": 100
+                        },
+                        "claim_enabled": {
+                          "type": "boolean"
+                        },
+                        "pending_quota": {
+                          "type": "integer"
+                        },
+                        "claimed_quota": {
+                          "type": "integer"
+                        },
+                        "total_quota": {
+                          "type": "integer"
+                        },
+                        "invite_count": {
+                          "type": "integer"
+                        },
+                        "rewarded_invite_count": {
+                          "type": "integer",
+                          "description": "已产生固定邀请奖励的邀请人数"
+                        },
+                        "invite_reward_quota": {
+                          "type": "integer",
+                          "description": "每成功邀请一名用户的固定奖励额度"
+                        },
+                        "invite_reward_pending_quota": {
+                          "type": "integer",
+                          "description": "待转入主余额的固定邀请奖励"
+                        },
+                        "invite_reward_total_quota": {
+                          "type": "integer",
+                          "description": "累计获得的固定邀请奖励"
+                        },
+                        "invited_users": {
+                          "type": "object",
+                          "description": "分页受邀用户列表；items 包含用户、注册时间、充值次数、充值到账额度、产生返佣和最近返佣时间"
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "Combination343": []
+          },
+          {
+            "Combination1243": []
+          }
+        ]
+      }
+    },
+    "/api/user/referrals/claim": {
+      "post": {
+        "summary": "领取邀请充值返佣",
+        "deprecated": false,
+        "description": "🔐 需要登录（User权限）。将当前全部待领取返佣一次性转入主余额",
+        "tags": [
+          "用户管理"
+        ],
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": "成功",
+            "headers": {},
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "success": {
+                      "type": "boolean"
+                    },
+                    "message": {
+                      "type": "string"
+                    },
+                    "data": {
+                      "type": "object",
+                      "properties": {
+                        "claimed_quota": {
+                          "type": "integer"
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "Combination343": []
+          },
+          {
+            "Combination1243": []
+          }
+        ]
+      }
+    },
+    "/api/user/orders": {
+      "get": {
+        "summary": "获取当前用户已完成订单",
+        "deprecated": false,
+        "description": "🔐 需要登录（User权限）。仅返回已完成的充值订单和外部支付的订阅订单，二者均可合并申请开票；余额购买的订阅订单不返回",
+        "tags": [
+          "订单与发票"
+        ],
+        "parameters": [
+          {
+            "name": "p",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "minimum": 1
+            }
+          },
+          {
+            "name": "page_size",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 100
+            }
+          },
+          {
+            "name": "keyword",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "成功，data 为包含 items、total、page、page_size 的分页对象",
+            "headers": {}
+          }
+        },
+        "security": [
+          {
+            "Combination343": []
+          },
+          {
+            "Combination1243": []
+          }
+        ]
+      }
+    },
+    "/api/user/invoices": {
+      "get": {
+        "summary": "获取当前用户发票申请",
+        "deprecated": false,
+        "description": "🔐 需要登录（User权限）。用于发票夹展示申请状态和已开具 PDF 下载地址",
+        "tags": [
+          "订单与发票"
+        ],
+        "parameters": [
+          {
+            "name": "p",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "minimum": 1
+            }
+          },
+          {
+            "name": "page_size",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 100
+            }
+          },
+          {
+            "name": "status",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "enum": [
+                "pending",
+                "approved",
+                "rejected",
+                "issued"
+              ]
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "成功，data 为发票申请分页对象",
+            "headers": {}
+          }
+        },
+        "security": [
+          {
+            "Combination343": []
+          },
+          {
+            "Combination1243": []
+          }
+        ]
+      },
+      "post": {
+        "summary": "提交合并开票申请",
+        "deprecated": false,
+        "description": "🔐 需要登录（User权限）。最多选择 100 个属于当前用户、支付成功且未处于有效开票申请中的充值订单或外部支付订阅订单",
+        "tags": [
+          "订单与发票"
+        ],
+        "parameters": [],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "invoice_title",
+                  "top_up_ids"
+                ],
+                "properties": {
+                  "invoice_title": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 200
+                  },
+                  "top_up_ids": {
+                    "type": "array",
+                    "description": "订单列表返回的 invoice_source_id；充值订单和外部支付订阅订单均使用其关联的充值记录 ID",
+                    "minItems": 1,
+                    "maxItems": 100,
+                    "uniqueItems": true,
+                    "items": {
+                      "type": "integer"
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "成功，返回新建发票申请",
+            "headers": {}
+          }
+        },
+        "security": [
+          {
+            "Combination343": []
+          },
+          {
+            "Combination1243": []
+          }
+        ]
+      }
+    },
+    "/api/user/invoices/admin": {
+      "get": {
+        "summary": "管理员获取发票申请",
+        "deprecated": false,
+        "description": "🔐 需要管理员权限。返回所有用户的发票申请和订单明细",
+        "tags": [
+          "订单与发票"
+        ],
+        "parameters": [
+          {
+            "name": "p",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "minimum": 1
+            }
+          },
+          {
+            "name": "page_size",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 100
+            }
+          },
+          {
+            "name": "status",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "enum": [
+                "pending",
+                "approved",
+                "rejected",
+                "issued"
+              ]
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "成功，data 为发票申请分页对象",
+            "headers": {}
+          }
+        },
+        "security": [
+          {
+            "Combination343": []
+          },
+          {
+            "Combination1243": []
+          }
+        ]
+      }
+    },
+    "/api/user/invoices/admin/{id}/review": {
+      "post": {
+        "summary": "管理员审核发票申请",
+        "deprecated": false,
+        "description": "🔐 需要管理员权限。待审核申请可以通过或驳回",
+        "tags": [
+          "订单与发票"
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "action"
+                ],
+                "properties": {
+                  "action": {
+                    "type": "string",
+                    "enum": [
+                      "approve",
+                      "reject"
+                    ]
+                  },
+                  "remark": {
+                    "type": "string",
+                    "maxLength": 500
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "审核成功",
+            "headers": {}
+          }
+        },
+        "security": [
+          {
+            "Combination343": []
+          },
+          {
+            "Combination1243": []
+          }
+        ]
+      }
+    },
+    "/api/user/invoices/admin/{id}/issue": {
+      "post": {
+        "summary": "管理员提供或替换发票 PDF 下载地址",
+        "deprecated": false,
+        "description": "🔐 需要管理员权限。仅审核通过或已开具的申请可以设置 HTTP/HTTPS 下载地址；保存后申请状态变为 issued",
+        "tags": [
+          "订单与发票"
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "invoice_url"
+                ],
+                "properties": {
+                  "invoice_url": {
+                    "type": "string",
+                    "format": "uri",
+                    "minLength": 1,
+                    "maxLength": 2048,
+                    "example": "https://example.com/invoices/123.pdf"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "保存成功，申请状态变为 issued",
+            "headers": {}
+          }
+        },
+        "security": [
+          {
+            "Combination343": []
+          },
+          {
+            "Combination1243": []
+          }
+        ]
+      }
+    },
     "/api/user/aff_transfer": {
       "post": {
         "summary": "转换邀请额度",
@@ -1476,6 +1968,64 @@
         "responses": {
           "200": {
             "description": "成功",
+            "headers": {}
+          }
+        },
+        "security": [
+          {
+            "Combination343": []
+          },
+          {
+            "Combination1243": []
+          }
+        ]
+      }
+    },
+    "/api/user/registration-statistics": {
+      "get": {
+        "summary": "获取用户注册统计",
+        "deprecated": false,
+        "description": "👨‍💼 需要管理员权限（Admin）。按日、月或年统计指定时间范围内的注册人数，包含已删除用户的历史注册记录",
+        "tags": [
+          "用户管理"
+        ],
+        "parameters": [
+          {
+            "name": "start_timestamp",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "format": "int64"
+            }
+          },
+          {
+            "name": "end_timestamp",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "format": "int64"
+            }
+          },
+          {
+            "name": "granularity",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "enum": [
+                "day",
+                "month",
+                "year"
+              ],
+              "default": "day"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "成功，返回总注册人数及补零后的时间粒度序列",
             "headers": {}
           }
         },

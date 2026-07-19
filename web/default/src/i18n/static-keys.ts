@@ -275,6 +275,18 @@ export const STATIC_I18N_KEYS = [
   'Weekly',
   'Monthly',
 
+  // Billing statistics filters (dynamic label keys)
+  'Last 1 Hour',
+  'Today',
+  'This Week',
+  'This Month',
+  'Yearly',
+
+  // User registration statistics presets
+  'Last 7 Days',
+  'Last 30 Days',
+  'Last 90 Days',
+
   // CC Switch dialog
   'Import to CC Switch',
   'Open CC Switch',
@@ -502,6 +514,14 @@ export const STATIC_I18N_KEYS = [
   'Sidebar Personal Settings',
   'Customize sidebar display content',
   'Reset to Default',
+
+  // Orders and invoices (schema messages passed to t at runtime)
+  'Invoice title is required',
+  'Invoice title must not exceed 200 characters',
+  'Review remark must not exceed 500 characters',
+  'Invoice URL is required',
+  'Invoice URL must not exceed 2048 characters',
+  'Enter a valid HTTP or HTTPS URL',
 
   // Available models
   'Available Models',

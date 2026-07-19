@@ -71,6 +71,10 @@ const BILLING_SECTIONS = [
             enable_free_model_pre_consume:
               settings['quota_setting.enable_free_model_pre_consume'],
           },
+          payment_setting: {
+            referral_commission_rate:
+              settings['payment_setting.referral_commission_rate'],
+          },
         }}
         complianceConfirmed={
           (settings['payment_setting.compliance_confirmed'] ?? false) &&

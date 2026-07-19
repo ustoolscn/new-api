@@ -165,6 +165,16 @@ func UpdateOption(c *gin.Context) {
 			common.ApiErrorI18n(c, i18n.MsgPaymentComplianceRequired)
 			return
 		}
+	case "payment_setting.referral_commission_rate":
+		rate, parseErr := strconv.ParseFloat(option.Value.(string), 64)
+		if parseErr != nil || rate < 0 || rate > 100 {
+			common.ApiErrorMsg(c, "邀请充值返佣比例必须在 0 到 100 之间")
+			return
+		}
+		if rate > 0 && !operation_setting.IsPaymentComplianceConfirmed() {
+			common.ApiErrorI18n(c, i18n.MsgPaymentComplianceRequired)
+			return
+		}
 	default:
 		if isPaymentComplianceOptionKey(option.Key) {
 			common.ApiErrorMsg(c, "合规确认字段不允许通过通用设置接口修改")
