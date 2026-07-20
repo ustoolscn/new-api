@@ -252,7 +252,7 @@ func Register(c *gin.Context) {
 		common.ApiErrorI18n(c, i18n.MsgUserEmailVerificationRequired)
 		return
 	}
-	if !hasPhoneRegister && !hasEmailRegister {
+	if !hasPhoneRegister && !hasEmailRegister && common.EmailVerificationEnabled {
 		common.ApiErrorI18n(c, i18n.MsgUserEmailVerificationRequired)
 		return
 	}

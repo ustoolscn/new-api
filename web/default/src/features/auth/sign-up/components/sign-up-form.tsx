@@ -62,9 +62,9 @@ export function SignUpForm({
   const [isLoading, setIsLoading] = useState(false)
   const [verificationCode, setVerificationCode] = useState('')
   const [smsCode, setSmsCode] = useState('')
-  const [registerMethod, setRegisterMethod] = useState<'phone' | 'email'>(
-    'phone'
-  )
+  const [selectedRegisterMethod, setSelectedRegisterMethod] = useState<
+    'phone' | 'email'
+  >('phone')
   const [agreedToLegal, setAgreedToLegal] = useState(false)
   const [wechatCode, setWeChatCode] = useState('')
   const [isWeChatDialogOpen, setIsWeChatDialogOpen] = useState(false)
@@ -118,8 +118,20 @@ export function SignUpForm({
   const phoneRegisterEnabled = Boolean(
     status?.phone_register_enabled ?? status?.data?.phone_register_enabled
   )
-  const hasRegisterMethod = emailRegisterEnabled || phoneRegisterEnabled
+  const passwordRegisterEnabled =
+    status?.password_register_enabled ??
+    status?.data?.password_register_enabled ??
+    true
+  const hasRegisterMethod = passwordRegisterEnabled
   const showRegisterTabs = emailRegisterEnabled && phoneRegisterEnabled
+  let registerMethod: 'password' | 'phone' | 'email' = 'password'
+  if (phoneRegisterEnabled && emailRegisterEnabled) {
+    registerMethod = selectedRegisterMethod
+  } else if (phoneRegisterEnabled) {
+    registerMethod = 'phone'
+  } else if (emailRegisterEnabled) {
+    registerMethod = 'email'
+  }
   const hasUserAgreement = Boolean(status?.user_agreement_enabled)
   const hasPrivacyPolicy = Boolean(status?.privacy_policy_enabled)
   const requiresLegalConsent = hasUserAgreement || hasPrivacyPolicy
@@ -158,16 +170,6 @@ export function SignUpForm({
       saveAffiliateCode(aff)
     }
   }, [])
-
-  useEffect(() => {
-    if (phoneRegisterEnabled) {
-      setRegisterMethod('phone')
-      return
-    }
-    if (emailRegisterEnabled) {
-      setRegisterMethod('email')
-    }
-  }, [emailRegisterEnabled, phoneRegisterEnabled])
 
   async function onSubmit(data: z.infer<typeof registerFormSchema>) {
     if (requiresLegalConsent && !agreedToLegal) {
@@ -226,7 +228,7 @@ export function SignUpForm({
       } else {
         toast.error(res?.message || t('Failed to create account'))
       }
-    } catch (_error) {
+    } catch {
       // Errors are handled by global interceptor
     } finally {
       setIsLoading(false)
@@ -239,6 +241,24 @@ export function SignUpForm({
 
   async function handleSendSmsCode() {
     await sendSmsCode(phoneValue || '')
+  }
+
+  let smsCodeButtonContent: React.ReactNode = t('Send code')
+  if (isSmsActive) {
+    smsCodeButtonContent = t('Resend ({{seconds}}s)', {
+      seconds: smsSecondsLeft,
+    })
+  } else if (isSendingSmsCode) {
+    smsCodeButtonContent = <Loader2 className='h-4 w-4 animate-spin' />
+  }
+
+  let emailCodeButtonContent: React.ReactNode = t('Send code')
+  if (isActive) {
+    emailCodeButtonContent = t('Resend ({{seconds}}s)', {
+      seconds: secondsLeft,
+    })
+  } else if (isSendingCode) {
+    emailCodeButtonContent = <Loader2 className='h-4 w-4 animate-spin' />
   }
 
   const verificationContent = (
@@ -286,13 +306,7 @@ export function SignUpForm({
               }
               onClick={handleSendSmsCode}
             >
-              {isSmsActive ? (
-                t('Resend ({{seconds}}s)', { seconds: smsSecondsLeft })
-              ) : isSendingSmsCode ? (
-                <Loader2 className='h-4 w-4 animate-spin' />
-              ) : (
-                t('Send code')
-              )}
+              {smsCodeButtonContent}
             </Button>
           </div>
         </>
@@ -340,19 +354,43 @@ export function SignUpForm({
               }
               onClick={handleSendVerificationCode}
             >
-              {isActive ? (
-                t('Resend ({{seconds}}s)', { seconds: secondsLeft })
-              ) : isSendingCode ? (
-                <Loader2 className='h-4 w-4 animate-spin' />
-              ) : (
-                t('Send code')
-              )}
+              {emailCodeButtonContent}
             </Button>
           </div>
         </>
       )}
     </>
   )
+
+  let registerMethodContent: React.ReactNode = (
+    <p className='text-muted-foreground text-sm'>
+      {t('Registration is currently unavailable')}
+    </p>
+  )
+  if (hasRegisterMethod) {
+    registerMethodContent = verificationContent
+    if (showRegisterTabs) {
+      registerMethodContent = (
+        <Tabs
+          value={registerMethod}
+          onValueChange={(value) =>
+            setSelectedRegisterMethod(value as 'phone' | 'email')
+          }
+        >
+          <TabsList className='w-full'>
+            <TabsTrigger value='phone'>{t('Phone registration')}</TabsTrigger>
+            <TabsTrigger value='email'>{t('Email registration')}</TabsTrigger>
+          </TabsList>
+          <TabsContent value='phone' className='grid gap-4'>
+            {verificationContent}
+          </TabsContent>
+          <TabsContent value='email' className='grid gap-4'>
+            {verificationContent}
+          </TabsContent>
+        </Tabs>
+      )
+    }
+  }
 
   const handleOpenWeChatDialog = () => {
     if (requiresLegalConsent && !agreedToLegal) {
@@ -387,7 +425,7 @@ export function SignUpForm({
       } else {
         toast.error(res?.message || t('Login failed'))
       }
-    } catch (_error) {
+    } catch {
       toast.error(t('Login failed'))
     } finally {
       setIsWeChatSubmitting(false)
@@ -449,37 +487,7 @@ export function SignUpForm({
           )}
         />
 
-        {hasRegisterMethod ? (
-          showRegisterTabs ? (
-            <Tabs
-              value={registerMethod}
-              onValueChange={(value) =>
-                setRegisterMethod(value as 'phone' | 'email')
-              }
-            >
-              <TabsList className='w-full'>
-                <TabsTrigger value='phone'>
-                  {t('Phone registration')}
-                </TabsTrigger>
-                <TabsTrigger value='email'>
-                  {t('Email registration')}
-                </TabsTrigger>
-              </TabsList>
-              <TabsContent value='phone' className='grid gap-4'>
-                {verificationContent}
-              </TabsContent>
-              <TabsContent value='email' className='grid gap-4'>
-                {verificationContent}
-              </TabsContent>
-            </Tabs>
-          ) : (
-            verificationContent
-          )
-        ) : (
-          <p className='text-muted-foreground text-sm'>
-            {t('Registration is currently unavailable')}
-          </p>
-        )}
+        {registerMethodContent}
 
         {/* Turnstile */}
         {isTurnstileEnabled && (

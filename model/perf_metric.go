@@ -1,6 +1,8 @@
 package model
 
 import (
+	"database/sql"
+	"strings"
 	"time"
 
 	"gorm.io/gorm"
@@ -78,6 +80,22 @@ type PerfMetricSummaryBucket struct {
 	GenerationMs   int64  `json:"generation_ms"`
 }
 
+type PerfMetricStatusBucketRange struct {
+	Start int64
+	End   int64
+}
+
+type PerfMetricStatusBucketCounts struct {
+	RequestCount int64
+	SuccessCount int64
+}
+
+type PerfMetricStatusSeries struct {
+	ModelName string
+	Group     string
+	Buckets   []PerfMetricStatusBucketCounts
+}
+
 func GetPerfMetricsSummaryAll(startTs int64, endTs int64, groups []string) ([]PerfMetricSummary, error) {
 	var summaries []PerfMetricSummary
 	query := DB.Model(&PerfMetric{}).
@@ -113,6 +131,62 @@ func GetPerfMetricsSummaryBucketsAll(startTs int64, endTs int64, groups []string
 		Order("bucket_ts ASC").
 		Find(&summaries).Error
 	return summaries, err
+}
+
+func GetPerfMetricStatusSeries(startTs int64, endTs int64, buckets []PerfMetricStatusBucketRange) ([]PerfMetricStatusSeries, error) {
+	series := make([]PerfMetricStatusSeries, 0)
+	if endTs <= startTs || len(buckets) == 0 {
+		return series, nil
+	}
+
+	selectParts := []string{"model_name", commonGroupCol}
+	selectArgs := make([]any, 0, len(buckets)*4)
+	for _, bucket := range buckets {
+		selectParts = append(selectParts,
+			"COALESCE(SUM(CASE WHEN bucket_ts >= ? AND bucket_ts < ? THEN request_count ELSE 0 END), 0)",
+			"COALESCE(SUM(CASE WHEN bucket_ts >= ? AND bucket_ts < ? THEN success_count ELSE 0 END), 0)",
+		)
+		selectArgs = append(selectArgs, bucket.Start, bucket.End, bucket.Start, bucket.End)
+	}
+
+	rows, err := DB.Model(&PerfMetric{}).
+		Select(strings.Join(selectParts, ", "), selectArgs...).
+		Where("bucket_ts >= ? AND bucket_ts < ?", startTs, endTs).
+		Where("model_name <> '' AND " + commonGroupCol + " <> ''").
+		Group("model_name, " + commonGroupCol).
+		Rows()
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	for rows.Next() {
+		var modelName string
+		var group string
+		values := make([]sql.NullInt64, len(buckets)*2)
+		scanArgs := make([]any, 0, len(values)+2)
+		scanArgs = append(scanArgs, &modelName, &group)
+		for index := range values {
+			scanArgs = append(scanArgs, &values[index])
+		}
+		if err := rows.Scan(scanArgs...); err != nil {
+			return nil, err
+		}
+
+		bucketCounts := make([]PerfMetricStatusBucketCounts, len(buckets))
+		for index := range buckets {
+			bucketCounts[index] = PerfMetricStatusBucketCounts{
+				RequestCount: values[index*2].Int64,
+				SuccessCount: values[index*2+1].Int64,
+			}
+		}
+		series = append(series, PerfMetricStatusSeries{
+			ModelName: modelName,
+			Group:     group,
+			Buckets:   bucketCounts,
+		})
+	}
+	return series, rows.Err()
 }
 
 func DeletePerfMetricsBefore(cutoffTs int64) error {

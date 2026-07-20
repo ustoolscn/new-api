@@ -113,6 +113,29 @@ func TestPhoneRegisterCreatesUserWithProvidedUsernameAndPhone(t *testing.T) {
 	assert.Equal(t, "13800138000", user.Phone)
 }
 
+func TestPasswordOnlyRegisterCreatesUserWhenVerificationMethodsDisabled(t *testing.T) {
+	db := setupPhoneAuthControllerTestDB(t)
+	common.PhoneRegisterEnabled = false
+
+	res := performPhoneAuthRequest(Register, `{"username":"password_user","password":"password123"}`)
+
+	assert.True(t, res.Success, res.Message)
+	var user model.User
+	require.NoError(t, db.First(&user, "username = ?", "password_user").Error)
+	assert.Empty(t, user.Email)
+	assert.Empty(t, user.Phone)
+}
+
+func TestPasswordOnlyRegisterStillRequiresEmailWhenEmailVerificationEnabled(t *testing.T) {
+	setupPhoneAuthControllerTestDB(t)
+	common.PhoneRegisterEnabled = false
+	common.EmailVerificationEnabled = true
+
+	res := performPhoneAuthRequest(Register, `{"username":"password_user","password":"password123"}`)
+
+	assert.False(t, res.Success)
+}
+
 func TestPhoneRegisterRejectsDuplicatePhone(t *testing.T) {
 	db := setupPhoneAuthControllerTestDB(t)
 	hashedPassword, err := common.Password2Hash("password123")
