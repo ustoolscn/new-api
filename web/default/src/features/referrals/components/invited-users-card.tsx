@@ -144,7 +144,7 @@ export function InvitedUsersCard(props: InvitedUsersCardProps) {
                     <TableCell className='pr-6 text-right'>
                       {formatTimestamp(
                         user.last_commission_at,
-                        t('No top-up yet')
+                        t('No commission yet')
                       )}
                     </TableCell>
                   </TableRow>
