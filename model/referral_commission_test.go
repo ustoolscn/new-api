@@ -9,6 +9,16 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
+func TestReferralInvitedUserTopUpCountJSONField(t *testing.T) {
+	data, err := common.Marshal(ReferralInvitedUser{TopUpCount: 4})
+	require.NoError(t, err)
+
+	var payload map[string]any
+	require.NoError(t, common.Unmarshal(data, &payload))
+	assert.Equal(t, float64(4), payload["top_up_count"])
+	assert.NotContains(t, payload, "topup_count")
+}
+
 func TestReferralCommissionCreatedOnceAndClaimedToBalance(t *testing.T) {
 	truncateTables(t)
 

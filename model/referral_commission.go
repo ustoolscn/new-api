@@ -36,7 +36,7 @@ type ReferralInvitedUser struct {
 	Username             string `json:"username"`
 	DisplayName          string `json:"display_name"`
 	CreatedAt            int64  `json:"created_at"`
-	TopUpCount           int64  `json:"topup_count"`
+	TopUpCount           int64  `json:"top_up_count"`
 	RechargeQuotaTotal   int64  `json:"recharge_quota_total"`
 	CommissionQuotaTotal int64  `json:"commission_quota_total"`
 	LastCommissionAt     int64  `json:"last_commission_at"`
