@@ -38,21 +38,32 @@ func flushCompletedBuckets() {
 			return true
 		}
 
-		err := model.UpsertPerfMetric(&model.PerfMetric{
-			ModelName:        k.model,
-			Group:            k.group,
-			BucketTs:         k.bucketTs,
-			RequestCount:     drained.requestCount,
-			SuccessCount:     drained.successCount,
-			TotalLatencyMs:   drained.totalLatencyMs,
-			TtftSumMs:        drained.ttftSumMs,
-			TtftCount:        drained.ttftCount,
-			TtftMinMs:        drained.ttftMinMs,
-			TtftMaxMs:        drained.ttftMaxMs,
-			TtftExtremaCount: drained.ttftExtremaCount,
-			OutputTokens:     drained.outputTokens,
-			GenerationMs:     drained.generationMs,
-		})
+		metric := &model.PerfMetric{
+			ModelName:      k.model,
+			Group:          k.group,
+			BucketTs:       k.bucketTs,
+			RequestCount:   drained.requestCount,
+			SuccessCount:   drained.successCount,
+			TotalLatencyMs: drained.totalLatencyMs,
+			TtftSumMs:      drained.ttftSumMs,
+			TtftCount:      drained.ttftCount,
+			OutputTokens:   drained.outputTokens,
+			GenerationMs:   drained.generationMs,
+		}
+		ttftBins := make([]model.PerfMetricTtftBin, 0, ttftHistogramBinCount)
+		for binIndex, sampleCount := range drained.ttftHistogram {
+			if sampleCount <= 0 {
+				continue
+			}
+			ttftBins = append(ttftBins, model.PerfMetricTtftBin{
+				ModelName:   k.model,
+				Group:       k.group,
+				BucketTs:    k.bucketTs,
+				BinIndex:    binIndex,
+				SampleCount: sampleCount,
+			})
+		}
+		err := model.UpsertPerfMetricWithTtftBins(metric, ttftBins)
 		if err != nil {
 			bucket.addCounters(drained)
 			common.SysError(fmt.Sprintf("failed to flush perf metric bucket model=%s group=%s bucket=%d: %s", k.model, k.group, k.bucketTs, err.Error()))

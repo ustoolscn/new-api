@@ -12,20 +12,17 @@ import (
 
 // PerfMetric stores aggregated relay performance metrics for the model square.
 type PerfMetric struct {
-	Id               int    `json:"id" gorm:"primaryKey"`
-	ModelName        string `json:"model_name" gorm:"size:128;uniqueIndex:idx_perf_model_group_bucket,priority:1"`
-	Group            string `json:"group" gorm:"column:group;size:64;uniqueIndex:idx_perf_model_group_bucket,priority:2"`
-	BucketTs         int64  `json:"bucket_ts" gorm:"uniqueIndex:idx_perf_model_group_bucket,priority:3;index:idx_perf_bucket_ts"`
-	RequestCount     int64  `json:"-" gorm:"default:0"`
-	SuccessCount     int64  `json:"-" gorm:"default:0"`
-	TotalLatencyMs   int64  `json:"-" gorm:"default:0"`
-	TtftSumMs        int64  `json:"-" gorm:"default:0"`
-	TtftCount        int64  `json:"-" gorm:"default:0"`
-	TtftMinMs        int64  `json:"-" gorm:"default:0"`
-	TtftMaxMs        int64  `json:"-" gorm:"default:0"`
-	TtftExtremaCount int64  `json:"-" gorm:"default:0"`
-	OutputTokens     int64  `json:"-" gorm:"default:0"`
-	GenerationMs     int64  `json:"-" gorm:"default:0"`
+	Id             int    `json:"id" gorm:"primaryKey"`
+	ModelName      string `json:"model_name" gorm:"size:128;uniqueIndex:idx_perf_model_group_bucket,priority:1"`
+	Group          string `json:"group" gorm:"column:group;size:64;uniqueIndex:idx_perf_model_group_bucket,priority:2"`
+	BucketTs       int64  `json:"bucket_ts" gorm:"uniqueIndex:idx_perf_model_group_bucket,priority:3;index:idx_perf_bucket_ts"`
+	RequestCount   int64  `json:"-" gorm:"default:0"`
+	SuccessCount   int64  `json:"-" gorm:"default:0"`
+	TotalLatencyMs int64  `json:"-" gorm:"default:0"`
+	TtftSumMs      int64  `json:"-" gorm:"default:0"`
+	TtftCount      int64  `json:"-" gorm:"default:0"`
+	OutputTokens   int64  `json:"-" gorm:"default:0"`
+	GenerationMs   int64  `json:"-" gorm:"default:0"`
 }
 
 func (PerfMetric) TableName() string {
@@ -36,7 +33,23 @@ func UpsertPerfMetric(metric *PerfMetric) error {
 	if metric == nil || metric.RequestCount == 0 {
 		return nil
 	}
-	return DB.Clauses(clause.OnConflict{
+	return upsertPerfMetricTx(DB, metric)
+}
+
+func UpsertPerfMetricWithTtftBins(metric *PerfMetric, bins []PerfMetricTtftBin) error {
+	if metric == nil || metric.RequestCount == 0 {
+		return nil
+	}
+	return DB.Transaction(func(tx *gorm.DB) error {
+		if err := upsertPerfMetricTx(tx, metric); err != nil {
+			return err
+		}
+		return upsertPerfMetricTtftBinsTx(tx, bins)
+	})
+}
+
+func upsertPerfMetricTx(tx *gorm.DB, metric *PerfMetric) error {
+	return tx.Clauses(clause.OnConflict{
 		Columns: []clause.Column{
 			{Name: "model_name"},
 			{Name: "group"},
@@ -47,9 +60,6 @@ func UpsertPerfMetric(metric *PerfMetric) error {
 			{Column: clause.Column{Name: "success_count"}, Value: gorm.Expr("perf_metrics.success_count + ?", metric.SuccessCount)},
 			{Column: clause.Column{Name: "total_latency_ms"}, Value: gorm.Expr("perf_metrics.total_latency_ms + ?", metric.TotalLatencyMs)},
 			{Column: clause.Column{Name: "ttft_sum_ms"}, Value: gorm.Expr("perf_metrics.ttft_sum_ms + ?", metric.TtftSumMs)},
-			{Column: clause.Column{Name: "ttft_min_ms"}, Value: gorm.Expr("CASE WHEN ? <= 0 THEN perf_metrics.ttft_min_ms WHEN perf_metrics.ttft_extrema_count <= 0 OR ? < perf_metrics.ttft_min_ms THEN ? ELSE perf_metrics.ttft_min_ms END", metric.TtftExtremaCount, metric.TtftMinMs, metric.TtftMinMs)},
-			{Column: clause.Column{Name: "ttft_max_ms"}, Value: gorm.Expr("CASE WHEN ? <= 0 THEN perf_metrics.ttft_max_ms WHEN perf_metrics.ttft_extrema_count <= 0 OR ? > perf_metrics.ttft_max_ms THEN ? ELSE perf_metrics.ttft_max_ms END", metric.TtftExtremaCount, metric.TtftMaxMs, metric.TtftMaxMs)},
-			{Column: clause.Column{Name: "ttft_extrema_count"}, Value: gorm.Expr("perf_metrics.ttft_extrema_count + ?", metric.TtftExtremaCount)},
 			{Column: clause.Column{Name: "ttft_count"}, Value: gorm.Expr("perf_metrics.ttft_count + ?", metric.TtftCount)},
 			{Column: clause.Column{Name: "output_tokens"}, Value: gorm.Expr("perf_metrics.output_tokens + ?", metric.OutputTokens)},
 			{Column: clause.Column{Name: "generation_ms"}, Value: gorm.Expr("perf_metrics.generation_ms + ?", metric.GenerationMs)},
@@ -93,13 +103,9 @@ type PerfMetricStatusBucketRange struct {
 }
 
 type PerfMetricStatusBucketCounts struct {
-	RequestCount     int64
-	SuccessCount     int64
-	TtftSumMs        int64
-	TtftCount        int64
-	TtftMinMs        int64
-	TtftMaxMs        int64
-	TtftExtremaCount int64
+	RequestCount int64
+	SuccessCount int64
+	TtftCount    int64
 }
 
 type PerfMetricStatusSeries struct {
@@ -157,11 +163,7 @@ func GetPerfMetricStatusSeries(startTs int64, endTs int64, buckets []PerfMetricS
 		selectParts = append(selectParts,
 			"COALESCE(SUM(CASE WHEN "+condition+" THEN request_count ELSE 0 END), 0)",
 			"COALESCE(SUM(CASE WHEN "+condition+" THEN success_count ELSE 0 END), 0)",
-			"COALESCE(SUM(CASE WHEN "+condition+" THEN ttft_sum_ms ELSE 0 END), 0)",
 			"COALESCE(SUM(CASE WHEN "+condition+" THEN ttft_count ELSE 0 END), 0)",
-			"COALESCE(MIN(CASE WHEN "+condition+" AND ttft_extrema_count > 0 THEN ttft_min_ms ELSE NULL END), 0)",
-			"COALESCE(MAX(CASE WHEN "+condition+" AND ttft_extrema_count > 0 THEN ttft_max_ms ELSE NULL END), 0)",
-			"COALESCE(SUM(CASE WHEN "+condition+" THEN ttft_extrema_count ELSE 0 END), 0)",
 		)
 	}
 
@@ -179,7 +181,7 @@ func GetPerfMetricStatusSeries(startTs int64, endTs int64, buckets []PerfMetricS
 	for rows.Next() {
 		var modelName string
 		var group string
-		values := make([]sql.NullInt64, len(buckets)*7)
+		values := make([]sql.NullInt64, len(buckets)*3)
 		scanArgs := make([]any, 0, len(values)+2)
 		scanArgs = append(scanArgs, &modelName, &group)
 		for index := range values {
@@ -191,15 +193,11 @@ func GetPerfMetricStatusSeries(startTs int64, endTs int64, buckets []PerfMetricS
 
 		bucketCounts := make([]PerfMetricStatusBucketCounts, len(buckets))
 		for index := range buckets {
-			offset := index * 7
+			offset := index * 3
 			bucketCounts[index] = PerfMetricStatusBucketCounts{
-				RequestCount:     values[offset].Int64,
-				SuccessCount:     values[offset+1].Int64,
-				TtftSumMs:        values[offset+2].Int64,
-				TtftCount:        values[offset+3].Int64,
-				TtftMinMs:        values[offset+4].Int64,
-				TtftMaxMs:        values[offset+5].Int64,
-				TtftExtremaCount: values[offset+6].Int64,
+				RequestCount: values[offset].Int64,
+				SuccessCount: values[offset+1].Int64,
+				TtftCount:    values[offset+2].Int64,
 			}
 		}
 		series = append(series, PerfMetricStatusSeries{
@@ -215,7 +213,12 @@ func DeletePerfMetricsBefore(cutoffTs int64) error {
 	if cutoffTs <= 0 {
 		return nil
 	}
-	return DB.Where("bucket_ts < ?", cutoffTs).Delete(&PerfMetric{}).Error
+	return DB.Transaction(func(tx *gorm.DB) error {
+		if err := tx.Where("bucket_ts < ?", cutoffTs).Delete(&PerfMetricTtftBin{}).Error; err != nil {
+			return err
+		}
+		return tx.Where("bucket_ts < ?", cutoffTs).Delete(&PerfMetric{}).Error
+	})
 }
 
 func PerfMetricStartTime(hours int) int64 {

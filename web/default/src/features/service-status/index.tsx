@@ -261,8 +261,11 @@ function ServiceStatusContent(props: { snapshot: ServiceStatusSnapshot }) {
           }
         />
         <StatusSummaryCard
-          label={t('Average first-token response')}
-          value={formatTtft(props.snapshot.overall.avg_ttft_ms, t('No data'))}
+          label={t('Median first-token response')}
+          value={formatTtft(
+            props.snapshot.overall.median_ttft_ms,
+            t('No data')
+          )}
         />
         <StatusSummaryCard
           label={t('Active models')}

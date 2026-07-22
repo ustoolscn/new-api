@@ -27,7 +27,7 @@ export type ServiceStatusPoint = {
   request_count: number
   success_count: number
   success_rate: number | null
-  avg_ttft_ms: number | null
+  median_ttft_ms: number | null
 }
 
 export type ServiceStatusMetric = {
@@ -35,7 +35,7 @@ export type ServiceStatusMetric = {
   request_count: number
   success_count: number
   success_rate: number | null
-  avg_ttft_ms: number | null
+  median_ttft_ms: number | null
   series: ServiceStatusPoint[]
 }
 

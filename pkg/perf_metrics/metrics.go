@@ -97,16 +97,13 @@ func Query(params QueryParams) (QueryResult, error) {
 			group:    row.Group,
 			bucketTs: row.BucketTs,
 		}, counters{
-			requestCount:     row.RequestCount,
-			successCount:     row.SuccessCount,
-			totalLatencyMs:   row.TotalLatencyMs,
-			ttftSumMs:        row.TtftSumMs,
-			ttftCount:        row.TtftCount,
-			ttftMinMs:        row.TtftMinMs,
-			ttftMaxMs:        row.TtftMaxMs,
-			ttftExtremaCount: row.TtftExtremaCount,
-			outputTokens:     row.OutputTokens,
-			generationMs:     row.GenerationMs,
+			requestCount:   row.RequestCount,
+			successCount:   row.SuccessCount,
+			totalLatencyMs: row.TotalLatencyMs,
+			ttftSumMs:      row.TtftSumMs,
+			ttftCount:      row.TtftCount,
+			outputTokens:   row.OutputTokens,
+			generationMs:   row.GenerationMs,
 		})
 	}
 

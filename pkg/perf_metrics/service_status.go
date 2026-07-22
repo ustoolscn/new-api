@@ -30,7 +30,7 @@ type ServiceStatusPoint struct {
 	RequestCount int64    `json:"request_count"`
 	SuccessCount int64    `json:"success_count"`
 	SuccessRate  *float64 `json:"success_rate"`
-	AvgTtftMs    *int64   `json:"avg_ttft_ms"`
+	MedianTtftMs *int64   `json:"median_ttft_ms"`
 }
 
 type ServiceStatusMetric struct {
@@ -38,7 +38,7 @@ type ServiceStatusMetric struct {
 	RequestCount int64                `json:"request_count"`
 	SuccessCount int64                `json:"success_count"`
 	SuccessRate  *float64             `json:"success_rate"`
-	AvgTtftMs    *int64               `json:"avg_ttft_ms"`
+	MedianTtftMs *int64               `json:"median_ttft_ms"`
 	Series       []ServiceStatusPoint `json:"series"`
 }
 
@@ -95,13 +95,9 @@ func QueryServiceStatus(granularity string, requestedEndTimestamp int64) (*Servi
 	for _, row := range rows {
 		for index, bucket := range row.Buckets {
 			value := counters{
-				requestCount:     bucket.RequestCount,
-				successCount:     bucket.SuccessCount,
-				ttftSumMs:        bucket.TtftSumMs,
-				ttftCount:        bucket.TtftCount,
-				ttftMinMs:        bucket.TtftMinMs,
-				ttftMaxMs:        bucket.TtftMaxMs,
-				ttftExtremaCount: bucket.TtftExtremaCount,
+				requestCount: bucket.RequestCount,
+				successCount: bucket.SuccessCount,
+				ttftCount:    bucket.TtftCount,
 			}
 			overall.add(index, value)
 			getServiceStatusAccumulator(modelAccumulators, row.ModelName, bucketCount).add(index, value)
@@ -131,6 +127,27 @@ func QueryServiceStatus(granularity string, requestedEndTimestamp int64) (*Servi
 	groupsTotal := len(groups)
 	modelsTruncated := modelsTotal > serviceStatusMaxModels
 	groupsTruncated := groupsTotal > serviceStatusMaxGroups
+	modelNames := serviceStatusMetricNames(models, serviceStatusMaxModels)
+	groupNames := serviceStatusMetricNames(groups, serviceStatusMaxGroups)
+
+	overallTtft, err := model.GetPerfMetricTtftHistogramOverallSeries(start.Unix(), end.Unix(), bucketRanges)
+	if err != nil {
+		return nil, err
+	}
+	modelTtft, err := model.GetPerfMetricTtftHistogramModelSeries(start.Unix(), end.Unix(), bucketRanges, modelNames)
+	if err != nil {
+		return nil, err
+	}
+	groupTtft, err := model.GetPerfMetricTtftHistogramGroupSeries(start.Unix(), end.Unix(), bucketRanges, groupNames)
+	if err != nil {
+		return nil, err
+	}
+	addServiceStatusHistogramSeries(overall, overallTtft)
+	addServiceStatusHistogramSeriesByName(modelAccumulators, modelTtft)
+	addServiceStatusHistogramSeriesByName(groupAccumulators, groupTtft)
+
+	models = serviceStatusMetrics(modelAccumulators, periods, displaySettings, "model")
+	groups = serviceStatusMetrics(groupAccumulators, periods, displaySettings, "group")
 	if modelsTruncated {
 		models = models[:serviceStatusMaxModels]
 	}
@@ -228,6 +245,34 @@ func (accumulator *serviceStatusAccumulator) add(index int, value counters) {
 	mergeCounterValues(&accumulator.buckets[index], value)
 }
 
+func (accumulator *serviceStatusAccumulator) addTtftBin(bucketIndex int, binIndex int, sampleCount int64) {
+	if accumulator == nil || bucketIndex < 0 || bucketIndex >= len(accumulator.buckets) || binIndex < 0 || binIndex >= ttftHistogramBinCount || sampleCount <= 0 {
+		return
+	}
+	accumulator.total.ttftHistogram[binIndex] = serviceStatusSaturatingAdd(accumulator.total.ttftHistogram[binIndex], sampleCount)
+	accumulator.buckets[bucketIndex].ttftHistogram[binIndex] = serviceStatusSaturatingAdd(accumulator.buckets[bucketIndex].ttftHistogram[binIndex], sampleCount)
+}
+
+func addServiceStatusHistogramSeries(accumulator *serviceStatusAccumulator, series []model.PerfMetricTtftHistogramSeries) {
+	for _, item := range series {
+		for bucketIndex, sampleCount := range item.Buckets {
+			accumulator.addTtftBin(bucketIndex, item.BinIndex, sampleCount)
+		}
+	}
+}
+
+func addServiceStatusHistogramSeriesByName(accumulators map[string]*serviceStatusAccumulator, series []model.PerfMetricTtftHistogramSeries) {
+	for _, item := range series {
+		accumulator := accumulators[item.Name]
+		if accumulator == nil {
+			continue
+		}
+		for bucketIndex, sampleCount := range item.Buckets {
+			accumulator.addTtftBin(bucketIndex, item.BinIndex, sampleCount)
+		}
+	}
+}
+
 func serviceStatusBucketIndex(timestamp int64, ranges []model.PerfMetricStatusBucketRange) int {
 	for index, bucket := range ranges {
 		if timestamp >= bucket.Start && timestamp < bucket.End {
@@ -254,12 +299,23 @@ func serviceStatusMetrics(accumulators map[string]*serviceStatusAccumulator, per
 	return metrics
 }
 
+func serviceStatusMetricNames(metrics []ServiceStatusMetric, limit int) []string {
+	if limit <= 0 || limit > len(metrics) {
+		limit = len(metrics)
+	}
+	names := make([]string, limit)
+	for index := 0; index < limit; index++ {
+		names[index] = metrics[index].Name
+	}
+	return names
+}
+
 func serviceStatusMetric(name string, accumulator *serviceStatusAccumulator, periods []ServiceStatusPeriod, settings common.PublicDisplaySettings, dimension string) ServiceStatusMetric {
 	metric := ServiceStatusMetric{
-		Name:        name,
-		SuccessRate: serviceStatusSuccessRate(accumulator.total.requestCount, accumulator.total.successCount),
-		AvgTtftMs:   serviceStatusAverageTtft(accumulator.total),
-		Series:      make([]ServiceStatusPoint, len(accumulator.buckets)),
+		Name:         name,
+		SuccessRate:  serviceStatusSuccessRate(accumulator.total.requestCount, accumulator.total.successCount),
+		MedianTtftMs: serviceStatusMedianTtft(accumulator.total),
+		Series:       make([]ServiceStatusPoint, len(accumulator.buckets)),
 	}
 	for index, bucket := range accumulator.buckets {
 		bucketStart := int64(index)
@@ -278,24 +334,17 @@ func serviceStatusMetric(name string, accumulator *serviceStatusAccumulator, per
 			RequestCount: displayedRequestCount,
 			SuccessCount: displayedSuccessCount,
 			SuccessRate:  serviceStatusSuccessRate(bucket.requestCount, bucket.successCount),
-			AvgTtftMs:    serviceStatusAverageTtft(bucket),
+			MedianTtftMs: serviceStatusMedianTtft(bucket),
 		}
 	}
 	return metric
 }
 
-func serviceStatusAverageTtft(value counters) *int64 {
-	if value.ttftCount <= 0 || value.ttftSumMs < 0 {
+func serviceStatusMedianTtft(value counters) *int64 {
+	if value.ttftCount <= 0 || ttftHistogramSampleCount(value.ttftHistogram) != value.ttftCount {
 		return nil
 	}
-	sum := value.ttftSumMs
-	count := value.ttftCount
-	if value.ttftExtremaCount == count && count >= 3 && value.ttftMinMs >= 0 && value.ttftMaxMs >= value.ttftMinMs && sum >= value.ttftMinMs && sum-value.ttftMinMs >= value.ttftMaxMs {
-		sum -= value.ttftMinMs + value.ttftMaxMs
-		count -= 2
-	}
-	average := sum / count
-	return &average
+	return ttftHistogramMedian(value.ttftHistogram)
 }
 
 func serviceStatusDisplayedSuccessCount(requestCount int64, successCount int64, displayedRequestCount int64) int64 {

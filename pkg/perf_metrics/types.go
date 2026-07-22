@@ -1,6 +1,7 @@
 package perfmetrics
 
 import (
+	"math"
 	"sync"
 	"sync/atomic"
 )
@@ -70,30 +71,26 @@ type bucketKey struct {
 }
 
 type counters struct {
-	requestCount     int64
-	successCount     int64
-	totalLatencyMs   int64
-	ttftSumMs        int64
-	ttftCount        int64
-	ttftMinMs        int64
-	ttftMaxMs        int64
-	ttftExtremaCount int64
-	outputTokens     int64
-	generationMs     int64
+	requestCount   int64
+	successCount   int64
+	totalLatencyMs int64
+	ttftSumMs      int64
+	ttftCount      int64
+	ttftHistogram  [ttftHistogramBinCount]int64
+	outputTokens   int64
+	generationMs   int64
 }
 
 type atomicBucket struct {
-	requestCount     atomic.Int64
-	successCount     atomic.Int64
-	totalLatencyMs   atomic.Int64
-	ttftMu           sync.Mutex
-	ttftSumMs        int64
-	ttftCount        int64
-	ttftMinMs        int64
-	ttftMaxMs        int64
-	ttftExtremaCount int64
-	outputTokens     atomic.Int64
-	generationMs     atomic.Int64
+	requestCount   atomic.Int64
+	successCount   atomic.Int64
+	totalLatencyMs atomic.Int64
+	ttftMu         sync.Mutex
+	ttftSumMs      int64
+	ttftCount      int64
+	ttftHistogram  [ttftHistogramBinCount]int64
+	outputTokens   atomic.Int64
+	generationMs   atomic.Int64
 }
 
 func (b *atomicBucket) add(sample Sample) {
@@ -107,14 +104,8 @@ func (b *atomicBucket) add(sample Sample) {
 	if sample.HasTtft && sample.TtftMs >= 0 {
 		b.ttftMu.Lock()
 		b.ttftSumMs += sample.TtftMs
-		if b.ttftCount == 0 || sample.TtftMs < b.ttftMinMs {
-			b.ttftMinMs = sample.TtftMs
-		}
-		if b.ttftCount == 0 || sample.TtftMs > b.ttftMaxMs {
-			b.ttftMaxMs = sample.TtftMs
-		}
 		b.ttftCount++
-		b.ttftExtremaCount++
+		addTtftHistogramSample(&b.ttftHistogram, sample.TtftMs)
 		b.ttftMu.Unlock()
 	}
 	if sample.OutputTokens > 0 && sample.GenerationMs > 0 {
@@ -127,21 +118,17 @@ func (b *atomicBucket) snapshot() counters {
 	b.ttftMu.Lock()
 	ttftSumMs := b.ttftSumMs
 	ttftCount := b.ttftCount
-	ttftMinMs := b.ttftMinMs
-	ttftMaxMs := b.ttftMaxMs
-	ttftExtremaCount := b.ttftExtremaCount
+	ttftHistogram := b.ttftHistogram
 	b.ttftMu.Unlock()
 	return counters{
-		requestCount:     b.requestCount.Load(),
-		successCount:     b.successCount.Load(),
-		totalLatencyMs:   b.totalLatencyMs.Load(),
-		ttftSumMs:        ttftSumMs,
-		ttftCount:        ttftCount,
-		ttftMinMs:        ttftMinMs,
-		ttftMaxMs:        ttftMaxMs,
-		ttftExtremaCount: ttftExtremaCount,
-		outputTokens:     b.outputTokens.Load(),
-		generationMs:     b.generationMs.Load(),
+		requestCount:   b.requestCount.Load(),
+		successCount:   b.successCount.Load(),
+		totalLatencyMs: b.totalLatencyMs.Load(),
+		ttftSumMs:      ttftSumMs,
+		ttftCount:      ttftCount,
+		ttftHistogram:  ttftHistogram,
+		outputTokens:   b.outputTokens.Load(),
+		generationMs:   b.generationMs.Load(),
 	}
 }
 
@@ -149,26 +136,20 @@ func (b *atomicBucket) drain() counters {
 	b.ttftMu.Lock()
 	ttftSumMs := b.ttftSumMs
 	ttftCount := b.ttftCount
-	ttftMinMs := b.ttftMinMs
-	ttftMaxMs := b.ttftMaxMs
-	ttftExtremaCount := b.ttftExtremaCount
+	ttftHistogram := b.ttftHistogram
 	b.ttftSumMs = 0
 	b.ttftCount = 0
-	b.ttftMinMs = 0
-	b.ttftMaxMs = 0
-	b.ttftExtremaCount = 0
+	b.ttftHistogram = [ttftHistogramBinCount]int64{}
 	b.ttftMu.Unlock()
 	return counters{
-		requestCount:     b.requestCount.Swap(0),
-		successCount:     b.successCount.Swap(0),
-		totalLatencyMs:   b.totalLatencyMs.Swap(0),
-		ttftSumMs:        ttftSumMs,
-		ttftCount:        ttftCount,
-		ttftMinMs:        ttftMinMs,
-		ttftMaxMs:        ttftMaxMs,
-		ttftExtremaCount: ttftExtremaCount,
-		outputTokens:     b.outputTokens.Swap(0),
-		generationMs:     b.generationMs.Swap(0),
+		requestCount:   b.requestCount.Swap(0),
+		successCount:   b.successCount.Swap(0),
+		totalLatencyMs: b.totalLatencyMs.Swap(0),
+		ttftSumMs:      ttftSumMs,
+		ttftCount:      ttftCount,
+		ttftHistogram:  ttftHistogram,
+		outputTokens:   b.outputTokens.Swap(0),
+		generationMs:   b.generationMs.Swap(0),
 	}
 }
 
@@ -185,24 +166,18 @@ func (b *atomicBucket) addCounters(c counters) {
 	if c.ttftCount > 0 {
 		b.ttftMu.Lock()
 		current := counters{
-			ttftSumMs:        b.ttftSumMs,
-			ttftCount:        b.ttftCount,
-			ttftMinMs:        b.ttftMinMs,
-			ttftMaxMs:        b.ttftMaxMs,
-			ttftExtremaCount: b.ttftExtremaCount,
+			ttftSumMs:     b.ttftSumMs,
+			ttftCount:     b.ttftCount,
+			ttftHistogram: b.ttftHistogram,
 		}
 		mergeCounterValues(&current, counters{
-			ttftSumMs:        c.ttftSumMs,
-			ttftCount:        c.ttftCount,
-			ttftMinMs:        c.ttftMinMs,
-			ttftMaxMs:        c.ttftMaxMs,
-			ttftExtremaCount: c.ttftExtremaCount,
+			ttftSumMs:     c.ttftSumMs,
+			ttftCount:     c.ttftCount,
+			ttftHistogram: c.ttftHistogram,
 		})
 		b.ttftSumMs = current.ttftSumMs
 		b.ttftCount = current.ttftCount
-		b.ttftMinMs = current.ttftMinMs
-		b.ttftMaxMs = current.ttftMaxMs
-		b.ttftExtremaCount = current.ttftExtremaCount
+		b.ttftHistogram = current.ttftHistogram
 		b.ttftMu.Unlock()
 	}
 	if c.outputTokens != 0 {
@@ -224,24 +199,14 @@ func mergeCounterValues(current *counters, value counters) {
 	current.ttftCount += value.ttftCount
 	current.outputTokens += value.outputTokens
 	current.generationMs += value.generationMs
-
-	extremaCount := value.ttftExtremaCount
-	if extremaCount <= 0 || value.ttftCount <= 0 || value.ttftMinMs < 0 || value.ttftMaxMs < value.ttftMinMs {
-		return
-	}
-	if extremaCount > value.ttftCount {
-		extremaCount = value.ttftCount
-	}
-	if current.ttftExtremaCount == 0 {
-		current.ttftMinMs = value.ttftMinMs
-		current.ttftMaxMs = value.ttftMaxMs
-	} else {
-		if value.ttftMinMs < current.ttftMinMs {
-			current.ttftMinMs = value.ttftMinMs
+	for index, count := range value.ttftHistogram {
+		if count <= 0 {
+			continue
 		}
-		if value.ttftMaxMs > current.ttftMaxMs {
-			current.ttftMaxMs = value.ttftMaxMs
+		if current.ttftHistogram[index] >= math.MaxInt64-count {
+			current.ttftHistogram[index] = math.MaxInt64
+			continue
 		}
+		current.ttftHistogram[index] += count
 	}
-	current.ttftExtremaCount += extremaCount
 }

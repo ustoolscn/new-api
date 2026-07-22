@@ -110,12 +110,12 @@ export function StatusSection(props: StatusSectionProps) {
                     </div>
                     <div>
                       <div className='font-mono text-sm font-semibold tabular-nums'>
-                        {metric.avg_ttft_ms == null
+                        {metric.median_ttft_ms == null
                           ? t('No data')
-                          : `${metric.avg_ttft_ms.toLocaleString()} ms`}
+                          : `${metric.median_ttft_ms.toLocaleString()} ms`}
                       </div>
                       <div className='text-muted-foreground mt-1 text-xs'>
-                        {t('Average first-token response')}
+                        {t('Median first-token response')}
                       </div>
                     </div>
                   </div>
