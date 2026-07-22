@@ -97,13 +97,16 @@ func Query(params QueryParams) (QueryResult, error) {
 			group:    row.Group,
 			bucketTs: row.BucketTs,
 		}, counters{
-			requestCount:   row.RequestCount,
-			successCount:   row.SuccessCount,
-			totalLatencyMs: row.TotalLatencyMs,
-			ttftSumMs:      row.TtftSumMs,
-			ttftCount:      row.TtftCount,
-			outputTokens:   row.OutputTokens,
-			generationMs:   row.GenerationMs,
+			requestCount:     row.RequestCount,
+			successCount:     row.SuccessCount,
+			totalLatencyMs:   row.TotalLatencyMs,
+			ttftSumMs:        row.TtftSumMs,
+			ttftCount:        row.TtftCount,
+			ttftMinMs:        row.TtftMinMs,
+			ttftMaxMs:        row.TtftMaxMs,
+			ttftExtremaCount: row.TtftExtremaCount,
+			outputTokens:     row.OutputTokens,
+			generationMs:     row.GenerationMs,
 		})
 	}
 
@@ -203,13 +206,7 @@ func mergeModelTotals(totals map[string]counters, modelName string, value counte
 		return
 	}
 	current := totals[modelName]
-	current.requestCount += value.requestCount
-	current.successCount += value.successCount
-	current.totalLatencyMs += value.totalLatencyMs
-	current.ttftSumMs += value.ttftSumMs
-	current.ttftCount += value.ttftCount
-	current.outputTokens += value.outputTokens
-	current.generationMs += value.generationMs
+	mergeCounterValues(&current, value)
 	totals[modelName] = current
 }
 
@@ -221,13 +218,7 @@ func mergeModelBucket(modelBuckets map[string]map[int64]counters, modelName stri
 		modelBuckets[modelName] = map[int64]counters{}
 	}
 	current := modelBuckets[modelName][bucketTs]
-	current.requestCount += value.requestCount
-	current.successCount += value.successCount
-	current.totalLatencyMs += value.totalLatencyMs
-	current.ttftSumMs += value.ttftSumMs
-	current.ttftCount += value.ttftCount
-	current.outputTokens += value.outputTokens
-	current.generationMs += value.generationMs
+	mergeCounterValues(&current, value)
 	modelBuckets[modelName][bucketTs] = current
 }
 
@@ -276,13 +267,7 @@ func mergeCounters(merged map[bucketKey]counters, key bucketKey, value counters)
 		return
 	}
 	current := merged[key]
-	current.requestCount += value.requestCount
-	current.successCount += value.successCount
-	current.totalLatencyMs += value.totalLatencyMs
-	current.ttftSumMs += value.ttftSumMs
-	current.ttftCount += value.ttftCount
-	current.outputTokens += value.outputTokens
-	current.generationMs += value.generationMs
+	mergeCounterValues(&current, value)
 	merged[key] = current
 }
 
@@ -319,13 +304,7 @@ func buildQueryResult(modelName string, merged map[bucketKey]counters) QueryResu
 		series := make([]BucketPoint, 0, len(timestamps))
 		for _, ts := range timestamps {
 			value := buckets[ts]
-			total.requestCount += value.requestCount
-			total.successCount += value.successCount
-			total.totalLatencyMs += value.totalLatencyMs
-			total.ttftSumMs += value.ttftSumMs
-			total.ttftCount += value.ttftCount
-			total.outputTokens += value.outputTokens
-			total.generationMs += value.generationMs
+			mergeCounterValues(&total, value)
 			series = append(series, bucketPoint(ts, value))
 		}
 

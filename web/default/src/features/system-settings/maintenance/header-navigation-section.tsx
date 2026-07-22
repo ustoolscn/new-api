@@ -60,6 +60,7 @@ const headerNavSchema = z.object({
   rankingsDisplayMultiplier: z.number().min(0),
   rankingsDisplayJitterRatio: z.number().min(0),
   docs: z.boolean(),
+  serviceStatus: z.boolean(),
   about: z.boolean(),
 })
 
@@ -119,6 +120,10 @@ const toFormValues = (
   rankingsDisplayJitterRatio: parseDisplayNumber(jitterRatio, 0),
   docs:
     config.docs === undefined ? HEADER_NAV_DEFAULT.docs : Boolean(config.docs),
+  serviceStatus:
+    config.serviceStatus === undefined
+      ? HEADER_NAV_DEFAULT.serviceStatus
+      : Boolean(config.serviceStatus),
   about:
     config.about === undefined
       ? HEADER_NAV_DEFAULT.about
@@ -158,6 +163,7 @@ export function HeaderNavigationSection({
       home: values.home,
       console: values.console,
       docs: values.docs,
+      serviceStatus: values.serviceStatus,
       about: values.about,
       pricing: {
         ...(config.pricing ?? HEADER_NAV_DEFAULT.pricing),
@@ -230,6 +236,11 @@ export function HeaderNavigationSection({
       key: 'docs',
       title: t('Docs'),
       description: t('Documentation or external knowledge base.'),
+    },
+    {
+      key: 'serviceStatus',
+      title: t('Service Status'),
+      description: t('Public service health and performance page.'),
     },
     {
       key: 'about',
@@ -360,11 +371,11 @@ export function HeaderNavigationSection({
           <div className='space-y-4 rounded-lg border p-4'>
             <div>
               <h3 className='text-base font-medium'>
-                {t('Rankings display values')}
+                {t('Public analytics display values')}
               </h3>
               <p className='text-muted-foreground text-sm'>
                 {t(
-                  'Only changes the public rankings display. Raw usage logs and billing stay unchanged.'
+                  'Applies to request volumes shown on rankings and service status. Raw usage logs and billing stay unchanged.'
                 )}
               </p>
             </div>

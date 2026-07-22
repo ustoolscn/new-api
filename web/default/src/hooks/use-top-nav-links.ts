@@ -40,6 +40,7 @@ export type TopNavLink = {
  *   pricing: { enabled: true, requireAuth: false },
  *   rankings: { enabled: true, requireAuth: false },
  *   docs: true,
+ *   serviceStatus: true,
  *   about: true
  * }
  */
@@ -95,7 +96,9 @@ export function useTopNavLinks(): TopNavLink[] {
     }
   }
 
-  links.push({ title: t('Service Status'), href: '/service-status' })
+  if (modules?.serviceStatus !== false) {
+    links.push({ title: t('Service Status'), href: '/service-status' })
+  }
 
   // About
   if (modules?.about !== false) {

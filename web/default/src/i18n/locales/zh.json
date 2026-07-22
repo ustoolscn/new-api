@@ -5529,6 +5529,13 @@
     "Zero retention": "零数据保留",
     "Zhipu": "智谱",
     "Zhipu V4": "智谱 V4",
-    "Zoom": "缩放"
+    "Zoom": "缩放",
+    "Public service health and performance page.": "公共服务健康与性能页面。",
+    "Public analytics display values": "公共统计展示数值",
+    "Applies to request volumes shown on rankings and service status. Raw usage logs and billing stay unchanged.": "应用于排行榜和服务状态中展示的请求量，原始使用日志和计费不受影响。",
+    "Average first-token response": "平均首字响应速度",
+    "Service health based on request success rates and first-token response.": "根据请求成功率和首字响应速度展示服务健康状况。",
+    "Request volume, success rate, and first-token response for each model.": "展示每个模型的请求量、成功率和首字响应速度。",
+    "Request volume, success rate, and first-token response for each group.": "展示每个分组的请求量、成功率和首字响应速度。"
   }
 }

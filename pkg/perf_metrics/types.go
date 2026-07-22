@@ -1,6 +1,9 @@
 package perfmetrics
 
-import "sync/atomic"
+import (
+	"sync"
+	"sync/atomic"
+)
 
 type Store interface {
 	Record(sample Sample)
@@ -67,23 +70,30 @@ type bucketKey struct {
 }
 
 type counters struct {
-	requestCount   int64
-	successCount   int64
-	totalLatencyMs int64
-	ttftSumMs      int64
-	ttftCount      int64
-	outputTokens   int64
-	generationMs   int64
+	requestCount     int64
+	successCount     int64
+	totalLatencyMs   int64
+	ttftSumMs        int64
+	ttftCount        int64
+	ttftMinMs        int64
+	ttftMaxMs        int64
+	ttftExtremaCount int64
+	outputTokens     int64
+	generationMs     int64
 }
 
 type atomicBucket struct {
-	requestCount   atomic.Int64
-	successCount   atomic.Int64
-	totalLatencyMs atomic.Int64
-	ttftSumMs      atomic.Int64
-	ttftCount      atomic.Int64
-	outputTokens   atomic.Int64
-	generationMs   atomic.Int64
+	requestCount     atomic.Int64
+	successCount     atomic.Int64
+	totalLatencyMs   atomic.Int64
+	ttftMu           sync.Mutex
+	ttftSumMs        int64
+	ttftCount        int64
+	ttftMinMs        int64
+	ttftMaxMs        int64
+	ttftExtremaCount int64
+	outputTokens     atomic.Int64
+	generationMs     atomic.Int64
 }
 
 func (b *atomicBucket) add(sample Sample) {
@@ -95,8 +105,17 @@ func (b *atomicBucket) add(sample Sample) {
 		b.totalLatencyMs.Add(sample.LatencyMs)
 	}
 	if sample.HasTtft && sample.TtftMs >= 0 {
-		b.ttftSumMs.Add(sample.TtftMs)
-		b.ttftCount.Add(1)
+		b.ttftMu.Lock()
+		b.ttftSumMs += sample.TtftMs
+		if b.ttftCount == 0 || sample.TtftMs < b.ttftMinMs {
+			b.ttftMinMs = sample.TtftMs
+		}
+		if b.ttftCount == 0 || sample.TtftMs > b.ttftMaxMs {
+			b.ttftMaxMs = sample.TtftMs
+		}
+		b.ttftCount++
+		b.ttftExtremaCount++
+		b.ttftMu.Unlock()
 	}
 	if sample.OutputTokens > 0 && sample.GenerationMs > 0 {
 		b.outputTokens.Add(sample.OutputTokens)
@@ -105,26 +124,51 @@ func (b *atomicBucket) add(sample Sample) {
 }
 
 func (b *atomicBucket) snapshot() counters {
+	b.ttftMu.Lock()
+	ttftSumMs := b.ttftSumMs
+	ttftCount := b.ttftCount
+	ttftMinMs := b.ttftMinMs
+	ttftMaxMs := b.ttftMaxMs
+	ttftExtremaCount := b.ttftExtremaCount
+	b.ttftMu.Unlock()
 	return counters{
-		requestCount:   b.requestCount.Load(),
-		successCount:   b.successCount.Load(),
-		totalLatencyMs: b.totalLatencyMs.Load(),
-		ttftSumMs:      b.ttftSumMs.Load(),
-		ttftCount:      b.ttftCount.Load(),
-		outputTokens:   b.outputTokens.Load(),
-		generationMs:   b.generationMs.Load(),
+		requestCount:     b.requestCount.Load(),
+		successCount:     b.successCount.Load(),
+		totalLatencyMs:   b.totalLatencyMs.Load(),
+		ttftSumMs:        ttftSumMs,
+		ttftCount:        ttftCount,
+		ttftMinMs:        ttftMinMs,
+		ttftMaxMs:        ttftMaxMs,
+		ttftExtremaCount: ttftExtremaCount,
+		outputTokens:     b.outputTokens.Load(),
+		generationMs:     b.generationMs.Load(),
 	}
 }
 
 func (b *atomicBucket) drain() counters {
+	b.ttftMu.Lock()
+	ttftSumMs := b.ttftSumMs
+	ttftCount := b.ttftCount
+	ttftMinMs := b.ttftMinMs
+	ttftMaxMs := b.ttftMaxMs
+	ttftExtremaCount := b.ttftExtremaCount
+	b.ttftSumMs = 0
+	b.ttftCount = 0
+	b.ttftMinMs = 0
+	b.ttftMaxMs = 0
+	b.ttftExtremaCount = 0
+	b.ttftMu.Unlock()
 	return counters{
-		requestCount:   b.requestCount.Swap(0),
-		successCount:   b.successCount.Swap(0),
-		totalLatencyMs: b.totalLatencyMs.Swap(0),
-		ttftSumMs:      b.ttftSumMs.Swap(0),
-		ttftCount:      b.ttftCount.Swap(0),
-		outputTokens:   b.outputTokens.Swap(0),
-		generationMs:   b.generationMs.Swap(0),
+		requestCount:     b.requestCount.Swap(0),
+		successCount:     b.successCount.Swap(0),
+		totalLatencyMs:   b.totalLatencyMs.Swap(0),
+		ttftSumMs:        ttftSumMs,
+		ttftCount:        ttftCount,
+		ttftMinMs:        ttftMinMs,
+		ttftMaxMs:        ttftMaxMs,
+		ttftExtremaCount: ttftExtremaCount,
+		outputTokens:     b.outputTokens.Swap(0),
+		generationMs:     b.generationMs.Swap(0),
 	}
 }
 
@@ -138,11 +182,28 @@ func (b *atomicBucket) addCounters(c counters) {
 	if c.totalLatencyMs != 0 {
 		b.totalLatencyMs.Add(c.totalLatencyMs)
 	}
-	if c.ttftSumMs != 0 {
-		b.ttftSumMs.Add(c.ttftSumMs)
-	}
-	if c.ttftCount != 0 {
-		b.ttftCount.Add(c.ttftCount)
+	if c.ttftCount > 0 {
+		b.ttftMu.Lock()
+		current := counters{
+			ttftSumMs:        b.ttftSumMs,
+			ttftCount:        b.ttftCount,
+			ttftMinMs:        b.ttftMinMs,
+			ttftMaxMs:        b.ttftMaxMs,
+			ttftExtremaCount: b.ttftExtremaCount,
+		}
+		mergeCounterValues(&current, counters{
+			ttftSumMs:        c.ttftSumMs,
+			ttftCount:        c.ttftCount,
+			ttftMinMs:        c.ttftMinMs,
+			ttftMaxMs:        c.ttftMaxMs,
+			ttftExtremaCount: c.ttftExtremaCount,
+		})
+		b.ttftSumMs = current.ttftSumMs
+		b.ttftCount = current.ttftCount
+		b.ttftMinMs = current.ttftMinMs
+		b.ttftMaxMs = current.ttftMaxMs
+		b.ttftExtremaCount = current.ttftExtremaCount
+		b.ttftMu.Unlock()
 	}
 	if c.outputTokens != 0 {
 		b.outputTokens.Add(c.outputTokens)
@@ -150,4 +211,37 @@ func (b *atomicBucket) addCounters(c counters) {
 	if c.generationMs != 0 {
 		b.generationMs.Add(c.generationMs)
 	}
+}
+
+func mergeCounterValues(current *counters, value counters) {
+	if current == nil {
+		return
+	}
+	current.requestCount += value.requestCount
+	current.successCount += value.successCount
+	current.totalLatencyMs += value.totalLatencyMs
+	current.ttftSumMs += value.ttftSumMs
+	current.ttftCount += value.ttftCount
+	current.outputTokens += value.outputTokens
+	current.generationMs += value.generationMs
+
+	extremaCount := value.ttftExtremaCount
+	if extremaCount <= 0 || value.ttftCount <= 0 || value.ttftMinMs < 0 || value.ttftMaxMs < value.ttftMinMs {
+		return
+	}
+	if extremaCount > value.ttftCount {
+		extremaCount = value.ttftCount
+	}
+	if current.ttftExtremaCount == 0 {
+		current.ttftMinMs = value.ttftMinMs
+		current.ttftMaxMs = value.ttftMaxMs
+	} else {
+		if value.ttftMinMs < current.ttftMinMs {
+			current.ttftMinMs = value.ttftMinMs
+		}
+		if value.ttftMaxMs > current.ttftMaxMs {
+			current.ttftMaxMs = value.ttftMaxMs
+		}
+	}
+	current.ttftExtremaCount += extremaCount
 }

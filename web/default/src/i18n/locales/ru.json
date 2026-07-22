@@ -5529,6 +5529,13 @@
     "Zero retention": "Без хранения данных",
     "Zhipu": "Zhipu",
     "Zhipu V4": "Zhipu V4",
-    "Zoom": "Zoom"
+    "Zoom": "Zoom",
+    "Public service health and performance page.": "Публичная страница состояния и производительности сервиса.",
+    "Public analytics display values": "Отображаемые значения публичной статистики",
+    "Applies to request volumes shown on rankings and service status. Raw usage logs and billing stay unchanged.": "Применяется к объёму запросов в рейтингах и статусе сервиса. Исходные журналы использования и тарификация не меняются.",
+    "Average first-token response": "Среднее время до первого токена",
+    "Service health based on request success rates and first-token response.": "Состояние сервиса на основе доли успешных запросов и времени до первого токена.",
+    "Request volume, success rate, and first-token response for each model.": "Объём запросов, доля успешных запросов и время до первого токена для каждой модели.",
+    "Request volume, success rate, and first-token response for each group.": "Объём запросов, доля успешных запросов и время до первого токена для каждой группы."
   }
 }

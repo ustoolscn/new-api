@@ -97,14 +97,26 @@ export function StatusSection(props: StatusSectionProps) {
                       {formatCompactNumber(metric.request_count)}
                     </p>
                   </div>
-                  <div className='text-right'>
-                    <div className='font-mono text-sm font-semibold tabular-nums'>
-                      {metric.success_rate == null
-                        ? t('No data')
-                        : `${metric.success_rate.toFixed(2)}%`}
+                  <div className='grid grid-cols-2 gap-5 text-right'>
+                    <div>
+                      <div className='font-mono text-sm font-semibold tabular-nums'>
+                        {metric.success_rate == null
+                          ? t('No data')
+                          : `${metric.success_rate.toFixed(2)}%`}
+                      </div>
+                      <div className='text-muted-foreground mt-1 text-xs'>
+                        {t('Success rate')}
+                      </div>
                     </div>
-                    <div className='text-muted-foreground mt-1 text-xs'>
-                      {t('Success rate')}
+                    <div>
+                      <div className='font-mono text-sm font-semibold tabular-nums'>
+                        {metric.avg_ttft_ms == null
+                          ? t('No data')
+                          : `${metric.avg_ttft_ms.toLocaleString()} ms`}
+                      </div>
+                      <div className='text-muted-foreground mt-1 text-xs'>
+                        {t('Average first-token response')}
+                      </div>
                     </div>
                   </div>
                 </div>

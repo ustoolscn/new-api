@@ -59,7 +59,11 @@ export function StatusTimeline(props: StatusTimelineProps) {
               point.success_rate == null
                 ? t('No data')
                 : `${point.success_rate.toFixed(2)}%`
-            const detail = `${period?.bucket_label ?? ''} · ${t('Requests')}: ${point.request_count.toLocaleString()} · ${t('Success rate')}: ${rateLabel}`
+            const ttftLabel =
+              point.avg_ttft_ms == null
+                ? t('No data')
+                : `${point.avg_ttft_ms.toLocaleString()} ms`
+            const detail = `${period?.bucket_label ?? ''} · ${t('Requests')}: ${point.request_count.toLocaleString()} · ${t('Success rate')}: ${rateLabel} · ${t('Average first-token response')}: ${ttftLabel}`
             return (
               <div
                 key={period?.bucket_start ?? index}

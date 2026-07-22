@@ -2,6 +2,7 @@ package model
 
 import (
 	"database/sql"
+	"strconv"
 	"strings"
 	"time"
 
@@ -11,17 +12,20 @@ import (
 
 // PerfMetric stores aggregated relay performance metrics for the model square.
 type PerfMetric struct {
-	Id             int    `json:"id" gorm:"primaryKey"`
-	ModelName      string `json:"model_name" gorm:"size:128;uniqueIndex:idx_perf_model_group_bucket,priority:1"`
-	Group          string `json:"group" gorm:"column:group;size:64;uniqueIndex:idx_perf_model_group_bucket,priority:2"`
-	BucketTs       int64  `json:"bucket_ts" gorm:"uniqueIndex:idx_perf_model_group_bucket,priority:3;index:idx_perf_bucket_ts"`
-	RequestCount   int64  `json:"-" gorm:"default:0"`
-	SuccessCount   int64  `json:"-" gorm:"default:0"`
-	TotalLatencyMs int64  `json:"-" gorm:"default:0"`
-	TtftSumMs      int64  `json:"-" gorm:"default:0"`
-	TtftCount      int64  `json:"-" gorm:"default:0"`
-	OutputTokens   int64  `json:"-" gorm:"default:0"`
-	GenerationMs   int64  `json:"-" gorm:"default:0"`
+	Id               int    `json:"id" gorm:"primaryKey"`
+	ModelName        string `json:"model_name" gorm:"size:128;uniqueIndex:idx_perf_model_group_bucket,priority:1"`
+	Group            string `json:"group" gorm:"column:group;size:64;uniqueIndex:idx_perf_model_group_bucket,priority:2"`
+	BucketTs         int64  `json:"bucket_ts" gorm:"uniqueIndex:idx_perf_model_group_bucket,priority:3;index:idx_perf_bucket_ts"`
+	RequestCount     int64  `json:"-" gorm:"default:0"`
+	SuccessCount     int64  `json:"-" gorm:"default:0"`
+	TotalLatencyMs   int64  `json:"-" gorm:"default:0"`
+	TtftSumMs        int64  `json:"-" gorm:"default:0"`
+	TtftCount        int64  `json:"-" gorm:"default:0"`
+	TtftMinMs        int64  `json:"-" gorm:"default:0"`
+	TtftMaxMs        int64  `json:"-" gorm:"default:0"`
+	TtftExtremaCount int64  `json:"-" gorm:"default:0"`
+	OutputTokens     int64  `json:"-" gorm:"default:0"`
+	GenerationMs     int64  `json:"-" gorm:"default:0"`
 }
 
 func (PerfMetric) TableName() string {
@@ -38,15 +42,18 @@ func UpsertPerfMetric(metric *PerfMetric) error {
 			{Name: "group"},
 			{Name: "bucket_ts"},
 		},
-		DoUpdates: clause.Assignments(map[string]interface{}{
-			"request_count":    gorm.Expr("perf_metrics.request_count + ?", metric.RequestCount),
-			"success_count":    gorm.Expr("perf_metrics.success_count + ?", metric.SuccessCount),
-			"total_latency_ms": gorm.Expr("perf_metrics.total_latency_ms + ?", metric.TotalLatencyMs),
-			"ttft_sum_ms":      gorm.Expr("perf_metrics.ttft_sum_ms + ?", metric.TtftSumMs),
-			"ttft_count":       gorm.Expr("perf_metrics.ttft_count + ?", metric.TtftCount),
-			"output_tokens":    gorm.Expr("perf_metrics.output_tokens + ?", metric.OutputTokens),
-			"generation_ms":    gorm.Expr("perf_metrics.generation_ms + ?", metric.GenerationMs),
-		}),
+		DoUpdates: clause.Set{
+			{Column: clause.Column{Name: "request_count"}, Value: gorm.Expr("perf_metrics.request_count + ?", metric.RequestCount)},
+			{Column: clause.Column{Name: "success_count"}, Value: gorm.Expr("perf_metrics.success_count + ?", metric.SuccessCount)},
+			{Column: clause.Column{Name: "total_latency_ms"}, Value: gorm.Expr("perf_metrics.total_latency_ms + ?", metric.TotalLatencyMs)},
+			{Column: clause.Column{Name: "ttft_sum_ms"}, Value: gorm.Expr("perf_metrics.ttft_sum_ms + ?", metric.TtftSumMs)},
+			{Column: clause.Column{Name: "ttft_min_ms"}, Value: gorm.Expr("CASE WHEN ? <= 0 THEN perf_metrics.ttft_min_ms WHEN perf_metrics.ttft_extrema_count <= 0 OR ? < perf_metrics.ttft_min_ms THEN ? ELSE perf_metrics.ttft_min_ms END", metric.TtftExtremaCount, metric.TtftMinMs, metric.TtftMinMs)},
+			{Column: clause.Column{Name: "ttft_max_ms"}, Value: gorm.Expr("CASE WHEN ? <= 0 THEN perf_metrics.ttft_max_ms WHEN perf_metrics.ttft_extrema_count <= 0 OR ? > perf_metrics.ttft_max_ms THEN ? ELSE perf_metrics.ttft_max_ms END", metric.TtftExtremaCount, metric.TtftMaxMs, metric.TtftMaxMs)},
+			{Column: clause.Column{Name: "ttft_extrema_count"}, Value: gorm.Expr("perf_metrics.ttft_extrema_count + ?", metric.TtftExtremaCount)},
+			{Column: clause.Column{Name: "ttft_count"}, Value: gorm.Expr("perf_metrics.ttft_count + ?", metric.TtftCount)},
+			{Column: clause.Column{Name: "output_tokens"}, Value: gorm.Expr("perf_metrics.output_tokens + ?", metric.OutputTokens)},
+			{Column: clause.Column{Name: "generation_ms"}, Value: gorm.Expr("perf_metrics.generation_ms + ?", metric.GenerationMs)},
+		},
 	}).Create(metric).Error
 }
 
@@ -86,8 +93,13 @@ type PerfMetricStatusBucketRange struct {
 }
 
 type PerfMetricStatusBucketCounts struct {
-	RequestCount int64
-	SuccessCount int64
+	RequestCount     int64
+	SuccessCount     int64
+	TtftSumMs        int64
+	TtftCount        int64
+	TtftMinMs        int64
+	TtftMaxMs        int64
+	TtftExtremaCount int64
 }
 
 type PerfMetricStatusSeries struct {
@@ -140,17 +152,21 @@ func GetPerfMetricStatusSeries(startTs int64, endTs int64, buckets []PerfMetricS
 	}
 
 	selectParts := []string{"model_name", commonGroupCol}
-	selectArgs := make([]any, 0, len(buckets)*4)
 	for _, bucket := range buckets {
+		condition := "bucket_ts >= " + strconv.FormatInt(bucket.Start, 10) + " AND bucket_ts < " + strconv.FormatInt(bucket.End, 10)
 		selectParts = append(selectParts,
-			"COALESCE(SUM(CASE WHEN bucket_ts >= ? AND bucket_ts < ? THEN request_count ELSE 0 END), 0)",
-			"COALESCE(SUM(CASE WHEN bucket_ts >= ? AND bucket_ts < ? THEN success_count ELSE 0 END), 0)",
+			"COALESCE(SUM(CASE WHEN "+condition+" THEN request_count ELSE 0 END), 0)",
+			"COALESCE(SUM(CASE WHEN "+condition+" THEN success_count ELSE 0 END), 0)",
+			"COALESCE(SUM(CASE WHEN "+condition+" THEN ttft_sum_ms ELSE 0 END), 0)",
+			"COALESCE(SUM(CASE WHEN "+condition+" THEN ttft_count ELSE 0 END), 0)",
+			"COALESCE(MIN(CASE WHEN "+condition+" AND ttft_extrema_count > 0 THEN ttft_min_ms ELSE NULL END), 0)",
+			"COALESCE(MAX(CASE WHEN "+condition+" AND ttft_extrema_count > 0 THEN ttft_max_ms ELSE NULL END), 0)",
+			"COALESCE(SUM(CASE WHEN "+condition+" THEN ttft_extrema_count ELSE 0 END), 0)",
 		)
-		selectArgs = append(selectArgs, bucket.Start, bucket.End, bucket.Start, bucket.End)
 	}
 
 	rows, err := DB.Model(&PerfMetric{}).
-		Select(strings.Join(selectParts, ", "), selectArgs...).
+		Select(strings.Join(selectParts, ", ")).
 		Where("bucket_ts >= ? AND bucket_ts < ?", startTs, endTs).
 		Where("model_name <> '' AND " + commonGroupCol + " <> ''").
 		Group("model_name, " + commonGroupCol).
@@ -163,7 +179,7 @@ func GetPerfMetricStatusSeries(startTs int64, endTs int64, buckets []PerfMetricS
 	for rows.Next() {
 		var modelName string
 		var group string
-		values := make([]sql.NullInt64, len(buckets)*2)
+		values := make([]sql.NullInt64, len(buckets)*7)
 		scanArgs := make([]any, 0, len(values)+2)
 		scanArgs = append(scanArgs, &modelName, &group)
 		for index := range values {
@@ -175,9 +191,15 @@ func GetPerfMetricStatusSeries(startTs int64, endTs int64, buckets []PerfMetricS
 
 		bucketCounts := make([]PerfMetricStatusBucketCounts, len(buckets))
 		for index := range buckets {
+			offset := index * 7
 			bucketCounts[index] = PerfMetricStatusBucketCounts{
-				RequestCount: values[index*2].Int64,
-				SuccessCount: values[index*2+1].Int64,
+				RequestCount:     values[offset].Int64,
+				SuccessCount:     values[offset+1].Int64,
+				TtftSumMs:        values[offset+2].Int64,
+				TtftCount:        values[offset+3].Int64,
+				TtftMinMs:        values[offset+4].Int64,
+				TtftMaxMs:        values[offset+5].Int64,
+				TtftExtremaCount: values[offset+6].Int64,
 			}
 		}
 		series = append(series, PerfMetricStatusSeries{

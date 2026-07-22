@@ -5529,6 +5529,13 @@
     "Zero retention": "Không lưu dữ liệu",
     "Zhipu": "Zhipu",
     "Zhipu V4": "Zhipu V4",
-    "Zoom": "Zoom"
+    "Zoom": "Zoom",
+    "Public service health and performance page.": "Trang công khai về tình trạng và hiệu suất dịch vụ.",
+    "Public analytics display values": "Giá trị hiển thị của thống kê công khai",
+    "Applies to request volumes shown on rankings and service status. Raw usage logs and billing stay unchanged.": "Áp dụng cho số lượng yêu cầu hiển thị trên bảng xếp hạng và trạng thái dịch vụ. Nhật ký sử dụng gốc và việc tính phí không thay đổi.",
+    "Average first-token response": "Thời gian phản hồi token đầu tiên trung bình",
+    "Service health based on request success rates and first-token response.": "Tình trạng dịch vụ dựa trên tỷ lệ yêu cầu thành công và thời gian phản hồi token đầu tiên.",
+    "Request volume, success rate, and first-token response for each model.": "Số lượng yêu cầu, tỷ lệ thành công và thời gian phản hồi token đầu tiên của từng mô hình.",
+    "Request volume, success rate, and first-token response for each group.": "Số lượng yêu cầu, tỷ lệ thành công và thời gian phản hồi token đầu tiên của từng nhóm."
   }
 }

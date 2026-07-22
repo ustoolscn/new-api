@@ -5529,6 +5529,13 @@
     "Zero retention": "Aucune rétention",
     "Zhipu": "Zhipu",
     "Zhipu V4": "Zhipu V4",
-    "Zoom": "Zoom"
+    "Zoom": "Zoom",
+    "Public service health and performance page.": "Page publique sur l’état et les performances du service.",
+    "Public analytics display values": "Valeurs affichées des statistiques publiques",
+    "Applies to request volumes shown on rankings and service status. Raw usage logs and billing stay unchanged.": "S’applique aux volumes de requêtes affichés dans les classements et l’état du service. Les journaux bruts et la facturation restent inchangés.",
+    "Average first-token response": "Temps de réponse moyen du premier jeton",
+    "Service health based on request success rates and first-token response.": "État du service basé sur le taux de réussite des requêtes et le temps de réponse du premier jeton.",
+    "Request volume, success rate, and first-token response for each model.": "Volume de requêtes, taux de réussite et temps de réponse du premier jeton pour chaque modèle.",
+    "Request volume, success rate, and first-token response for each group.": "Volume de requêtes, taux de réussite et temps de réponse du premier jeton pour chaque groupe."
   }
 }

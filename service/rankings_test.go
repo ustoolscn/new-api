@@ -3,21 +3,22 @@ package service
 import (
 	"testing"
 
+	"github.com/QuantumNous/new-api/common"
 	"github.com/QuantumNous/new-api/model"
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
 func TestRankingDisplayValueMultiplier(t *testing.T) {
-	settings := rankingDisplaySettings{multiplier: 12, jitter: 0}
+	settings := common.PublicDisplaySettings{Multiplier: 12, Jitter: 0}
 
-	value := rankingDisplayValue(100, settings, "model-a")
+	value := common.PublicDisplayValue(100, settings, "model-a")
 
-	if value != 1200 {
-		t.Fatalf("expected multiplier to produce 1200, got %d", value)
-	}
+	assert.Equal(t, int64(1200), value)
 }
 
 func TestApplyRankingDisplayToTotalsSortsByDisplayedValue(t *testing.T) {
-	settings := rankingDisplaySettings{multiplier: 1, jitter: 1}
+	settings := common.PublicDisplaySettings{Multiplier: 1, Jitter: 1}
 	totals := []model.RankingQuotaTotal{
 		{ModelName: "model-a", TotalTokens: 100},
 		{ModelName: "model-b", TotalTokens: 100},
@@ -25,15 +26,10 @@ func TestApplyRankingDisplayToTotalsSortsByDisplayedValue(t *testing.T) {
 
 	rows := applyRankingDisplayToTotals(totals, settings, "test")
 
-	if len(rows) != len(totals) {
-		t.Fatalf("expected %d rows, got %d", len(totals), len(rows))
-	}
+	require.Len(t, rows, len(totals))
 	for _, row := range rows {
-		if row.TotalTokens < 100 || row.TotalTokens > 200 {
-			t.Fatalf("expected jittered value between 100 and 200, got %d", row.TotalTokens)
-		}
+		assert.GreaterOrEqual(t, row.TotalTokens, int64(100))
+		assert.LessOrEqual(t, row.TotalTokens, int64(200))
 	}
-	if rows[0].TotalTokens < rows[1].TotalTokens {
-		t.Fatalf("expected rows sorted by displayed value descending: %+v", rows)
-	}
+	assert.GreaterOrEqual(t, rows[0].TotalTokens, rows[1].TotalTokens)
 }

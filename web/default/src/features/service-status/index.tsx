@@ -55,7 +55,7 @@ export function ServiceStatus() {
   const search = useSearch({ from: '/service-status/' })
   const navigate = useNavigate()
   const granularity: ServiceStatusGranularity =
-    search.granularity === 'hour' ? 'hour' : 'day'
+    search.granularity === 'day' ? 'day' : 'hour'
   const statusQuery = useServiceStatus(granularity, search.end)
   const snapshot = statusQuery.data?.data
 
@@ -103,7 +103,9 @@ export function ServiceStatus() {
             {t('System status')}
           </h1>
           <p className='text-muted-foreground mx-auto max-w-2xl text-sm sm:text-base'>
-            {t('Service health based on request success rates.')}
+            {t(
+              'Service health based on request success rates and first-token response.'
+            )}
           </p>
         </header>
 
@@ -245,7 +247,7 @@ function ServiceStatusContent(props: { snapshot: ServiceStatusSnapshot }) {
         </div>
       </section>
 
-      <section className='grid gap-4 sm:grid-cols-2 lg:grid-cols-4'>
+      <section className='grid gap-4 sm:grid-cols-2 lg:grid-cols-5'>
         <StatusSummaryCard
           label={t('Requests')}
           value={formatCompactNumber(props.snapshot.overall.request_count)}
@@ -259,6 +261,10 @@ function ServiceStatusContent(props: { snapshot: ServiceStatusSnapshot }) {
           }
         />
         <StatusSummaryCard
+          label={t('Average first-token response')}
+          value={formatTtft(props.snapshot.overall.avg_ttft_ms, t('No data'))}
+        />
+        <StatusSummaryCard
           label={t('Active models')}
           value={props.snapshot.models_total.toLocaleString()}
         />
@@ -270,7 +276,9 @@ function ServiceStatusContent(props: { snapshot: ServiceStatusSnapshot }) {
 
       <StatusSection
         title={t('Model status')}
-        description={t('Request volume and success rate for each model.')}
+        description={t(
+          'Request volume, success rate, and first-token response for each model.'
+        )}
         searchPlaceholder={t('Search models...')}
         metrics={props.snapshot.models}
         periods={props.snapshot.periods}
@@ -280,7 +288,9 @@ function ServiceStatusContent(props: { snapshot: ServiceStatusSnapshot }) {
 
       <StatusSection
         title={t('Group status')}
-        description={t('Request volume and success rate for each group.')}
+        description={t(
+          'Request volume, success rate, and first-token response for each group.'
+        )}
         searchPlaceholder={t('Search groups...')}
         metrics={props.snapshot.groups}
         periods={props.snapshot.periods}
@@ -313,14 +323,18 @@ function ServiceStatusLoading() {
   return (
     <div className='space-y-8'>
       <Skeleton className='h-48 rounded-2xl' />
-      <div className='grid gap-4 sm:grid-cols-2 lg:grid-cols-4'>
-        {Array.from({ length: 4 }, (_, index) => (
+      <div className='grid gap-4 sm:grid-cols-2 lg:grid-cols-5'>
+        {Array.from({ length: 5 }, (_, index) => (
           <Skeleton key={index} className='h-24 rounded-xl' />
         ))}
       </div>
       <Skeleton className='h-[420px] rounded-xl' />
     </div>
   )
+}
+
+function formatTtft(value: number | null, noDataLabel: string): string {
+  return value == null ? noDataLabel : `${value.toLocaleString()} ms`
 }
 
 function ServiceStatusError(props: { onRetry: () => void }) {

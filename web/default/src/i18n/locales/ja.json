@@ -5529,6 +5529,13 @@
     "Zero retention": "データ保持なし",
     "Zhipu": "Zhipu",
     "Zhipu V4": "Zhipu V 4",
-    "Zoom": "ズーム"
+    "Zoom": "ズーム",
+    "Public service health and performance page.": "公開サービスの稼働状況とパフォーマンスページ。",
+    "Public analytics display values": "公開統計の表示値",
+    "Applies to request volumes shown on rankings and service status. Raw usage logs and billing stay unchanged.": "ランキングとサービスステータスに表示されるリクエスト数に適用されます。元の利用ログと課金は変更されません。",
+    "Average first-token response": "最初のトークンの平均応答時間",
+    "Service health based on request success rates and first-token response.": "リクエスト成功率と最初のトークンの応答時間に基づくサービス状態です。",
+    "Request volume, success rate, and first-token response for each model.": "モデルごとのリクエスト数、成功率、最初のトークンの応答時間。",
+    "Request volume, success rate, and first-token response for each group.": "グループごとのリクエスト数、成功率、最初のトークンの応答時間。"
   }
 }
