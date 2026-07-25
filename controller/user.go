@@ -244,6 +244,10 @@ func Register(c *gin.Context) {
 	}
 	hasPhoneRegister := user.Phone != ""
 	hasEmailRegister := user.Email != ""
+	if common.PhoneRegisterEnabled && !hasPhoneRegister {
+		common.ApiErrorI18n(c, i18n.MsgUserVerificationCodeError)
+		return
+	}
 	if hasPhoneRegister && !common.PhoneRegisterEnabled {
 		common.ApiErrorI18n(c, i18n.MsgUserRegisterDisabled)
 		return

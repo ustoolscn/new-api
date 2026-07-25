@@ -38,7 +38,6 @@ import {
 } from '@/components/ui/form'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
-import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { register, wechatLoginByCode } from '@/features/auth/api'
 import { LegalConsent } from '@/features/auth/components/legal-consent'
 import { OAuthProviders } from '@/features/auth/components/oauth-providers'
@@ -62,9 +61,6 @@ export function SignUpForm({
   const [isLoading, setIsLoading] = useState(false)
   const [verificationCode, setVerificationCode] = useState('')
   const [smsCode, setSmsCode] = useState('')
-  const [selectedRegisterMethod, setSelectedRegisterMethod] = useState<
-    'phone' | 'email'
-  >('phone')
   const [agreedToLegal, setAgreedToLegal] = useState(false)
   const [wechatCode, setWeChatCode] = useState('')
   const [isWeChatDialogOpen, setIsWeChatDialogOpen] = useState(false)
@@ -123,11 +119,8 @@ export function SignUpForm({
     status?.data?.password_register_enabled ??
     true
   const hasRegisterMethod = passwordRegisterEnabled
-  const showRegisterTabs = emailRegisterEnabled && phoneRegisterEnabled
   let registerMethod: 'password' | 'phone' | 'email' = 'password'
-  if (phoneRegisterEnabled && emailRegisterEnabled) {
-    registerMethod = selectedRegisterMethod
-  } else if (phoneRegisterEnabled) {
+  if (phoneRegisterEnabled) {
     registerMethod = 'phone'
   } else if (emailRegisterEnabled) {
     registerMethod = 'email'
@@ -369,27 +362,6 @@ export function SignUpForm({
   )
   if (hasRegisterMethod) {
     registerMethodContent = verificationContent
-    if (showRegisterTabs) {
-      registerMethodContent = (
-        <Tabs
-          value={registerMethod}
-          onValueChange={(value) =>
-            setSelectedRegisterMethod(value as 'phone' | 'email')
-          }
-        >
-          <TabsList className='w-full'>
-            <TabsTrigger value='phone'>{t('Phone registration')}</TabsTrigger>
-            <TabsTrigger value='email'>{t('Email registration')}</TabsTrigger>
-          </TabsList>
-          <TabsContent value='phone' className='grid gap-4'>
-            {verificationContent}
-          </TabsContent>
-          <TabsContent value='email' className='grid gap-4'>
-            {verificationContent}
-          </TabsContent>
-        </Tabs>
-      )
-    }
   }
 
   const handleOpenWeChatDialog = () => {
