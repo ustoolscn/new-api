@@ -299,8 +299,9 @@ export function useTaskLogsColumns(isAdmin: boolean): ColumnDef<TaskLog>[] {
 
         return (
           <a
-            href={`/v1/video/generations/${log.task_id}/content`}
-            download
+            href={log.result_url}
+            target='_blank'
+            rel='noopener noreferrer'
             className='text-foreground text-xs hover:underline'
             onClick={(event) => event.stopPropagation()}
           >
