@@ -111,6 +111,30 @@ export interface ChannelOtherSettings {
 
 export interface AdvancedCustomConfig {
   advanced_routes?: AdvancedCustomRoute[]
+  video_task?: AdvancedCustomVideoTaskConfig
+}
+
+export interface AdvancedCustomVideoTaskConfig {
+  submit: AdvancedCustomVideoTaskEndpoint
+  query: AdvancedCustomVideoTaskEndpoint
+  response: AdvancedCustomVideoTaskResponseMapping
+}
+
+export interface AdvancedCustomVideoTaskEndpoint {
+  method?: 'GET' | 'POST' | 'PUT' | 'PATCH' | 'DELETE'
+  path?: string
+  auth?: AdvancedCustomRouteAuth
+  headers?: Record<string, string>
+  body?: unknown
+}
+
+export interface AdvancedCustomVideoTaskResponseMapping {
+  task_id_path?: string
+  status_path?: string
+  result_url_path?: string
+  progress_path?: string
+  error_path?: string
+  status_map?: Record<string, string>
 }
 
 export interface AdvancedCustomRoute {

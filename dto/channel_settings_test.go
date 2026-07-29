@@ -58,6 +58,54 @@ func TestAdvancedCustomValidateResponsesToChatConverterPath(t *testing.T) {
 	}
 }
 
+func TestAdvancedCustomValidateVideoTaskWithoutInferenceRoutes(t *testing.T) {
+	config := &AdvancedCustomConfig{
+		VideoTask: &AdvancedCustomVideoTaskConfig{
+			Submit: AdvancedCustomVideoTaskEndpoint{
+				Path: "/v1/videos/generations",
+				Body: map[string]any{"model": "{model}", "prompt": "{prompt}"},
+			},
+			Query: AdvancedCustomVideoTaskEndpoint{
+				Path: "/v1/videos/{task_id}",
+			},
+			Response: AdvancedCustomVideoTaskResponseMapping{
+				TaskIDPath:    "request_id",
+				StatusPath:    "status",
+				ResultURLPath: "video.url",
+				StatusMap: map[string]string{
+					"done": "SUCCESS",
+				},
+			},
+		},
+	}
+
+	require.NoError(t, config.Validate())
+	assert.True(t, config.SupportsPathForModel(AdvancedCustomVideoSubmitPath, "grok-imagine-video"))
+	assert.True(t, config.SupportsPathForModel(AdvancedCustomOpenAIVideoPath, "grok-imagine-video"))
+	assert.Equal(t, []constant.EndpointType{constant.EndpointTypeOpenAIVideo}, config.SupportedEndpointTypesForModel("grok-imagine-video"))
+}
+
+func TestAdvancedCustomValidateVideoTaskRejectsInvalidMapping(t *testing.T) {
+	config := &AdvancedCustomConfig{
+		VideoTask: &AdvancedCustomVideoTaskConfig{
+			Submit: AdvancedCustomVideoTaskEndpoint{
+				Path: "/submit",
+				Body: map[string]any{"prompt": "{prompt}"},
+			},
+			Query: AdvancedCustomVideoTaskEndpoint{Path: "/tasks/{task_id}"},
+			Response: AdvancedCustomVideoTaskResponseMapping{
+				TaskIDPath: "id",
+				StatusPath: "status",
+				StatusMap:  map[string]string{"done": "COMPLETED"},
+			},
+		},
+	}
+
+	err := config.Validate()
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "invalid task status")
+}
+
 func TestAdvancedCustomValidateModelListRouteConstraints(t *testing.T) {
 	valid := &AdvancedCustomConfig{
 		Routes: []AdvancedCustomRoute{

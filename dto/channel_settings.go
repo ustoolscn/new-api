@@ -2,6 +2,7 @@ package dto
 
 import (
 	"fmt"
+	"net/http"
 	"net/url"
 	"regexp"
 	"strings"
@@ -80,7 +81,31 @@ const (
 )
 
 type AdvancedCustomConfig struct {
-	Routes []AdvancedCustomRoute `json:"advanced_routes,omitempty"`
+	Routes    []AdvancedCustomRoute          `json:"advanced_routes,omitempty"`
+	VideoTask *AdvancedCustomVideoTaskConfig `json:"video_task,omitempty"`
+}
+
+type AdvancedCustomVideoTaskConfig struct {
+	Submit   AdvancedCustomVideoTaskEndpoint        `json:"submit"`
+	Query    AdvancedCustomVideoTaskEndpoint        `json:"query"`
+	Response AdvancedCustomVideoTaskResponseMapping `json:"response"`
+}
+
+type AdvancedCustomVideoTaskEndpoint struct {
+	Method  string                   `json:"method,omitempty"`
+	Path    string                   `json:"path,omitempty"`
+	Auth    *AdvancedCustomRouteAuth `json:"auth,omitempty"`
+	Headers map[string]string        `json:"headers,omitempty"`
+	Body    any                      `json:"body,omitempty"`
+}
+
+type AdvancedCustomVideoTaskResponseMapping struct {
+	TaskIDPath    string            `json:"task_id_path,omitempty"`
+	StatusPath    string            `json:"status_path,omitempty"`
+	ResultURLPath string            `json:"result_url_path,omitempty"`
+	ProgressPath  string            `json:"progress_path,omitempty"`
+	ErrorPath     string            `json:"error_path,omitempty"`
+	StatusMap     map[string]string `json:"status_map,omitempty"`
 }
 
 type AdvancedCustomRoute struct {
@@ -100,6 +125,11 @@ type AdvancedCustomRouteAuth struct {
 const (
 	advancedCustomModelPlaceholder = "{model}"
 	advancedCustomModelRegexPrefix = "re:"
+)
+
+const (
+	AdvancedCustomVideoSubmitPath = "/v1/video/generations"
+	AdvancedCustomOpenAIVideoPath = "/v1/videos"
 )
 
 const (
@@ -162,12 +192,18 @@ func (c *AdvancedCustomConfig) ModelListRoute() (AdvancedCustomRoute, bool) {
 
 // SupportsPath reports whether any route matches requestPath.
 func (c *AdvancedCustomConfig) SupportsPath(requestPath string) bool {
+	if c != nil && c.VideoTask != nil && isAdvancedCustomVideoPath(requestPath) {
+		return true
+	}
 	_, ok := c.MatchPath(requestPath)
 	return ok
 }
 
 // SupportsPathForModel reports whether any route matches requestPath and model.
 func (c *AdvancedCustomConfig) SupportsPathForModel(requestPath string, model string) bool {
+	if c != nil && c.VideoTask != nil && isAdvancedCustomVideoPath(requestPath) {
+		return true
+	}
 	_, ok := c.MatchPathForModel(requestPath, model)
 	return ok
 }
@@ -179,6 +215,10 @@ func (c *AdvancedCustomConfig) SupportedEndpointTypesForModel(model string) []co
 	model = strings.TrimSpace(model)
 	endpoints := make([]constant.EndpointType, 0, len(c.Routes))
 	seen := make(map[constant.EndpointType]struct{}, len(c.Routes))
+	if c.VideoTask != nil {
+		seen[constant.EndpointTypeOpenAIVideo] = struct{}{}
+		endpoints = append(endpoints, constant.EndpointTypeOpenAIVideo)
+	}
 	for _, route := range c.Routes {
 		if !matchAdvancedCustomRouteModel(route.Models, model) {
 			continue
@@ -194,6 +234,10 @@ func (c *AdvancedCustomConfig) SupportedEndpointTypesForModel(model string) []co
 		endpoints = append(endpoints, endpointType)
 	}
 	return endpoints
+}
+
+func isAdvancedCustomVideoPath(requestPath string) bool {
+	return requestPath == AdvancedCustomVideoSubmitPath || requestPath == AdvancedCustomOpenAIVideoPath
 }
 
 func advancedCustomEndpointTypeFromIncomingPath(incomingPath string) (constant.EndpointType, bool) {
@@ -319,8 +363,13 @@ func (c *AdvancedCustomConfig) Validate() error {
 	if c == nil {
 		return fmt.Errorf("advanced_custom is required")
 	}
-	if len(c.Routes) == 0 {
-		return fmt.Errorf("advanced_custom requires at least one route")
+	if len(c.Routes) == 0 && c.VideoTask == nil {
+		return fmt.Errorf("advanced_custom requires at least one route or video_task")
+	}
+	if c.VideoTask != nil {
+		if err := c.VideoTask.Validate(); err != nil {
+			return err
+		}
 	}
 
 	paths := make(map[string]*advancedCustomPathModelState, len(c.Routes))
@@ -381,6 +430,113 @@ func (c *AdvancedCustomConfig) Validate() error {
 	}
 
 	return nil
+}
+
+func (c *AdvancedCustomVideoTaskConfig) Validate() error {
+	if c == nil {
+		return fmt.Errorf("advanced_custom.video_task is required")
+	}
+	if err := validateAdvancedCustomVideoEndpoint("submit", &c.Submit, http.MethodPost, true); err != nil {
+		return err
+	}
+	if err := validateAdvancedCustomVideoEndpoint("query", &c.Query, http.MethodGet, false); err != nil {
+		return err
+	}
+
+	if strings.TrimSpace(c.Response.TaskIDPath) == "" {
+		return fmt.Errorf("advanced_custom.video_task.response.task_id_path is required")
+	}
+	if strings.TrimSpace(c.Response.StatusPath) == "" {
+		return fmt.Errorf("advanced_custom.video_task.response.status_path is required")
+	}
+	for upstreamStatus, taskStatus := range c.Response.StatusMap {
+		if strings.TrimSpace(upstreamStatus) == "" {
+			return fmt.Errorf("advanced_custom.video_task.response.status_map contains an empty upstream status")
+		}
+		if !isAdvancedCustomTaskStatus(taskStatus) {
+			return fmt.Errorf("advanced_custom.video_task.response.status_map[%s] has invalid task status: %s", upstreamStatus, taskStatus)
+		}
+	}
+	return nil
+}
+
+func validateAdvancedCustomVideoEndpoint(name string, endpoint *AdvancedCustomVideoTaskEndpoint, defaultMethod string, requireBody bool) error {
+	prefix := "advanced_custom.video_task." + name
+	method := strings.ToUpper(strings.TrimSpace(endpoint.Method))
+	if method == "" {
+		method = defaultMethod
+	}
+	switch method {
+	case http.MethodGet, http.MethodPost, http.MethodPut, http.MethodPatch, http.MethodDelete:
+	default:
+		return fmt.Errorf("%s.method is invalid: %s", prefix, endpoint.Method)
+	}
+	path := strings.TrimSpace(endpoint.Path)
+	if path == "" {
+		return fmt.Errorf("%s.path is required", prefix)
+	}
+	if err := validateAdvancedCustomUpstreamTargetName(prefix+".path", path); err != nil {
+		return err
+	}
+	if requireBody && endpoint.Body == nil {
+		return fmt.Errorf("%s.body is required", prefix)
+	}
+	if err := validateAdvancedCustomNamedAuth(prefix+".auth", endpoint.Auth); err != nil {
+		return err
+	}
+	for headerName := range endpoint.Headers {
+		if strings.TrimSpace(headerName) == "" {
+			return fmt.Errorf("%s.headers contains an empty header name", prefix)
+		}
+	}
+	return nil
+}
+
+func validateAdvancedCustomUpstreamTargetName(name string, upstreamPath string) error {
+	if strings.HasPrefix(upstreamPath, "/") {
+		if strings.HasPrefix(upstreamPath, "//") {
+			return fmt.Errorf("%s must be a full URL or a path starting with /", name)
+		}
+		return nil
+	}
+	parsed, err := url.Parse(upstreamPath)
+	if err != nil || parsed.Scheme == "" || parsed.Host == "" {
+		return fmt.Errorf("%s must be a full URL or a path starting with /", name)
+	}
+	if parsed.Scheme != "http" && parsed.Scheme != "https" {
+		return fmt.Errorf("%s must use http or https", name)
+	}
+	return nil
+}
+
+func validateAdvancedCustomNamedAuth(name string, auth *AdvancedCustomRouteAuth) error {
+	if auth == nil {
+		return nil
+	}
+	authType := strings.TrimSpace(auth.Type)
+	switch authType {
+	case AdvancedCustomAuthTypeNone:
+		return nil
+	case AdvancedCustomAuthTypeHeader, AdvancedCustomAuthTypeQuery:
+		if strings.TrimSpace(auth.Name) == "" {
+			return fmt.Errorf("%s.name is required", name)
+		}
+		if strings.TrimSpace(auth.Value) == "" {
+			return fmt.Errorf("%s.value is required", name)
+		}
+		return nil
+	default:
+		return fmt.Errorf("%s.type is invalid: %s", name, auth.Type)
+	}
+}
+
+func isAdvancedCustomTaskStatus(status string) bool {
+	switch strings.ToUpper(strings.TrimSpace(status)) {
+	case "SUBMITTED", "QUEUED", "IN_PROGRESS", "SUCCESS", "FAILURE":
+		return true
+	default:
+		return false
+	}
 }
 
 type advancedCustomPathModelState struct {

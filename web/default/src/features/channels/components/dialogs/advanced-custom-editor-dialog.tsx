@@ -482,6 +482,7 @@ export function AdvancedCustomEditorDialog({
           ...(base.advanced_routes || []),
           ...(template.advanced_routes || []),
         ],
+        video_task: template.video_task || base.video_task,
       }
     }
 
@@ -516,8 +517,8 @@ export function AdvancedCustomEditorDialog({
     <Dialog
       open={open}
       onOpenChange={onOpenChange}
-      title={t('Advanced Custom Routes')}
-      description={t('Advanced Custom')}
+      title={t('Advanced Custom')}
+      description={t('Advanced Custom Routes')}
       contentClassName='flex max-h-[90vh] flex-col gap-0 p-0 sm:max-w-5xl'
       headerClassName='border-b px-6 py-4'
       footerClassName='border-t px-6 py-4'
@@ -618,6 +619,24 @@ export function AdvancedCustomEditorDialog({
 
       {editMode === 'visual' ? (
         <div className='flex flex-col gap-4 p-4 lg:gap-3'>
+          {normalizedConfig.video_task ? (
+            <Alert>
+              <Info />
+              <AlertDescription className='flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between'>
+                <span>
+                  {t('Video task rules are configured in JSON Text.')}
+                </span>
+                <Button
+                  type='button'
+                  variant='outline'
+                  size='sm'
+                  onClick={switchToJsonMode}
+                >
+                  {t('JSON Text')}
+                </Button>
+              </AlertDescription>
+            </Alert>
+          ) : null}
           <div className='flex justify-end border-y py-4 lg:py-2'>
             <Select
               items={availableIncomingPathOptions}

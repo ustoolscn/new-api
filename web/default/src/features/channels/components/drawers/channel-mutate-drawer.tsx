@@ -2787,7 +2787,7 @@ export function ChannelMutateDrawer({
                                     <div className='flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between'>
                                       <div className='space-y-2'>
                                         <FormLabel>
-                                          {t('Advanced Custom Routes')}
+                                          {t('Advanced Custom')}
                                         </FormLabel>
                                         <div className='flex flex-wrap gap-2'>
                                           <Badge variant='secondary'>
@@ -2803,7 +2803,9 @@ export function ChannelMutateDrawer({
                                                 title={label}
                                               >
                                                 <span className='truncate'>
-                                                  {label}
+                                                  {label === 'Video Task'
+                                                    ? t(label)
+                                                    : label}
                                                 </span>
                                               </Badge>
                                             )

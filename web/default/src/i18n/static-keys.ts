@@ -562,6 +562,17 @@ export const STATIC_I18N_KEYS = [
   'OpenAI Models route must use native forwarding',
   'OpenAI Models upstream path must not contain {model}',
   'OpenAI Models route is required to enable upstream model checks',
+  'Advanced custom configuration requires at least one route or video task',
+  'Generic Async Video',
+  'Video submit body template is required',
+  'Video Task',
+  'Video task endpoint method is invalid',
+  'Video task endpoint path is required',
+  'Video task endpoint path must be a full URL or a path starting with /',
+  'Video task ID response path is required',
+  'Video task rules are configured in JSON Text.',
+  'Video task status mapping is invalid',
+  'Video status response path is required',
 
   // Dashboard flow stages (labels/descriptions passed to t at runtime)
   'User',

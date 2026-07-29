@@ -22,6 +22,8 @@ import type {
   AdvancedCustomConverter,
   AdvancedCustomRoute,
   AdvancedCustomRouteAuth,
+  AdvancedCustomVideoTaskConfig,
+  AdvancedCustomVideoTaskEndpoint,
 } from '../types'
 
 export const CHANNEL_TYPE_ADVANCED_CUSTOM = 58
@@ -331,6 +333,37 @@ export const ADVANCED_CUSTOM_TEMPLATE_OPTIONS: AdvancedCustomTemplateOption[] =
         ],
       },
     },
+    {
+      value: 'generic_async_video',
+      label: 'Generic Async Video',
+      config: {
+        advanced_routes: [],
+        video_task: {
+          submit: {
+            method: 'POST',
+            path: '/v1/videos/generations',
+            body: '{request}',
+          },
+          query: {
+            method: 'GET',
+            path: '/v1/videos/{task_id}',
+          },
+          response: {
+            task_id_path: 'request_id',
+            status_path: 'status',
+            result_url_path: 'video.url',
+            progress_path: 'progress',
+            error_path: 'error.message',
+            status_map: {
+              pending: 'QUEUED',
+              processing: 'IN_PROGRESS',
+              done: 'SUCCESS',
+              failed: 'FAILURE',
+            },
+          },
+        },
+      },
+    },
   ]
 
 export function cloneAdvancedCustomConfig(
@@ -498,9 +531,11 @@ export function normalizeAdvancedCustomConfig(
     ? config.advanced_routes.map(normalizeAdvancedCustomRoute)
     : []
 
-  return {
-    advanced_routes: routes,
+  const normalized: AdvancedCustomConfig = { advanced_routes: routes }
+  if (config.video_task) {
+    normalized.video_task = normalizeAdvancedCustomVideoTask(config.video_task)
   }
+  return normalized
 }
 
 export function parseAdvancedCustomRouteModels(value: string): string[] {
@@ -535,11 +570,15 @@ export function validateAdvancedCustomConfig(
 
   const normalized = normalizeAdvancedCustomConfig(config)
   const routes = normalized.advanced_routes || []
-  if (routes.length === 0) {
+  if (routes.length === 0 && !normalized.video_task) {
     return {
-      message: 'Advanced custom configuration requires at least one route',
+      message:
+        'Advanced custom configuration requires at least one route or video task',
     }
   }
+
+  const videoTaskError = validateAdvancedCustomVideoTask(normalized.video_task)
+  if (videoTaskError) return videoTaskError
 
   const routeModelsByPath = new Map<
     string,
@@ -645,6 +684,12 @@ export function advancedCustomConfigUsesRelativeUpstreamPath(
 ): boolean {
   if (!config) return false
   const normalized = normalizeAdvancedCustomConfig(config)
+  if (
+    normalized.video_task?.submit.path?.startsWith('/') ||
+    normalized.video_task?.query.path?.startsWith('/')
+  ) {
+    return true
+  }
   return (normalized.advanced_routes || []).some((route) =>
     getAdvancedCustomRouteUpstreamPath(route).startsWith('/')
   )
@@ -670,12 +715,105 @@ export function getAdvancedCustomStats(value: string | undefined): {
     routeTypeLabels.push(label)
     seenRouteTypeLabels.add(label)
   }
+  if (normalized.video_task) {
+    routeTypeLabels.push('Video Task')
+  }
 
   return {
     routeCount: routes.length,
     valid: validateAdvancedCustomConfig(normalized) === null,
     routeTypeLabels,
   }
+}
+
+function normalizeAdvancedCustomVideoTask(
+  videoTask: AdvancedCustomVideoTaskConfig
+): AdvancedCustomVideoTaskConfig {
+  return {
+    submit: normalizeAdvancedCustomVideoEndpoint(videoTask.submit),
+    query: normalizeAdvancedCustomVideoEndpoint(videoTask.query),
+    response: {
+      task_id_path: videoTask.response?.task_id_path || '',
+      status_path: videoTask.response?.status_path || '',
+      result_url_path: videoTask.response?.result_url_path || '',
+      progress_path: videoTask.response?.progress_path || '',
+      error_path: videoTask.response?.error_path || '',
+      status_map: { ...videoTask.response?.status_map },
+    },
+  }
+}
+
+function normalizeAdvancedCustomVideoEndpoint(
+  endpoint: AdvancedCustomVideoTaskEndpoint | undefined
+): AdvancedCustomVideoTaskEndpoint {
+  return {
+    method: endpoint?.method,
+    path: endpoint?.path || '',
+    auth: endpoint?.auth ? { ...endpoint.auth } : undefined,
+    headers: endpoint?.headers ? { ...endpoint.headers } : undefined,
+    body: endpoint?.body,
+  }
+}
+
+function validateAdvancedCustomVideoTask(
+  videoTask: AdvancedCustomVideoTaskConfig | undefined
+): AdvancedCustomValidationError | null {
+  if (!videoTask) return null
+  const submitError = validateAdvancedCustomVideoEndpoint(
+    videoTask.submit,
+    'POST',
+    true
+  )
+  if (submitError) return { message: submitError }
+  const queryError = validateAdvancedCustomVideoEndpoint(
+    videoTask.query,
+    'GET',
+    false
+  )
+  if (queryError) return { message: queryError }
+  if (!videoTask.response?.task_id_path?.trim()) {
+    return { message: 'Video task ID response path is required' }
+  }
+  if (!videoTask.response.status_path?.trim()) {
+    return { message: 'Video status response path is required' }
+  }
+  const allowedStatuses = new Set([
+    'SUBMITTED',
+    'QUEUED',
+    'IN_PROGRESS',
+    'SUCCESS',
+    'FAILURE',
+  ])
+  for (const [upstreamStatus, taskStatus] of Object.entries(
+    videoTask.response.status_map || {}
+  )) {
+    if (!upstreamStatus.trim() || !allowedStatuses.has(taskStatus.trim())) {
+      return { message: 'Video task status mapping is invalid' }
+    }
+  }
+  return null
+}
+
+function validateAdvancedCustomVideoEndpoint(
+  endpoint: AdvancedCustomVideoTaskEndpoint | undefined,
+  defaultMethod: string,
+  requireBody: boolean
+): string | null {
+  const method = endpoint?.method || defaultMethod
+  if (!['GET', 'POST', 'PUT', 'PATCH', 'DELETE'].includes(method)) {
+    return 'Video task endpoint method is invalid'
+  }
+  if (!endpoint?.path?.trim()) {
+    return 'Video task endpoint path is required'
+  }
+  if (!isFullHttpURLOrAbsolutePath(endpoint.path.trim())) {
+    return 'Video task endpoint path must be a full URL or a path starting with /'
+  }
+  if (requireBody && endpoint.body === undefined) {
+    return 'Video submit body template is required'
+  }
+  const authError = validateRouteAuth(endpoint.auth)
+  return authError
 }
 
 export function getAdvancedCustomAuthMode(

@@ -78,6 +78,12 @@ type TaskAdaptor interface {
 	ParseTaskResult(respBody []byte) (*relaycommon.TaskInfo, error)
 }
 
+// TaskRequestMethodBuilder lets a task adaptor override the client-facing HTTP
+// method when the upstream submit endpoint uses a different method.
+type TaskRequestMethodBuilder interface {
+	BuildRequestMethod(info *relaycommon.RelayInfo) string
+}
+
 type OpenAIVideoConverter interface {
 	ConvertToOpenAIVideo(originTask *model.Task) ([]byte, error)
 }

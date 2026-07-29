@@ -724,6 +724,9 @@ func RelayTask(c *gin.Context) {
 
 		task := model.InitTask(result.Platform, relayInfo)
 		task.PrivateData.UpstreamTaskID = result.UpstreamTaskID
+		if relayInfo.ChannelType == constant.ChannelTypeAdvancedCustom && relayInfo.ChannelOtherSettings.AdvancedCustom != nil {
+			task.PrivateData.AdvancedCustomVideoTask = relayInfo.ChannelOtherSettings.AdvancedCustom.VideoTask
+		}
 		task.PrivateData.BillingSource = relayInfo.BillingSource
 		task.PrivateData.SubscriptionId = relayInfo.SubscriptionId
 		task.PrivateData.TokenId = relayInfo.TokenId
