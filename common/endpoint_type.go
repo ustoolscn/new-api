@@ -1,6 +1,10 @@
 package common
 
-import "github.com/QuantumNous/new-api/constant"
+import (
+	"strings"
+
+	"github.com/QuantumNous/new-api/constant"
+)
 
 // GetEndpointTypesByChannelType 获取渠道最优先端点类型（所有的渠道都支持 OpenAI 端点）
 func GetEndpointTypesByChannelType(channelType int, modelName string) []constant.EndpointType {
@@ -47,6 +51,9 @@ func GetEndpointTypesByChannelType(channelType int, modelName string) []constant
 	}
 	if IsVideoGenerationModel(modelName) && !containsEndpointType(endpointTypes, constant.EndpointTypeOpenAIVideo) {
 		endpointTypes = append([]constant.EndpointType{constant.EndpointTypeOpenAIVideo}, endpointTypes...)
+	}
+	if strings.HasSuffix(modelName, constant.OpenAIResponsesCompactModelSuffix) && !containsEndpointType(endpointTypes, constant.EndpointTypeOpenAIResponseCompact) {
+		endpointTypes = append([]constant.EndpointType{constant.EndpointTypeOpenAIResponseCompact}, endpointTypes...)
 	}
 	return endpointTypes
 }

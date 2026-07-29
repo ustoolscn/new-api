@@ -2,6 +2,8 @@ package constant
 
 type EndpointType string
 
+const OpenAIResponsesCompactModelSuffix = "-openai-compact"
+
 const (
 	EndpointTypeOpenAI                EndpointType = "openai"
 	EndpointTypeOpenAIResponse        EndpointType = "openai-response"

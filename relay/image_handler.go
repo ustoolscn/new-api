@@ -103,6 +103,11 @@ func ImageHelper(c *gin.Context, info *relaycommon.RelayInfo) (newAPIError *type
 	if err != nil {
 		return types.NewError(fmt.Errorf("failed to copy request to ImageRequest: %w", err), types.ErrorCodeInvalidRequest, types.ErrOptionWithSkipRetry())
 	}
+	// Extra and Files are intentionally excluded from ImageRequest JSON output,
+	// so the JSON-based DeepCopy cannot preserve them. Adaptors still need the
+	// parsed vendor fields and multipart file metadata for request conversion.
+	request.Extra = imageReq.Extra
+	request.Files = imageReq.Files
 
 	err = helper.ModelMappedHelper(c, info, request)
 	if err != nil {

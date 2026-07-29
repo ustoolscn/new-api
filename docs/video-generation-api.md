@@ -50,17 +50,17 @@ POST /v1/video/generations
 | 参数 | 类型 | 必填 | 说明 |
 |---|---|---:|---|
 | `model` | string | 是 | 视频模型名称。必须是当前站点已配置、令牌分组可用并支持视频端点的模型，例如 `sora-2`、`sora-2-pro`、Veo、可灵、豆包、海螺、Vidu 或通义万相相关模型。实际列表以站点 `/v1/models` 和管理员渠道配置为准。 |
-| `prompt` | string | 是 | 视频生成提示词，不能为空。描述主体、动作、场景、镜头、光线和风格。 |
+| `prompt` | string | 通常是 | 视频生成提示词。xAI 单图生视频允许省略；文生视频、参考图生视频、视频编辑和视频扩展仍需提供。其他渠道按各自校验规则处理。 |
 | `seconds` | number 或 numeric string | 否 | 输出视频时长，单位秒。必须是 `1`–`3600` 的整数；具体模型通常只支持其中少数固定时长。优先使用此字段。 |
 | `duration` | number 或 numeric string | 否 | `seconds` 的兼容别名。若同时提供，以 `seconds` 为准。 |
 | `size` | string | 否 | 输出尺寸或清晰度，例如 `1280x720`、`720x1280`、`720p`、`1080p`。实际允许值由模型决定。 |
 | `resolution` | string | 否 | `size` 的兼容别名。若同时提供，以 `size` 为准。 |
 | `width` | integer | 否 | 正整数。与 `height` 同时提供且未提供 `size`/`resolution` 时，自动组合成 `{width}x{height}`。 |
 | `height` | integer | 否 | 正整数。与 `width` 同时使用。 |
-| `image` | string | 否 | 单张参考图。通常为 HTTP/HTTPS URL，也可按上游模型能力传 data URL。提供后任务会按图生视频处理。 |
+| `image` | string 或 object | 否 | 单张参考图。通常为 HTTP/HTTPS URL，也可按上游模型能力传 data URL。xAI 还支持 `{ "url": "..." }` 或 `{ "file_id": "..." }`。 |
 | `images` | string、array | 否 | 一张或多张参考图。JSON 中可传 URL 字符串、URL 数组，或包含 `url`/`image_url.url` 与可选 `role` 的对象/对象数组。最终支持数量和角色取决于上游模型。 |
 | `input_reference` | string | 否 | `image` 的兼容别名。 |
-| `input_video` | string | 否 | 单个输入视频的 HTTP/HTTPS URL，用于视频续写、参考或视频到视频。不能传 data URL、本地路径或 multipart 视频文件。 |
+| `input_video` | string 或 object | 否 | 单个输入视频的 HTTP/HTTPS URL，用于视频续写、参考或视频到视频。xAI 还支持 `{ "url": "..." }` 或 `{ "file_id": "..." }`。不能传本地路径或 multipart 视频文件。 |
 | `input_videos` | string 或 string[] | 否 | 一个或多个输入视频 URL，最多 4 个。实际提供商可能只支持 1 个或完全不支持。不要与内容不同的 `input_video` 同时传。 |
 | `input_video_seconds` | number 或 numeric string | 否 | 输入视频计费时长提示，范围 `(0, 3600]`。这是兼容字段，服务端计费不能信任该值；配置了输入视频按秒计费时，服务端会从媒体元数据检测实际时长。 |
 | `input_video_duration` | number 或 numeric string | 否 | `input_video_seconds` 的兼容别名。 |
@@ -72,7 +72,7 @@ POST /v1/video/generations
 | `seed` | integer | 否 | 随机种子。相同种子不保证跨提供商得到完全相同结果。 |
 | `negative_prompt` | string | 否 | 反向提示词，描述不希望出现的内容。仅支持该能力的提供商生效。 |
 | `generate_audio` | boolean | 否 | 是否同时生成音频。显式 `false` 会被保留并发送；仅支持该能力的模型生效。 |
-| `mode` | string | 否 | 提供商模式，例如部分可灵模型使用 `std` 等模式；具体取值由模型决定。 |
+| `mode` | string | 否 | 提供商模式，例如部分可灵模型使用 `std`；xAI 输入视频设置 `extension` 时调用视频扩展，否则调用视频编辑。 |
 | `metadata` | object | 否 | 提供商特有扩展参数。应传 JSON 对象，不要把通用字段重复放入其中。顶层标准字段优先于 metadata 中同名字段。 |
 
 注意：`model` 在统一校验阶段由渠道选择逻辑使用，因此实际调用必须提供。个别旧渠道虽然能推导默认模型，也不建议省略。
@@ -542,7 +542,25 @@ curl --request POST \
 
 计费识别分辨率时只把精确的 `1080p` 和 `4k` 视为特殊档位。因此若要使用 4K 计费档，应传 `size: "4k"`，不要传 `3840x2160`，因为后者会被归一化为 `2160p`，当前价格表不会把 `2160p` 识别为 `4k`。
 
-## 10. 高级自定义渠道的视频任务配置
+## 10. xAI Grok Imagine Video 参数说明
+
+xAI 渠道内置 `grok-imagine-video` 和 `grok-imagine-video-1.5`。适配器会向 `POST /v1/videos/generations` 提交普通生成，向 `POST /v1/videos/edits` 提交视频编辑，向 `POST /v1/videos/extensions` 提交视频扩展，并通过 `GET /v1/videos/{request_id}` 轮询。
+
+主要转换规则：
+
+| new-api 参数 | xAI 参数或行为 |
+|---|---|
+| `seconds` / `duration` | 转换为整数 `duration`。普通生成范围 `1`–`15`，默认 `8`；扩展范围 `2`–`10`，默认 `6`。 |
+| `size: "1280x720"` | 转换为 `resolution: "720p"` 和 `aspect_ratio: "16:9"`。也可直接传 `resolution`、`aspect_ratio`。 |
+| 单个 `image` 或单个 `images` | 转换为 xAI `image`，执行图生视频。图片可使用 URL、Base64 data URL 或 `file_id`。 |
+| `reference_images` 或 2–7 个 `images` | 转换为 xAI `reference_images`。`grok-imagine-video-1.5` 当前不支持参考图模式。 |
+| `video` / `input_video` | 默认转换为 xAI `video` 并调用视频编辑接口。仅支持一个输入视频。 |
+| `mode: "extension"` | 有输入视频时调用视频扩展接口。`extend`、`video_extension` 也视为扩展模式。 |
+| `output`、`storage_options`、`user` | 作为 xAI 官方字段直接转发；也可放在 `metadata` 中。 |
+
+xAI 视频请求必须使用 `application/json`。适配器不会转发 `fps`、`seed`、`negative_prompt`、`generate_audio` 等 xAI 官方视频接口未定义的字段。完整对话、生图和生视频说明见 `docs/xai-channel.md`。
+
+## 11. 高级自定义渠道的视频任务配置
 
 渠道类型 `58`（Advanced Custom）可以通过 `other_settings.advanced_custom.video_task` 配置异步视频任务，不再返回 `invalid api platform: 58`。配置包含三部分：
 
@@ -614,7 +632,7 @@ curl --request POST \
 
 `{request}` 会展开成规范化后的完整请求对象，并将 `metadata` 中的扩展字段同时合并到顶层；标准字段会覆盖 metadata 中的同名字段。
 
-### 10.1 模板变量
+### 11.1 模板变量
 
 提交接口可使用：
 
@@ -635,7 +653,7 @@ curl --request POST \
 
 当 JSON 字段值完全等于一个模板变量时，数组、对象、数字、布尔值会保留原始 JSON 类型；可选值不存在或为空时，该字段会从请求体中省略。模板变量嵌入普通字符串时会转换为字符串，例如 `"Bearer {api_key}"` 或 `"/tasks/{task_id}"`。
 
-### 10.2 鉴权配置
+### 11.2 鉴权配置
 
 `auth.type` 支持：
 
@@ -648,7 +666,7 @@ curl --request POST \
 
 `headers` 可补充任意固定或模板化请求头。`Content-Type` 在存在 JSON 请求体时默认为 `application/json`。
 
-### 10.3 响应路径与状态映射
+### 11.3 响应路径与状态映射
 
 响应路径使用 GJSON 点路径，例如：
 
@@ -674,7 +692,7 @@ FAILURE
 
 提交上游可返回任意 `2xx` 状态码，包括常见的 `200`、`201` 和 `202`。高级自定义视频任务当前只接受 URL 形式的图片和视频输入，不转发 multipart 文件；文件应先上传到对象存储或 CDN。
 
-## 11. 推荐调用流程
+## 12. 推荐调用流程
 
 1. 调用 `POST /v1/video/generations`，保存响应中的 `id`。
 2. 每 3–10 秒调用 `GET /v1/video/generations/{id}`。

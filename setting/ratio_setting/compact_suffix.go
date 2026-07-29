@@ -1,8 +1,12 @@
 package ratio_setting
 
-import "strings"
+import (
+	"strings"
 
-const CompactModelSuffix = "-openai-compact"
+	"github.com/QuantumNous/new-api/constant"
+)
+
+const CompactModelSuffix = constant.OpenAIResponsesCompactModelSuffix
 const CompactWildcardModelKey = "*" + CompactModelSuffix
 
 func WithCompactModelSuffix(modelName string) string {

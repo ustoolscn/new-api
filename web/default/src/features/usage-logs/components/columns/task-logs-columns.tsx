@@ -287,6 +287,28 @@ export function useTaskLogsColumns(isAdmin: boolean): ColumnDef<TaskLog>[] {
       },
       size: 200,
       maxSize: 220,
+    },
+    {
+      id: 'download_link',
+      header: t('Download Link'),
+      cell: ({ row }) => {
+        const log = row.original
+        if (log.status !== TASK_STATUS.SUCCESS || !log.result_url) {
+          return <span className='text-muted-foreground/60 text-xs'>-</span>
+        }
+
+        return (
+          <a
+            href={`/v1/video/generations/${log.task_id}/content`}
+            download
+            className='text-foreground text-xs hover:underline'
+            onClick={(event) => event.stopPropagation()}
+          >
+            {t('Download')}
+          </a>
+        )
+      },
+      size: 110,
     }
   )
 

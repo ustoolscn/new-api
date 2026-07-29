@@ -395,6 +395,10 @@ function TaskLogsCard<TData>({
           cell={cells.get('fail_reason')}
           className='col-span-2 bg-transparent px-0 py-0'
         />
+        <SummaryField
+          label={t('Download Link')}
+          cell={cells.get('download_link')}
+        />
       </div>
     </div>
   )
