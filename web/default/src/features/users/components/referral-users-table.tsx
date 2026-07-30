@@ -1,6 +1,7 @@
 import { keepPreviousData, useQuery } from '@tanstack/react-query'
 import type {
   ColumnDef,
+  ColumnFiltersState,
   OnChangeFn,
   PaginationState,
 } from '@tanstack/react-table'
@@ -19,6 +20,7 @@ import { UserReferralDrawer } from './user-referral-drawer'
 export function ReferralUsersTable() {
   const { t } = useTranslation()
   const [globalFilter, setGlobalFilter] = useState('')
+  const [columnFilters, setColumnFilters] = useState<ColumnFiltersState>([])
   const [pagination, setPagination] = useState<PaginationState>({
     pageIndex: 0,
     pageSize: 20,
@@ -158,9 +160,11 @@ export function ReferralUsersTable() {
   const { table } = useDataTable({
     data: referralsQuery.data?.items ?? [],
     columns,
+    columnFilters,
     globalFilter,
     pagination,
     onPaginationChange: setPagination,
+    onColumnFiltersChange: setColumnFilters,
     onGlobalFilterChange: handleGlobalFilterChange,
     manualPagination: true,
     manualFiltering: true,
