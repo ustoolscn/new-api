@@ -109,8 +109,8 @@ export function UserReferralDrawer(props: UserReferralDrawerProps) {
           </SheetDescription>
         </SheetHeader>
 
-        <div className={sideDrawerFormClassName('gap-4')}>
-          <div className='grid gap-3 sm:grid-cols-2 xl:grid-cols-4'>
+        <div className={sideDrawerFormClassName('gap-4 lg:overflow-hidden')}>
+          <div className='grid shrink-0 gap-3 sm:grid-cols-2 xl:grid-cols-4'>
             {stats.map((stat) => (
               <Card key={stat.label} size='sm' data-card-hover='false'>
                 <CardContent className='flex items-center justify-between gap-3'>
@@ -150,16 +150,20 @@ export function UserReferralDrawer(props: UserReferralDrawerProps) {
             </Card>
           ) : (
             <>
-              <ReferralRewardsCard
-                overview={overview}
-                loading={overviewQuery.isLoading}
-                readonly
-              />
+              <div className='shrink-0'>
+                <ReferralRewardsCard
+                  overview={overview}
+                  loading={overviewQuery.isLoading}
+                  readonly
+                />
+              </div>
               <InvitedUsersCard
                 data={overview?.invited_users}
                 loading={overviewQuery.isLoading || overviewQuery.isFetching}
                 page={page}
                 onPageChange={setPage}
+                className='lg:min-h-0 lg:flex-1'
+                contentClassName='lg:min-h-0 lg:flex-1 lg:overflow-auto'
               />
             </>
           )}

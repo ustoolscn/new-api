@@ -102,7 +102,7 @@ export function ReferralUsersTable() {
         accessorKey: 'invite_reward_total_quota',
         header: t('Registration rewards'),
         cell: ({ row }) => (
-          <div className='min-w-28 text-right'>
+          <div className='min-w-28 text-left'>
             <div className='font-medium tabular-nums'>
               {formatQuota(row.original.invite_reward_total_quota)}
             </div>
@@ -117,7 +117,7 @@ export function ReferralUsersTable() {
         accessorKey: 'total_quota',
         header: t('Total commission'),
         cell: ({ row }) => (
-          <div className='min-w-28 text-right'>
+          <div className='min-w-28 text-left'>
             <div className='font-medium tabular-nums'>
               {formatQuota(row.original.total_quota)}
             </div>

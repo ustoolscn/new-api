@@ -43,6 +43,7 @@ import {
   TableRow,
 } from '@/components/ui/table'
 import { formatQuota } from '@/lib/format'
+import { cn } from '@/lib/utils'
 
 import type { ReferralInvitedUsersPage } from '../types'
 
@@ -51,6 +52,8 @@ type InvitedUsersCardProps = {
   loading: boolean
   page: number
   onPageChange: (page: number) => void
+  className?: string
+  contentClassName?: string
 }
 
 function formatTimestamp(timestamp: number, emptyText: string): string {
@@ -66,8 +69,8 @@ export function InvitedUsersCard(props: InvitedUsersCardProps) {
   const pageCount = Math.max(1, Math.ceil(total / pageSize))
 
   return (
-    <Card data-card-hover='false'>
-      <CardHeader>
+    <Card className={props.className} data-card-hover='false'>
+      <CardHeader className='shrink-0'>
         <CardTitle>{t('Invited users')}</CardTitle>
         <CardDescription>
           {t(
@@ -75,7 +78,7 @@ export function InvitedUsersCard(props: InvitedUsersCardProps) {
           )}
         </CardDescription>
       </CardHeader>
-      <CardContent className='px-0'>
+      <CardContent className={cn('px-0', props.contentClassName)}>
         <Table>
           <TableHeader>
             <TableRow>
@@ -169,7 +172,7 @@ export function InvitedUsersCard(props: InvitedUsersCardProps) {
         ) : null}
       </CardContent>
       {total > pageSize ? (
-        <CardFooter className='justify-between border-t pt-4'>
+        <CardFooter className='shrink-0 justify-between border-t pt-4'>
           <p className='text-muted-foreground text-sm'>
             {t('Page {{page}} of {{pageCount}}', {
               page: props.page,
