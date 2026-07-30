@@ -61,6 +61,41 @@ func setupModelListControllerTestDB(t *testing.T) *gorm.DB {
 	return db
 }
 
+func TestEnrichModelsPreservesExplicitEndpointMetadata(t *testing.T) {
+	db := setupModelListControllerTestDB(t)
+	t.Cleanup(model.InvalidatePricingCache)
+
+	require.NoError(t, db.Create(&model.Channel{
+		Id:     801,
+		Type:   constant.ChannelTypeXai,
+		Name:   "xai-channel",
+		Status: common.ChannelStatusEnabled,
+		Group:  "default",
+		Models: "grok-4.5,grok-imagine-video",
+	}).Error)
+	require.NoError(t, db.Create(&[]model.Ability{
+		{Group: "default", Model: "grok-4.5", ChannelId: 801, Enabled: true},
+		{Group: "default", Model: "grok-imagine-video", ChannelId: 801, Enabled: true},
+	}).Error)
+
+	model.InitChannelCache()
+	model.InvalidatePricingCache()
+	model.GetPricing()
+
+	models := []*model.Model{
+		{ModelName: "grok-4.5", NameRule: model.NameRuleExact},
+		{
+			ModelName: "grok-imagine-video",
+			NameRule:  model.NameRuleExact,
+			Endpoints: `{"openai-video":{"path":"/v1/video/generations","method":"POST"}}`,
+		},
+	}
+	enrichModels(models)
+
+	assert.Empty(t, models[0].Endpoints)
+	assert.JSONEq(t, `{"openai-video":{"path":"/v1/video/generations","method":"POST"}}`, models[1].Endpoints)
+}
+
 func initModelListColumnNames(t *testing.T) {
 	t.Helper()
 
@@ -334,10 +369,10 @@ func TestListModelsIncludesVideoSecondsBillingModel(t *testing.T) {
 	assert.Equal(t, "video_seconds", pricing.BillingMode)
 	require.NotNil(t, pricing.VideoPrice)
 	assert.InDelta(t, 0.02, pricing.VideoPrice.Prices["720p"], 0.0001)
-	assert.Contains(t, pricing.SupportedEndpointTypes, constant.EndpointTypeOpenAIVideo)
+	assert.Empty(t, pricing.SupportedEndpointTypes)
 }
 
-func TestListModelsUsesAdvancedCustomEndpointTypesFromPricingCache(t *testing.T) {
+func TestListModelsUsesOnlyModelMetadataEndpointTypes(t *testing.T) {
 	withSelfUseModeEnabled(t)
 	db := setupModelListControllerTestDB(t)
 
@@ -388,6 +423,12 @@ func TestListModelsUsesAdvancedCustomEndpointTypesFromPricingCache(t *testing.T)
 		ChannelId: 701,
 		Enabled:   true,
 	}).Error)
+	require.NoError(t, db.Create(&model.Model{
+		ModelName: "gemini-3.5-flash",
+		Endpoints: `{"openai-video":{"path":"/v1/video/generations","method":"POST"}}`,
+		Status:    1,
+		NameRule:  model.NameRuleExact,
+	}).Error)
 
 	model.InitChannelCache()
 	model.GetPricing()
@@ -403,8 +444,7 @@ func TestListModelsUsesAdvancedCustomEndpointTypesFromPricingCache(t *testing.T)
 	require.Len(t, payload.Data, 1)
 	require.Equal(t, "gemini-3.5-flash", payload.Data[0].Id)
 	require.Equal(t, []constant.EndpointType{
-		constant.EndpointTypeOpenAI,
-		constant.EndpointTypeOpenAIResponse,
+		constant.EndpointTypeOpenAIVideo,
 	}, payload.Data[0].SupportedEndpointTypes)
 }
 

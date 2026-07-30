@@ -16,13 +16,14 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 
 For commercial licensing, please contact support@quantumnous.com
 */
-import { BarChart3 } from 'lucide-react'
+import { BarChart3, UsersRound } from 'lucide-react'
 import { useState } from 'react'
 import { useTranslation } from 'react-i18next'
 
 import { SectionPageLayout } from '@/components/layout'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 
+import { ReferralUsersTable } from './components/referral-users-table'
 import { RegisteredDevicesTable } from './components/registered-devices-table'
 import { RegistrationStatistics } from './components/registration-statistics'
 import { UsersDeleteDialog } from './components/users-delete-dialog'
@@ -35,7 +36,7 @@ function UsersContent() {
   const { t } = useTranslation()
   const { open, setOpen, currentRow } = useUsers()
   const [activeTab, setActiveTab] = useState<
-    'users' | 'devices' | 'statistics'
+    'users' | 'referrals' | 'devices' | 'statistics'
   >('users')
 
   return (
@@ -49,12 +50,18 @@ function UsersContent() {
           <Tabs
             value={activeTab}
             onValueChange={(value) =>
-              setActiveTab(value as 'users' | 'devices' | 'statistics')
+              setActiveTab(
+                value as 'users' | 'referrals' | 'devices' | 'statistics'
+              )
             }
             className='h-full min-h-0'
           >
             <TabsList>
               <TabsTrigger value='users'>{t('Users')}</TabsTrigger>
+              <TabsTrigger value='referrals'>
+                <UsersRound data-icon='inline-start' />
+                {t('Referrals')}
+              </TabsTrigger>
               <TabsTrigger value='devices'>
                 {t('Registered devices')}
               </TabsTrigger>
@@ -65,6 +72,9 @@ function UsersContent() {
             </TabsList>
             <TabsContent value='users' className='min-h-0 flex-1'>
               <UsersTable />
+            </TabsContent>
+            <TabsContent value='referrals' className='min-h-0 flex-1'>
+              <ReferralUsersTable />
             </TabsContent>
             <TabsContent value='devices' className='min-h-0 flex-1'>
               <RegisteredDevicesTable />

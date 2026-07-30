@@ -1,13 +1,11 @@
 package controller
 
 import (
-	"encoding/json"
 	"sort"
 	"strconv"
 	"strings"
 
 	"github.com/QuantumNous/new-api/common"
-	"github.com/QuantumNous/new-api/constant"
 	"github.com/QuantumNous/new-api/model"
 
 	"github.com/gin-gonic/gin"
@@ -194,17 +192,11 @@ func enrichModels(models []*model.Model) {
 	// 2) 批量查询精确模型的绑定渠道
 	channelsByModel, _ := model.GetBoundChannelsByModelsMap(exactNames)
 
-	// 3) 精确模型：端点从缓存、渠道批量映射、分组/计费类型从缓存
+	// 3) 精确模型：保留模型元信息中显式配置的端点，并填充其他附加信息
 	for name, indices := range exactIdx {
 		chs := channelsByModel[name]
 		for _, idx := range indices {
 			mm := models[idx]
-			if mm.Endpoints == "" {
-				eps := model.GetModelSupportEndpointTypes(mm.ModelName)
-				if b, err := json.Marshal(eps); err == nil {
-					mm.Endpoints = string(b)
-				}
-			}
 			mm.BoundChannels = chs
 			mm.EnableGroups = model.GetModelEnableGroups(mm.ModelName)
 			mm.QuotaTypes = model.GetModelQuotaTypes(mm.ModelName)
@@ -218,9 +210,8 @@ func enrichModels(models []*model.Model) {
 	// 4) 一次性读取定价缓存，内存匹配所有规则模型
 	pricings := model.GetPricing()
 
-	// 为全部规则模型收集匹配名集合、端点并集、分组并集、配额集合
+	// 为全部规则模型收集匹配名集合、分组并集、配额集合
 	matchedNamesByIdx := make(map[int][]string)
-	endpointSetByIdx := make(map[int]map[constant.EndpointType]struct{})
 	groupSetByIdx := make(map[int]map[string]struct{})
 	quotaSetByIdx := make(map[int]map[int]struct{})
 
@@ -240,15 +231,6 @@ func enrichModels(models []*model.Model) {
 				continue
 			}
 			matchedNamesByIdx[idx] = append(matchedNamesByIdx[idx], p.ModelName)
-
-			es := endpointSetByIdx[idx]
-			if es == nil {
-				es = make(map[constant.EndpointType]struct{})
-				endpointSetByIdx[idx] = es
-			}
-			for _, et := range p.SupportedEndpointTypes {
-				es[et] = struct{}{}
-			}
 
 			gs := groupSetByIdx[idx]
 			if gs == nil {
@@ -284,17 +266,6 @@ func enrichModels(models []*model.Model) {
 	// 6) 回填每个规则模型的并集信息
 	for _, idx := range ruleIndices {
 		mm := models[idx]
-
-		// 端点并集 -> 序列化
-		if es, ok := endpointSetByIdx[idx]; ok && mm.Endpoints == "" {
-			eps := make([]constant.EndpointType, 0, len(es))
-			for et := range es {
-				eps = append(eps, et)
-			}
-			if b, err := json.Marshal(eps); err == nil {
-				mm.Endpoints = string(b)
-			}
-		}
 
 		// 分组并集
 		if gs, ok := groupSetByIdx[idx]; ok {

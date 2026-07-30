@@ -16,6 +16,7 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 
 For commercial licensing, please contact support@quantumnous.com
 */
+import type { ReferralOverview } from '@/features/referrals/types'
 import type { PermissionCatalog } from '@/lib/admin-permissions'
 import { api } from '@/lib/api'
 
@@ -32,6 +33,8 @@ import type {
   GetRegisteredDevicesResponse,
   GetUserRegistrationStatisticsParams,
   UserRegistrationStatisticsResult,
+  GetReferralInvitersParams,
+  GetReferralInvitersResponse,
 } from './types'
 
 // ============================================================================
@@ -111,6 +114,30 @@ export async function getUserRegistrationStatistics(
   params: GetUserRegistrationStatisticsParams
 ): Promise<ApiResponse<UserRegistrationStatisticsResult>> {
   const res = await api.get('/api/user/registration-statistics', { params })
+  return res.data
+}
+
+export async function getReferralInviters(
+  params: GetReferralInvitersParams = {}
+): Promise<GetReferralInvitersResponse> {
+  const res = await api.get('/api/user/referrals/admin', {
+    params: {
+      p: params.p ?? 1,
+      page_size: params.page_size ?? 20,
+      keyword: params.keyword?.trim() || undefined,
+    },
+  })
+  return res.data
+}
+
+export async function getAdminReferralOverview(
+  userId: number,
+  page: number,
+  pageSize: number
+): Promise<ApiResponse<ReferralOverview>> {
+  const res = await api.get(`/api/user/referrals/admin/${userId}`, {
+    params: { p: page, page_size: pageSize },
+  })
   return res.data
 }
 

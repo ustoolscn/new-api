@@ -597,6 +597,33 @@ func GetReferralOverview(c *gin.Context) {
 	})
 }
 
+func AdminGetReferralInviterSummaries(c *gin.Context) {
+	pageInfo := common.GetPageQuery(c)
+	summaries, total, err := model.GetReferralInviterSummaries(pageInfo, c.Query("keyword"))
+	if err != nil {
+		common.ApiError(c, err)
+		return
+	}
+	pageInfo.SetTotal(int(total))
+	pageInfo.SetItems(summaries)
+	common.ApiSuccess(c, pageInfo)
+}
+
+func AdminGetReferralOverview(c *gin.Context) {
+	id, err := strconv.Atoi(c.Param("id"))
+	if err != nil || id <= 0 {
+		common.ApiErrorI18n(c, i18n.MsgInvalidId)
+		return
+	}
+	pageInfo := common.GetPageQuery(c)
+	overview, err := model.GetReferralOverview(id, pageInfo)
+	if err != nil {
+		common.ApiError(c, err)
+		return
+	}
+	common.ApiSuccess(c, overview)
+}
+
 func ClaimReferralCommissions(c *gin.Context) {
 	if !requirePaymentCompliance(c) {
 		return

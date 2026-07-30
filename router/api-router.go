@@ -138,6 +138,8 @@ func SetApiRouter(router *gin.Engine) {
 			{
 				adminRoute.GET("/device", controller.GetUserDevices)
 				adminRoute.GET("/registration-statistics", controller.GetUserRegistrationStatistics)
+				adminRoute.GET("/referrals/admin", controller.AdminGetReferralInviterSummaries)
+				adminRoute.GET("/referrals/admin/:id", controller.AdminGetReferralOverview)
 				adminRoute.POST("/device/:id/ban", controller.BanUserDevice)
 				adminRoute.POST("/device/:id/unban", controller.UnbanUserDevice)
 				adminRoute.GET("/", controller.GetAllUsers)

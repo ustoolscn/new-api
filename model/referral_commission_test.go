@@ -1,6 +1,7 @@
 package model
 
 import (
+	"strconv"
 	"testing"
 
 	"github.com/QuantumNous/new-api/common"
@@ -151,4 +152,79 @@ func TestReferralOverviewUsesSuccessfulTopUpsWithoutCommissionRows(t *testing.T)
 	assert.Zero(t, items[0].CommissionQuotaTotal)
 	assert.Zero(t, items[0].LastCommissionAt)
 	assert.Zero(t, overview.TotalQuota)
+}
+
+func TestGetReferralInviterSummariesAggregatesAndSearches(t *testing.T) {
+	truncateTables(t)
+
+	originalQuotaForInviter := common.QuotaForInviter
+	t.Cleanup(func() {
+		common.QuotaForInviter = originalQuotaForInviter
+	})
+	common.QuotaForInviter = 800
+
+	firstInviter := &User{
+		Id:              721,
+		Username:        "summary-first",
+		DisplayName:     "First Inviter",
+		Status:          common.UserStatusEnabled,
+		AffCode:         "summary-first-code",
+		AffCount:        2,
+		AffQuota:        500,
+		AffHistoryQuota: 1600,
+	}
+	secondInviter := &User{
+		Id:              722,
+		Username:        "summary-second",
+		DisplayName:     "Second Inviter",
+		Status:          common.UserStatusEnabled,
+		AffCode:         "summary-second-code",
+		AffHistoryQuota: 400,
+	}
+	invitees := []User{
+		{Id: 723, Username: "summary-invitee-one", Status: common.UserStatusEnabled, AffCode: "summary-invitee-one-code", InviterId: firstInviter.Id},
+		{Id: 724, Username: "summary-invitee-two", Status: common.UserStatusEnabled, AffCode: "summary-invitee-two-code", InviterId: firstInviter.Id},
+	}
+	unrelated := &User{Id: 725, Username: "summary-unrelated", Status: common.UserStatusEnabled, AffCode: "summary-unrelated-code"}
+	require.NoError(t, DB.Create(firstInviter).Error)
+	require.NoError(t, DB.Create(secondInviter).Error)
+	require.NoError(t, DB.Create(&invitees).Error)
+	require.NoError(t, DB.Create(unrelated).Error)
+
+	commissions := []ReferralCommission{
+		{InviterId: firstInviter.Id, InviteeId: invitees[0].Id, TopUpId: 9101, CommissionQuota: 120, Status: ReferralCommissionStatusPending},
+		{InviterId: firstInviter.Id, InviteeId: invitees[1].Id, TopUpId: 9102, CommissionQuota: 80, Status: ReferralCommissionStatusClaimed},
+		{InviterId: secondInviter.Id, InviteeId: invitees[0].Id, TopUpId: 9103, CommissionQuota: 40, Status: ReferralCommissionStatusPending},
+	}
+	require.NoError(t, DB.Create(&commissions).Error)
+
+	summaries, total, err := GetReferralInviterSummaries(&common.PageInfo{Page: 1, PageSize: 20}, "summary")
+	require.NoError(t, err)
+	assert.Equal(t, int64(2), total)
+	require.Len(t, summaries, 2)
+
+	byId := make(map[int]ReferralInviterSummary, len(summaries))
+	for _, summary := range summaries {
+		byId[summary.Id] = summary
+	}
+	first := byId[firstInviter.Id]
+	assert.Equal(t, int64(2), first.InviteCount)
+	assert.Equal(t, 2, first.RewardedInviteCount)
+	assert.Equal(t, 800, first.InviteRewardQuota)
+	assert.Equal(t, 500, first.InviteRewardPendingQuota)
+	assert.Equal(t, 1600, first.InviteRewardTotalQuota)
+	assert.Equal(t, int64(120), first.PendingQuota)
+	assert.Equal(t, int64(80), first.ClaimedQuota)
+	assert.Equal(t, int64(200), first.TotalQuota)
+
+	second := byId[secondInviter.Id]
+	assert.Zero(t, second.InviteCount)
+	assert.Equal(t, 400, second.InviteRewardTotalQuota)
+	assert.Equal(t, int64(40), second.PendingQuota)
+
+	filtered, filteredTotal, err := GetReferralInviterSummaries(&common.PageInfo{Page: 1, PageSize: 20}, strconv.Itoa(firstInviter.Id))
+	require.NoError(t, err)
+	assert.Equal(t, int64(1), filteredTotal)
+	require.Len(t, filtered, 1)
+	assert.Equal(t, firstInviter.Id, filtered[0].Id)
 }

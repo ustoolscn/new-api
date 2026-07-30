@@ -210,10 +210,29 @@ export function ModelMutateDrawer({
 
   const handleFillEndpointTemplate = (templateKey: string) => {
     const template = ENDPOINT_TEMPLATES[templateKey]
-    if (template) {
-      const templateJson = JSON.stringify({ [templateKey]: template }, null, 2)
-      form.setValue('endpoints', templateJson)
+    if (!template) return
+
+    const currentValue = form.getValues('endpoints').trim()
+    let currentEndpoints: Record<string, unknown> = {}
+    if (currentValue) {
+      try {
+        const parsed = JSON.parse(currentValue)
+        if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
+          toast.error(t('Invalid JSON format'))
+          return
+        }
+        currentEndpoints = parsed as Record<string, unknown>
+      } catch {
+        toast.error(t('Invalid JSON format'))
+        return
+      }
     }
+
+    form.setValue(
+      'endpoints',
+      JSON.stringify({ ...currentEndpoints, [templateKey]: template }, null, 2),
+      { shouldDirty: true, shouldValidate: true }
+    )
   }
 
   return (

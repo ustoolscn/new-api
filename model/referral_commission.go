@@ -4,6 +4,8 @@ import (
 	"errors"
 	"fmt"
 	"math"
+	"strconv"
+	"strings"
 
 	"github.com/QuantumNous/new-api/common"
 	"github.com/QuantumNous/new-api/logger"
@@ -54,6 +56,20 @@ type ReferralOverview struct {
 	InviteRewardPendingQuota int              `json:"invite_reward_pending_quota"`
 	InviteRewardTotalQuota   int              `json:"invite_reward_total_quota"`
 	InvitedUsers             *common.PageInfo `json:"invited_users"`
+}
+
+type ReferralInviterSummary struct {
+	Id                       int    `json:"id"`
+	Username                 string `json:"username"`
+	DisplayName              string `json:"display_name"`
+	InviteCount              int64  `json:"invite_count"`
+	RewardedInviteCount      int    `json:"rewarded_invite_count"`
+	InviteRewardQuota        int    `json:"invite_reward_quota"`
+	InviteRewardPendingQuota int    `json:"invite_reward_pending_quota"`
+	InviteRewardTotalQuota   int    `json:"invite_reward_total_quota"`
+	PendingQuota             int64  `json:"pending_quota"`
+	ClaimedQuota             int64  `json:"claimed_quota"`
+	TotalQuota               int64  `json:"total_quota"`
 }
 
 func createReferralCommissionTx(tx *gorm.DB, topUp *TopUp, rechargeQuota int) error {
@@ -250,6 +266,109 @@ func GetReferralOverview(inviterId int, pageInfo *common.PageInfo) (*ReferralOve
 		InviteRewardTotalQuota:   inviter.AffHistoryQuota,
 		InvitedUsers:             pageInfo,
 	}, nil
+}
+
+func GetReferralInviterSummaries(pageInfo *common.PageInfo, keyword string) ([]ReferralInviterSummary, int64, error) {
+	if pageInfo == nil {
+		return nil, 0, errors.New("invalid referral query")
+	}
+	if pageInfo.Page < 1 {
+		pageInfo.Page = 1
+	}
+	if pageInfo.PageSize < 1 {
+		pageInfo.PageSize = common.ItemsPerPage
+	} else if pageInfo.PageSize > 100 {
+		pageInfo.PageSize = 100
+	}
+
+	inviterIds := DB.Model(&User{}).Select("inviter_id").Where("inviter_id > 0")
+	commissionInviterIds := DB.Model(&ReferralCommission{}).Select("inviter_id").Where("inviter_id > 0")
+	query := DB.Model(&User{}).Where(
+		"(aff_count > ? OR aff_quota > ? OR aff_history > ? OR id IN (?) OR id IN (?))",
+		0,
+		0,
+		0,
+		inviterIds,
+		commissionInviterIds,
+	)
+
+	keyword = strings.TrimSpace(keyword)
+	if keyword != "" {
+		pattern := "%" + keyword + "%"
+		if userId, err := strconv.Atoi(keyword); err == nil && userId > 0 {
+			query = query.Where("(username LIKE ? OR display_name LIKE ? OR id = ?)", pattern, pattern, userId)
+		} else {
+			query = query.Where("(username LIKE ? OR display_name LIKE ?)", pattern, pattern)
+		}
+	}
+
+	var total int64
+	if err := query.Count(&total).Error; err != nil {
+		return nil, 0, err
+	}
+
+	summaries := make([]ReferralInviterSummary, 0)
+	if err := query.
+		Select("id, username, display_name, aff_count AS rewarded_invite_count, aff_quota AS invite_reward_pending_quota, aff_history AS invite_reward_total_quota").
+		Order("id DESC").
+		Limit(pageInfo.GetPageSize()).
+		Offset(pageInfo.GetStartIdx()).
+		Scan(&summaries).Error; err != nil {
+		return nil, 0, err
+	}
+	if len(summaries) == 0 {
+		return summaries, total, nil
+	}
+
+	inviterIdList := make([]int, 0, len(summaries))
+	summaryIndex := make(map[int]int, len(summaries))
+	for index := range summaries {
+		inviterIdList = append(inviterIdList, summaries[index].Id)
+		summaryIndex[summaries[index].Id] = index
+		summaries[index].InviteRewardQuota = common.QuotaForInviter
+	}
+
+	type inviteAggregate struct {
+		InviterId   int
+		InviteCount int64
+	}
+	var inviteAggregates []inviteAggregate
+	if err := DB.Model(&User{}).
+		Select("inviter_id, COUNT(*) AS invite_count").
+		Where("inviter_id IN ?", inviterIdList).
+		Group("inviter_id").
+		Scan(&inviteAggregates).Error; err != nil {
+		return nil, 0, err
+	}
+	for _, aggregate := range inviteAggregates {
+		if index, ok := summaryIndex[aggregate.InviterId]; ok {
+			summaries[index].InviteCount = aggregate.InviteCount
+		}
+	}
+
+	type commissionAggregate struct {
+		InviterId    int
+		PendingQuota int64
+		ClaimedQuota int64
+		TotalQuota   int64
+	}
+	var commissionAggregates []commissionAggregate
+	if err := DB.Model(&ReferralCommission{}).
+		Select("inviter_id, COALESCE(SUM(CASE WHEN status = ? THEN commission_quota ELSE 0 END), 0) AS pending_quota, COALESCE(SUM(CASE WHEN status = ? THEN commission_quota ELSE 0 END), 0) AS claimed_quota, COALESCE(SUM(commission_quota), 0) AS total_quota", ReferralCommissionStatusPending, ReferralCommissionStatusClaimed).
+		Where("inviter_id IN ?", inviterIdList).
+		Group("inviter_id").
+		Scan(&commissionAggregates).Error; err != nil {
+		return nil, 0, err
+	}
+	for _, aggregate := range commissionAggregates {
+		if index, ok := summaryIndex[aggregate.InviterId]; ok {
+			summaries[index].PendingQuota = aggregate.PendingQuota
+			summaries[index].ClaimedQuota = aggregate.ClaimedQuota
+			summaries[index].TotalQuota = aggregate.TotalQuota
+		}
+	}
+
+	return summaries, total, nil
 }
 
 func ClaimReferralCommissions(inviterId int) (int, error) {

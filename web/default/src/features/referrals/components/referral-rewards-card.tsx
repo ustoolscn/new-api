@@ -42,10 +42,11 @@ import type { ReferralOverview } from '../types'
 type ReferralRewardsCardProps = {
   overview?: ReferralOverview
   loading: boolean
-  claimingInviteRewards: boolean
-  claimingCommission: boolean
-  onClaimInviteRewards: () => void
-  onClaimCommission: () => void
+  readonly?: boolean
+  claimingInviteRewards?: boolean
+  claimingCommission?: boolean
+  onClaimInviteRewards?: () => void
+  onClaimCommission?: () => void
 }
 
 type RewardMetricProps = {
@@ -118,31 +119,33 @@ export function ReferralRewardsCard(props: ReferralRewardsCardProps) {
                   value={String(props.overview?.rewarded_invite_count ?? 0)}
                 />
               </div>
-              <Button
-                type='button'
-                className='mt-auto w-full'
-                disabled={
-                  invitePending <= 0 ||
-                  !claimEnabled ||
-                  props.claimingInviteRewards
-                }
-                onClick={props.onClaimInviteRewards}
-              >
-                {props.claimingInviteRewards ? (
-                  <Spinner data-icon='inline-start' />
-                ) : (
-                  <HugeiconsIcon
-                    icon={WalletAdd02Icon}
-                    strokeWidth={2}
-                    data-icon='inline-start'
-                  />
-                )}
-                {invitePending > 0
-                  ? t('Claim {{amount}}', {
-                      amount: formatQuota(invitePending),
-                    })
-                  : t('Nothing to claim')}
-              </Button>
+              {!props.readonly ? (
+                <Button
+                  type='button'
+                  className='mt-auto w-full'
+                  disabled={
+                    invitePending <= 0 ||
+                    !claimEnabled ||
+                    props.claimingInviteRewards
+                  }
+                  onClick={props.onClaimInviteRewards}
+                >
+                  {props.claimingInviteRewards ? (
+                    <Spinner data-icon='inline-start' />
+                  ) : (
+                    <HugeiconsIcon
+                      icon={WalletAdd02Icon}
+                      strokeWidth={2}
+                      data-icon='inline-start'
+                    />
+                  )}
+                  {invitePending > 0
+                    ? t('Claim {{amount}}', {
+                        amount: formatQuota(invitePending),
+                      })
+                    : t('Nothing to claim')}
+                </Button>
+              ) : null}
             </div>
 
             <div className='bg-muted/20 flex flex-col gap-5 rounded-xl border p-4 sm:p-5'>
@@ -173,35 +176,39 @@ export function ReferralRewardsCard(props: ReferralRewardsCardProps) {
                   value={formatQuota(props.overview?.total_quota ?? 0)}
                 />
               </div>
-              <Button
-                type='button'
-                className='mt-auto w-full'
-                disabled={
-                  commissionPending <= 0 ||
-                  !claimEnabled ||
-                  props.claimingCommission
-                }
-                onClick={props.onClaimCommission}
-              >
-                {props.claimingCommission ? (
-                  <Spinner data-icon='inline-start' />
-                ) : (
-                  <HugeiconsIcon
-                    icon={WalletAdd02Icon}
-                    strokeWidth={2}
-                    data-icon='inline-start'
-                  />
-                )}
-                {commissionPending > 0
-                  ? t('Claim {{amount}}', {
-                      amount: formatQuota(commissionPending),
-                    })
-                  : t('Nothing to claim')}
-              </Button>
+              {!props.readonly ? (
+                <Button
+                  type='button'
+                  className='mt-auto w-full'
+                  disabled={
+                    commissionPending <= 0 ||
+                    !claimEnabled ||
+                    props.claimingCommission
+                  }
+                  onClick={props.onClaimCommission}
+                >
+                  {props.claimingCommission ? (
+                    <Spinner data-icon='inline-start' />
+                  ) : (
+                    <HugeiconsIcon
+                      icon={WalletAdd02Icon}
+                      strokeWidth={2}
+                      data-icon='inline-start'
+                    />
+                  )}
+                  {commissionPending > 0
+                    ? t('Claim {{amount}}', {
+                        amount: formatQuota(commissionPending),
+                      })
+                    : t('Nothing to claim')}
+                </Button>
+              ) : null}
             </div>
           </>
         ) : null}
-        {!claimEnabled && (invitePending > 0 || commissionPending > 0) ? (
+        {!props.readonly &&
+        !claimEnabled &&
+        (invitePending > 0 || commissionPending > 0) ? (
           <p className='text-muted-foreground text-sm lg:col-span-2'>
             {t(
               'Reward claiming is unavailable until payment compliance is confirmed.'

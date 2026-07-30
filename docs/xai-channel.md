@@ -206,6 +206,22 @@ GET  /v1/videos/{task_id}/content
 
 文生视频示例：
 
+```bash
+curl --request POST \
+  --url 'https://cooper-api.com/v1/video/generations' \
+  --header 'Authorization: Bearer YOUR_API_KEY' \
+  --header 'Content-Type: application/json' \
+  --data '{
+    "model": "grok-imagine-video",
+    "prompt": "A cinematic tracking shot of a rocket launching from Mars at sunset, realistic lighting, smooth camera movement",
+    "duration": 8,
+    "aspect_ratio": "16:9",
+    "resolution": "720p"
+  }'
+```
+
+请求体：
+
 ```json
 {
   "model": "grok-imagine-video",

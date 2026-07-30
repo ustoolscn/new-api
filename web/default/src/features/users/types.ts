@@ -169,6 +169,37 @@ export interface GetUserRegistrationStatisticsParams {
   granularity: UserRegistrationStatsGranularity
 }
 
+export interface ReferralInviterSummary {
+  id: number
+  username: string
+  display_name: string
+  invite_count: number
+  rewarded_invite_count: number
+  invite_reward_quota: number
+  invite_reward_pending_quota: number
+  invite_reward_total_quota: number
+  pending_quota: number
+  claimed_quota: number
+  total_quota: number
+}
+
+export interface GetReferralInvitersParams {
+  keyword?: string
+  p?: number
+  page_size?: number
+}
+
+export interface GetReferralInvitersResponse {
+  success: boolean
+  message?: string
+  data?: {
+    items: ReferralInviterSummary[]
+    total: number
+    page: number
+    page_size: number
+  }
+}
+
 export interface SearchUsersParams {
   keyword?: string
   group?: string
