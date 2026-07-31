@@ -165,6 +165,40 @@ function formatBillingFormulaPart(
   return `${tokens.toLocaleString()} ${label} × ${formatBillingCurrencyFromUSD(price, { digitsLarge: 4, digitsSmall: 6, abbreviate: false })}/M`
 }
 
+function billingTokensForField(
+  field: string,
+  log: UsageLog,
+  other: LogOtherData
+): number {
+  switch (field) {
+    case 'inputPrice':
+      return Math.max(
+        0,
+        (log.prompt_tokens || 0) -
+          (other.cache_tokens || 0) -
+          (other.cache_creation_tokens || 0) -
+          (other.cache_creation_tokens_5m || 0) -
+          (other.cache_creation_tokens_1h || 0)
+      )
+    case 'outputPrice':
+      return log.completion_tokens || 0
+    case 'cacheReadPrice':
+      return other.cache_tokens || 0
+    case 'cacheCreatePrice':
+      return other.cache_creation_tokens || 0
+    case 'cacheCreate1hPrice':
+      return other.cache_creation_tokens_1h || 0
+    case 'imagePrice':
+      return other.image_output || 0
+    case 'audioInputPrice':
+      return other.audio_input || 0
+    case 'audioOutputPrice':
+      return other.audio_output || 0
+    default:
+      return 0
+  }
+}
+
 function formatSnapshotValue(value: unknown): string {
   if (value == null || value === '') return '-'
   if (typeof value === 'string') return value
@@ -413,24 +447,16 @@ function BillingBreakdown(props: {
           value: `${fmtPrice(entry.price)}/M`,
         })
       }
-      const promptTokens = log.prompt_tokens || 0
-      const completionTokens = log.completion_tokens || 0
-      const cacheRead = other.cache_tokens || 0
-      const cacheWrite = other.cache_creation_tokens || 0
-      const inputTokens = Math.max(0, promptTokens - cacheRead - cacheWrite)
       const terms = tieredSummary.priceEntries
         .map((entry) => {
-          let tokens = 0
-          if (entry.field === 'inputPrice') tokens = inputTokens
-          if (entry.field === 'outputPrice') tokens = completionTokens
-          if (entry.field === 'cacheReadPrice') tokens = cacheRead
-          if (entry.field === 'cacheCreatePrice') tokens = cacheWrite
+          const tokens = billingTokensForField(entry.field, log, other)
           return formatBillingFormulaPart(tokens, entry.price, t(entry.shortLabel))
         })
         .filter(Boolean)
       const groupRatio = effectiveRatio(other)
-      if (terms.length > 0 && groupRatio != null) {
-        formula = `(${terms.join(' + ')}) / 1,000,000 × ${formatRatio(groupRatio)}x = ${formatLogQuota(log.quota)}`
+      const requestRatio = other.request_multiplier
+      if (terms.length > 0 && groupRatio != null && requestRatio != null) {
+        formula = `(${terms.join(' + ')}) / 1,000,000 × ${formatRatio(groupRatio)}x × ${formatRatio(requestRatio)}x = ${formatLogQuota(log.quota)}`
       }
     } else {
       rows.push({

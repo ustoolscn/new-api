@@ -27,11 +27,18 @@ func ComputeTieredQuotaWithRequest(snap *BillingSnapshot, params TokenParams, re
 	quotaBeforeGroup := quotaConversion(cost, snap)
 	afterGroup, clamp := common.QuotaRoundChecked(quotaBeforeGroup * snap.GroupRatio)
 	crossed := trace.MatchedTier != snap.EstimatedTier
+	var requestMultiplier *float64
+	baseCost, _, baseErr := RunExprByHashWithRequest(snap.ExprString, snap.ExprHash, params, RequestInput{})
+	if baseErr == nil && baseCost != 0 {
+		value := cost / baseCost
+		requestMultiplier = &value
+	}
 
 	return TieredResult{
 		ActualQuotaBeforeGroup: quotaBeforeGroup,
 		ActualQuotaAfterGroup:  afterGroup,
 		MatchedTier:            trace.MatchedTier,
+		RequestMultiplier:      requestMultiplier,
 		CrossedTier:            crossed,
 		Clamp:                  clamp,
 	}, nil

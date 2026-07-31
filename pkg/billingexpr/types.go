@@ -58,6 +58,7 @@ type TieredResult struct {
 	ActualQuotaBeforeGroup float64 `json:"actual_quota_before_group"`
 	ActualQuotaAfterGroup  int     `json:"actual_quota_after_group"`
 	MatchedTier            string  `json:"matched_tier"`
+	RequestMultiplier      *float64 `json:"request_multiplier,omitempty"`
 	CrossedTier            bool    `json:"crossed_tier"`
 	// Clamp records an int32 saturation event during quota conversion so the
 	// caller can surface it on the consume log for admin auditing. Nil when no

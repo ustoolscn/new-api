@@ -64,7 +64,6 @@ type DynamicPricingBreakdownProps = {
    * icon header and uses the dialog's small text sizes. Defaults to false.
    */
   compact?: boolean
-  matchedRuleMultipliers?: number[] | null
 }
 
 const VAR_LABELS: Record<string, string> = {
@@ -154,32 +153,11 @@ function describeGroup(
     .join(' && ')
 }
 
-function getRuleBadgeState(
-  multiplier: string,
-  matchedRuleMultipliers: number[] | null,
-  t: (key: string) => string
-): { label: string; className: string } {
-  if (matchedRuleMultipliers == null) {
-    return { label: t('Not evaluated'), className: 'bg-muted text-muted-foreground' }
-  }
-  if (matchedRuleMultipliers.includes(Number(multiplier))) {
-    return {
-      label: t('Matched'),
-      className: 'bg-emerald-100 text-emerald-700 dark:bg-emerald-500/20 dark:text-emerald-300',
-    }
-  }
-  return {
-    label: t('Not matched'),
-    className: 'bg-orange-100 text-orange-700 dark:bg-orange-500/20 dark:text-orange-300',
-  }
-}
-
 export function DynamicPricingBreakdown({
   billingExpr,
   matchedTierLabel,
   hideCacheColumns = false,
   compact = false,
-  matchedRuleMultipliers = null,
 }: DynamicPricingBreakdownProps) {
   const { t } = useTranslation()
   const expr = billingExpr || ''
@@ -460,20 +438,12 @@ export function DynamicPricingBreakdown({
                 >
                   {describeGroup(group, t)}
                 </span>
-                <div className='flex shrink-0 items-center gap-1.5'>
-                  {(() => {
-                    const badge = getRuleBadgeState(group.multiplier, matchedRuleMultipliers, t)
-                    return (
-                  <Badge
-                    variant='secondary'
-                    className={cn(badge.className)}
-                  >
-                    {badge.label}{' '}
-                    {group.multiplier}x
-                  </Badge>
-                    )
-                  })()}
-                </div>
+                <Badge
+                  variant='secondary'
+                  className='shrink-0 bg-orange-100 text-orange-700 dark:bg-orange-500/20 dark:text-orange-300'
+                >
+                  {group.multiplier}x
+                </Badge>
               </li>
             ))}
           </ul>
