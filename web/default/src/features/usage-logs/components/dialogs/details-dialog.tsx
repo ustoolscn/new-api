@@ -156,6 +156,15 @@ function formatRatio(ratio: number | undefined): string {
   return ratio.toFixed(4)
 }
 
+function formatBillingFormulaPart(
+  tokens: number,
+  price: number,
+  label: string
+): string {
+  if (tokens <= 0 || price <= 0) return ''
+  return `${tokens.toLocaleString()} ${label} × ${formatBillingCurrencyFromUSD(price, { digitsLarge: 4, digitsSmall: 6, abbreviate: false })}/M`
+}
+
 function formatSnapshotValue(value: unknown): string {
   if (value == null || value === '') return '-'
   if (typeof value === 'string') return value
@@ -384,6 +393,7 @@ function BillingBreakdown(props: {
   const priceOpts = { digitsLarge: 4, digitsSmall: 6, abbreviate: false }
   const fmtPrice = (usd: number) => formatBillingCurrencyFromUSD(usd, priceOpts)
   const baseInputUSD = other.model_ratio != null ? other.model_ratio * 2.0 : 0
+  let formula: string | null = null
 
   if (isTieredExpr) {
     rows.push({
@@ -402,6 +412,25 @@ function BillingBreakdown(props: {
           label: t(entry.shortLabel),
           value: `${fmtPrice(entry.price)}/M`,
         })
+      }
+      const promptTokens = log.prompt_tokens || 0
+      const completionTokens = log.completion_tokens || 0
+      const cacheRead = other.cache_tokens || 0
+      const cacheWrite = other.cache_creation_tokens || 0
+      const inputTokens = Math.max(0, promptTokens - cacheRead - cacheWrite)
+      const terms = tieredSummary.priceEntries
+        .map((entry) => {
+          let tokens = 0
+          if (entry.field === 'inputPrice') tokens = inputTokens
+          if (entry.field === 'outputPrice') tokens = completionTokens
+          if (entry.field === 'cacheReadPrice') tokens = cacheRead
+          if (entry.field === 'cacheCreatePrice') tokens = cacheWrite
+          return formatBillingFormulaPart(tokens, entry.price, t(entry.shortLabel))
+        })
+        .filter(Boolean)
+      const groupRatio = effectiveRatio(other)
+      if (terms.length > 0 && groupRatio != null) {
+        formula = `(${terms.join(' + ')}) / 1,000,000 × ${formatRatio(groupRatio)}x = ${formatLogQuota(log.quota)}`
       }
     } else {
       rows.push({
@@ -441,6 +470,10 @@ function BillingBreakdown(props: {
       label: isUserGR ? t('User Exclusive Ratio') : t('Group Ratio'),
       value: `${formatRatio(effectiveGR)}x`,
     })
+  }
+
+  if (formula) {
+    rows.push({ label: t('Billing Formula'), value: formula })
   }
 
   if (!isTieredExpr && isClaude && hasAnyCacheTokens(other)) {
@@ -554,6 +587,14 @@ function BillingBreakdown(props: {
       ))}
     </DetailSection>
   )
+}
+
+function effectiveRatio(other: LogOtherData): number | null {
+  const userGR = other.user_group_ratio
+  if (userGR != null && Number.isFinite(userGR) && userGR !== -1) return userGR
+  return other.group_ratio != null && Number.isFinite(other.group_ratio)
+    ? other.group_ratio
+    : null
 }
 
 function TokenBreakdown(props: { log: UsageLog; other: LogOtherData }) {
