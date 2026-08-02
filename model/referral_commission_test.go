@@ -3,6 +3,7 @@ package model
 import (
 	"strconv"
 	"testing"
+	"time"
 
 	"github.com/QuantumNous/new-api/common"
 	"github.com/QuantumNous/new-api/setting/operation_setting"
@@ -227,4 +228,64 @@ func TestGetReferralInviterSummariesAggregatesAndSearches(t *testing.T) {
 	assert.Equal(t, int64(1), filteredTotal)
 	require.Len(t, filtered, 1)
 	assert.Equal(t, firstInviter.Id, filtered[0].Id)
+}
+
+func TestReferralOverviewInviteeConsumeStatsUseQuotaDataAndUsedQuota(t *testing.T) {
+	truncateTables(t)
+
+	now := time.Now()
+	currentMonthStart := time.Date(now.Year(), now.Month(), 1, 0, 0, 0, 0, now.Location())
+	previousMonthStart := currentMonthStart.AddDate(0, -1, 0)
+
+	inviter := &User{Id: 801, Username: "consume-inviter", Status: common.UserStatusEnabled, AffCode: "consume-inviter-code"}
+	inviteeA := &User{Id: 802, Username: "consume-invitee-a", Status: common.UserStatusEnabled, AffCode: "consume-invitee-a-code", InviterId: inviter.Id, UsedQuota: 300}
+	inviteeB := &User{Id: 803, Username: "consume-invitee-b", Status: common.UserStatusEnabled, AffCode: "consume-invitee-b-code", InviterId: inviter.Id, UsedQuota: 500}
+	unrelated := &User{Id: 804, Username: "consume-unrelated", Status: common.UserStatusEnabled, AffCode: "consume-unrelated-code", UsedQuota: 900}
+	require.NoError(t, DB.Create(inviter).Error)
+	require.NoError(t, DB.Create(inviteeA).Error)
+	require.NoError(t, DB.Create(inviteeB).Error)
+	require.NoError(t, DB.Create(unrelated).Error)
+
+	require.NoError(t, DB.Table("quota_data").Create([]QuotaData{
+		{UserID: inviteeA.Id, Username: inviteeA.Username, ModelName: "gpt-test", CreatedAt: previousMonthStart.Unix() + 3600, Quota: 120},
+		{UserID: inviteeB.Id, Username: inviteeB.Username, ModelName: "gpt-test", CreatedAt: previousMonthStart.Unix() + 7200, Quota: 80},
+		{UserID: inviteeA.Id, Username: inviteeA.Username, ModelName: "gpt-test", CreatedAt: currentMonthStart.Unix() + 3600, Quota: 50},
+		{UserID: unrelated.Id, Username: unrelated.Username, ModelName: "gpt-test", CreatedAt: currentMonthStart.Unix() + 3600, Quota: 999},
+	}).Error)
+
+	overview, err := GetReferralOverview(inviter.Id, &common.PageInfo{Page: 1, PageSize: 20})
+	require.NoError(t, err)
+	assert.Equal(t, int64(800), overview.InviteeConsumeTotal)
+	require.Len(t, overview.InviteeConsumeMonths, referralInviteeConsumeMonthCount)
+	assert.Equal(t, previousMonthStart.Format("2006-01"), overview.InviteeConsumeMonths[len(overview.InviteeConsumeMonths)-2].MonthLabel)
+	assert.Equal(t, int64(200), overview.InviteeConsumeMonths[len(overview.InviteeConsumeMonths)-2].ConsumeQuota)
+	assert.Equal(t, currentMonthStart.Format("2006-01"), overview.InviteeConsumeMonths[len(overview.InviteeConsumeMonths)-1].MonthLabel)
+	assert.Equal(t, int64(50), overview.InviteeConsumeMonths[len(overview.InviteeConsumeMonths)-1].ConsumeQuota)
+
+	items, ok := overview.InvitedUsers.Items.([]ReferralInvitedUser)
+	require.True(t, ok)
+	require.Len(t, items, 2)
+	byID := map[int]ReferralInvitedUser{}
+	for _, item := range items {
+		byID[item.Id] = item
+	}
+	assert.Equal(t, int64(300), byID[inviteeA.Id].UsedQuota)
+	assert.Equal(t, int64(500), byID[inviteeB.Id].UsedQuota)
+}
+
+func TestReferralInviterSummariesIncludeInviteeConsumeTotal(t *testing.T) {
+	truncateTables(t)
+
+	inviter := &User{Id: 821, Username: "admin-consume-inviter", Status: common.UserStatusEnabled, AffCode: "admin-consume-inviter", AffCount: 1}
+	inviteeA := &User{Id: 822, Username: "admin-consume-a", Status: common.UserStatusEnabled, AffCode: "admin-consume-a", InviterId: inviter.Id, UsedQuota: 150}
+	inviteeB := &User{Id: 823, Username: "admin-consume-b", Status: common.UserStatusEnabled, AffCode: "admin-consume-b", InviterId: inviter.Id, UsedQuota: 250}
+	require.NoError(t, DB.Create(inviter).Error)
+	require.NoError(t, DB.Create(inviteeA).Error)
+	require.NoError(t, DB.Create(inviteeB).Error)
+
+	summaries, total, err := GetReferralInviterSummaries(&common.PageInfo{Page: 1, PageSize: 20}, inviter.Username)
+	require.NoError(t, err)
+	assert.Equal(t, int64(1), total)
+	require.Len(t, summaries, 1)
+	assert.Equal(t, int64(400), summaries[0].InviteeConsumeTotal)
 }

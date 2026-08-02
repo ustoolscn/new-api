@@ -114,6 +114,15 @@ export function ReferralUsersTable() {
         ),
       },
       {
+        accessorKey: 'invitee_consume_total',
+        header: t('Invitee consumption'),
+        cell: ({ row }) => (
+          <span className='font-medium tabular-nums'>
+            {formatQuota(row.original.invitee_consume_total)}
+          </span>
+        ),
+      },
+      {
         accessorKey: 'total_quota',
         header: t('Total commission'),
         cell: ({ row }) => (

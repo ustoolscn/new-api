@@ -63,6 +63,7 @@ import {
   getReferralCode,
   getReferralOverview,
 } from './api'
+import { InviteeConsumeCard } from './components/invitee-consume-card'
 import { InvitedUsersCard } from './components/invited-users-card'
 import { ReferralRewardsCard } from './components/referral-rewards-card'
 
@@ -261,6 +262,11 @@ export function Referrals() {
               )
             }
             onClaimCommission={() => claimMutation.mutate()}
+          />
+
+          <InviteeConsumeCard
+            overview={overview}
+            loading={overviewQuery.isLoading}
           />
 
           {overviewQuery.isError ? (

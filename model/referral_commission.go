@@ -6,6 +6,7 @@ import (
 	"math"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/QuantumNous/new-api/common"
 	"github.com/QuantumNous/new-api/logger"
@@ -18,6 +19,10 @@ import (
 const (
 	ReferralCommissionStatusPending = "pending"
 	ReferralCommissionStatusClaimed = "claimed"
+
+	// referralInviteeConsumeMonthCount is the number of recent calendar months
+	// shown for invitee consumption on the referral overview.
+	referralInviteeConsumeMonthCount = 12
 )
 
 type ReferralCommission struct {
@@ -42,20 +47,32 @@ type ReferralInvitedUser struct {
 	RechargeQuotaTotal   int64  `json:"recharge_quota_total"`
 	CommissionQuotaTotal int64  `json:"commission_quota_total"`
 	LastCommissionAt     int64  `json:"last_commission_at"`
+	UsedQuota            int64  `json:"used_quota"`
 }
 
 type ReferralOverview struct {
-	CommissionRate           float64          `json:"commission_rate"`
-	ClaimEnabled             bool             `json:"claim_enabled"`
-	PendingQuota             int64            `json:"pending_quota"`
-	ClaimedQuota             int64            `json:"claimed_quota"`
-	TotalQuota               int64            `json:"total_quota"`
-	InviteCount              int64            `json:"invite_count"`
-	RewardedInviteCount      int              `json:"rewarded_invite_count"`
-	InviteRewardQuota        int              `json:"invite_reward_quota"`
-	InviteRewardPendingQuota int              `json:"invite_reward_pending_quota"`
-	InviteRewardTotalQuota   int              `json:"invite_reward_total_quota"`
-	InvitedUsers             *common.PageInfo `json:"invited_users"`
+	CommissionRate           float64                `json:"commission_rate"`
+	ClaimEnabled             bool                   `json:"claim_enabled"`
+	PendingQuota             int64                  `json:"pending_quota"`
+	ClaimedQuota             int64                  `json:"claimed_quota"`
+	TotalQuota               int64                  `json:"total_quota"`
+	InviteCount              int64                  `json:"invite_count"`
+	RewardedInviteCount      int                    `json:"rewarded_invite_count"`
+	InviteRewardQuota        int                    `json:"invite_reward_quota"`
+	InviteRewardPendingQuota int                    `json:"invite_reward_pending_quota"`
+	InviteRewardTotalQuota   int                    `json:"invite_reward_total_quota"`
+	InviteeConsumeTotal      int64                  `json:"invitee_consume_total"`
+	InviteeConsumeMonths     []ReferralConsumeMonth `json:"invitee_consume_months"`
+	InvitedUsers             *common.PageInfo       `json:"invited_users"`
+}
+
+// ReferralConsumeMonth is one calendar month of invitee usage.
+// Monthly values come from quota_data (dashboard aggregates), not request logs.
+// The lifetime total on the overview uses users.used_quota instead.
+type ReferralConsumeMonth struct {
+	MonthStart   int64  `json:"month_start"`
+	MonthLabel   string `json:"month_label"`
+	ConsumeQuota int64  `json:"consume_quota"`
 }
 
 type ReferralInviterSummary struct {
@@ -67,6 +84,7 @@ type ReferralInviterSummary struct {
 	InviteRewardQuota        int    `json:"invite_reward_quota"`
 	InviteRewardPendingQuota int    `json:"invite_reward_pending_quota"`
 	InviteRewardTotalQuota   int    `json:"invite_reward_total_quota"`
+	InviteeConsumeTotal      int64  `json:"invitee_consume_total"`
 	PendingQuota             int64  `json:"pending_quota"`
 	ClaimedQuota             int64  `json:"claimed_quota"`
 	TotalQuota               int64  `json:"total_quota"`
@@ -143,7 +161,7 @@ func GetReferralOverview(inviterId int, pageInfo *common.PageInfo) (*ReferralOve
 
 	users := make([]ReferralInvitedUser, 0)
 	if err := DB.Model(&User{}).
-		Select("id", "username", "display_name", "created_at").
+		Select("id", "username", "display_name", "created_at", "used_quota").
 		Where("inviter_id = ?", inviterId).
 		Order("id DESC").
 		Limit(pageInfo.GetPageSize()).
@@ -251,6 +269,11 @@ func GetReferralOverview(inviterId int, pageInfo *common.PageInfo) (*ReferralOve
 		return nil, err
 	}
 
+	inviteeConsumeTotal, inviteeConsumeMonths, err := getInviteeConsumeStats(inviterId)
+	if err != nil {
+		return nil, err
+	}
+
 	pageInfo.SetTotal(int(inviteCount))
 	pageInfo.SetItems(users)
 	return &ReferralOverview{
@@ -264,8 +287,65 @@ func GetReferralOverview(inviterId int, pageInfo *common.PageInfo) (*ReferralOve
 		InviteRewardQuota:        common.QuotaForInviter,
 		InviteRewardPendingQuota: inviter.AffQuota,
 		InviteRewardTotalQuota:   inviter.AffHistoryQuota,
+		InviteeConsumeTotal:      inviteeConsumeTotal,
+		InviteeConsumeMonths:     inviteeConsumeMonths,
 		InvitedUsers:             pageInfo,
 	}, nil
+}
+
+
+func getInviteeConsumeStats(inviterId int) (int64, []ReferralConsumeMonth, error) {
+	var total int64
+	if err := DB.Model(&User{}).
+		Select("COALESCE(SUM(used_quota), 0)").
+		Where("inviter_id = ?", inviterId).
+		Scan(&total).Error; err != nil {
+		return 0, nil, err
+	}
+
+	now := time.Now()
+	currentMonthStart := time.Date(now.Year(), now.Month(), 1, 0, 0, 0, 0, now.Location())
+	rangeStart := currentMonthStart.AddDate(0, -(referralInviteeConsumeMonthCount - 1), 0)
+	rangeEnd := currentMonthStart.AddDate(0, 1, 0)
+
+	months := make([]ReferralConsumeMonth, 0, referralInviteeConsumeMonthCount)
+	monthIndex := make(map[int64]int, referralInviteeConsumeMonthCount)
+	for i := 0; i < referralInviteeConsumeMonthCount; i++ {
+		start := rangeStart.AddDate(0, i, 0)
+		months = append(months, ReferralConsumeMonth{
+			MonthStart: start.Unix(),
+			MonthLabel: start.Format("2006-01"),
+		})
+		monthIndex[start.Unix()] = i
+	}
+
+	bucketSQL := billingStatsBucketSQL("quota_data.created_at", BillingStatsGranularityMonth)
+	type monthlyConsumeRow struct {
+		BucketStart  int64
+		ConsumeQuota int64
+	}
+	var rows []monthlyConsumeRow
+	if err := DB.Table("quota_data").
+		Select(bucketSQL+" AS bucket_start, COALESCE(SUM(quota_data.quota), 0) AS consume_quota").
+		Joins("JOIN users ON users.id = quota_data.user_id").
+		Where("users.inviter_id = ? AND quota_data.created_at >= ? AND quota_data.created_at < ?", inviterId, rangeStart.Unix(), rangeEnd.Unix()).
+		Group(bucketSQL).
+		Scan(&rows).Error; err != nil {
+		return 0, nil, err
+	}
+	for _, row := range rows {
+		index, ok := monthIndex[row.BucketStart]
+		if !ok {
+			// Normalize unexpected bucket timestamps into the local calendar month.
+			start, _ := billingStatsBucket(row.BucketStart, BillingStatsGranularityMonth)
+			index, ok = monthIndex[start]
+			if !ok {
+				continue
+			}
+		}
+		months[index].ConsumeQuota = row.ConsumeQuota
+	}
+	return total, months, nil
 }
 
 func GetReferralInviterSummaries(pageInfo *common.PageInfo, keyword string) ([]ReferralInviterSummary, int64, error) {
@@ -365,6 +445,24 @@ func GetReferralInviterSummaries(pageInfo *common.PageInfo, keyword string) ([]R
 			summaries[index].PendingQuota = aggregate.PendingQuota
 			summaries[index].ClaimedQuota = aggregate.ClaimedQuota
 			summaries[index].TotalQuota = aggregate.TotalQuota
+		}
+	}
+
+	type inviteeConsumeAggregate struct {
+		InviterId    int
+		ConsumeTotal int64
+	}
+	var inviteeConsumeAggregates []inviteeConsumeAggregate
+	if err := DB.Model(&User{}).
+		Select("inviter_id, COALESCE(SUM(used_quota), 0) AS consume_total").
+		Where("inviter_id IN ?", inviterIdList).
+		Group("inviter_id").
+		Scan(&inviteeConsumeAggregates).Error; err != nil {
+		return nil, 0, err
+	}
+	for _, aggregate := range inviteeConsumeAggregates {
+		if index, ok := summaryIndex[aggregate.InviterId]; ok {
+			summaries[index].InviteeConsumeTotal = aggregate.ConsumeTotal
 		}
 	}
 

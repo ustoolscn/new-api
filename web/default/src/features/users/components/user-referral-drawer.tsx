@@ -1,5 +1,11 @@
 import { useQuery } from '@tanstack/react-query'
-import { Percent, UserRoundCheck, UsersRound, WalletCards } from 'lucide-react'
+import {
+  ChartColumn,
+  Percent,
+  UserRoundCheck,
+  UsersRound,
+  WalletCards,
+} from 'lucide-react'
 import { useState } from 'react'
 import { useTranslation } from 'react-i18next'
 
@@ -24,6 +30,7 @@ import {
   SheetTitle,
 } from '@/components/ui/sheet'
 import { Skeleton } from '@/components/ui/skeleton'
+import { InviteeConsumeCard } from '@/features/referrals/components/invitee-consume-card'
 import { InvitedUsersCard } from '@/features/referrals/components/invited-users-card'
 import { ReferralRewardsCard } from '@/features/referrals/components/referral-rewards-card'
 import { formatQuota } from '@/lib/format'
@@ -74,6 +81,11 @@ export function UserReferralDrawer(props: UserReferralDrawerProps) {
       icon: UserRoundCheck,
     },
     {
+      label: t('Total invitee consumption'),
+      value: formatQuota(overview?.invitee_consume_total ?? 0),
+      icon: ChartColumn,
+    },
+    {
       label: t('Total earned'),
       value: formatQuota(
         (overview?.invite_reward_total_quota ?? 0) +
@@ -109,8 +121,8 @@ export function UserReferralDrawer(props: UserReferralDrawerProps) {
           </SheetDescription>
         </SheetHeader>
 
-        <div className={sideDrawerFormClassName('gap-4 lg:overflow-hidden')}>
-          <div className='grid shrink-0 gap-3 sm:grid-cols-2 xl:grid-cols-4'>
+        <div className={sideDrawerFormClassName('gap-4')}>
+          <div className='grid shrink-0 gap-3 sm:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-5'>
             {stats.map((stat) => (
               <Card key={stat.label} size='sm' data-card-hover='false'>
                 <CardContent className='flex items-center justify-between gap-3'>
@@ -157,13 +169,17 @@ export function UserReferralDrawer(props: UserReferralDrawerProps) {
                   readonly
                 />
               </div>
+              <div className='shrink-0'>
+                <InviteeConsumeCard
+                  overview={overview}
+                  loading={overviewQuery.isLoading}
+                />
+              </div>
               <InvitedUsersCard
                 data={overview?.invited_users}
                 loading={overviewQuery.isLoading || overviewQuery.isFetching}
                 page={page}
                 onPageChange={setPage}
-                className='lg:min-h-0 lg:flex-1'
-                contentClassName='lg:min-h-0 lg:flex-1 lg:overflow-auto'
               />
             </>
           )}

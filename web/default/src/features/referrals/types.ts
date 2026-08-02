@@ -26,6 +26,13 @@ export type ReferralInvitedUser = {
   recharge_quota_total: number
   commission_quota_total: number
   last_commission_at: number
+  used_quota: number
+}
+
+export type ReferralConsumeMonth = {
+  month_start: number
+  month_label: string
+  consume_quota: number
 }
 
 export type ReferralInvitedUsersPage = {
@@ -46,6 +53,8 @@ export type ReferralOverview = {
   invite_reward_quota: number
   invite_reward_pending_quota: number
   invite_reward_total_quota: number
+  invitee_consume_total: number
+  invitee_consume_months: ReferralConsumeMonth[]
   invited_users: ReferralInvitedUsersPage
 }
 

@@ -178,6 +178,7 @@ export interface ReferralInviterSummary {
   invite_reward_quota: number
   invite_reward_pending_quota: number
   invite_reward_total_quota: number
+  invitee_consume_total: number
   pending_quota: number
   claimed_quota: number
   total_quota: number

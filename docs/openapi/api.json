@@ -1458,9 +1458,25 @@
                           "type": "integer",
                           "description": "累计获得的固定邀请奖励"
                         },
+                        "invitee_consume_total": {
+                          "type": "integer",
+                          "description": "全部被邀请人累计消耗额度（users.used_quota 合计，不依赖请求日志）"
+                        },
+                        "invitee_consume_months": {
+                          "type": "array",
+                          "description": "最近12个自然月的被邀请人消耗拆分（quota_data 汇总，不依赖请求日志）",
+                          "items": {
+                            "type": "object",
+                            "properties": {
+                              "month_start": { "type": "integer" },
+                              "month_label": { "type": "string" },
+                              "consume_quota": { "type": "integer" }
+                            }
+                          }
+                        },
                         "invited_users": {
                           "type": "object",
-                          "description": "分页受邀用户列表；items 包含用户、注册时间、充值次数、充值到账额度、产生返佣和最近返佣时间"
+                          "description": "分页受邀用户列表；items 包含用户、注册时间、充值次数、充值到账额度、累计消耗、产生返佣和最近返佣时间"
                         }
                       }
                     }
@@ -8385,3 +8401,4 @@
     }
   ]
 }
+
