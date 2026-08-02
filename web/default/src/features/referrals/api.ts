@@ -21,6 +21,7 @@ import { api } from '@/lib/api'
 import type {
   ReferralApiResponse,
   ReferralClaimResult,
+  ReferralInviteeConsumeReport,
   ReferralOverview,
 } from './types'
 
@@ -35,6 +36,43 @@ export async function getReferralOverview(
 ): Promise<ReferralApiResponse<ReferralOverview>> {
   const response = await api.get('/api/user/referrals', {
     params: { p: page, page_size: pageSize },
+  })
+  return response.data
+}
+
+export async function getInviteeConsumeReport(params: {
+  startTimestamp: number
+  endTimestamp: number
+  page: number
+  pageSize: number
+}): Promise<ReferralApiResponse<ReferralInviteeConsumeReport>> {
+  const response = await api.get('/api/user/referrals/consume', {
+    params: {
+      start_timestamp: params.startTimestamp,
+      end_timestamp: params.endTimestamp,
+      p: params.page,
+      page_size: params.pageSize,
+    },
+  })
+  return response.data
+}
+
+export async function getAdminInviteeConsumeReport(
+  userId: number,
+  params: {
+    startTimestamp: number
+    endTimestamp: number
+    page: number
+    pageSize: number
+  }
+): Promise<ReferralApiResponse<ReferralInviteeConsumeReport>> {
+  const response = await api.get(`/api/user/referrals/admin/${userId}/consume`, {
+    params: {
+      start_timestamp: params.startTimestamp,
+      end_timestamp: params.endTimestamp,
+      p: params.page,
+      page_size: params.pageSize,
+    },
   })
   return response.data
 }

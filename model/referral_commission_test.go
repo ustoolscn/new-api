@@ -230,12 +230,13 @@ func TestGetReferralInviterSummariesAggregatesAndSearches(t *testing.T) {
 	assert.Equal(t, firstInviter.Id, filtered[0].Id)
 }
 
-func TestReferralOverviewInviteeConsumeStatsUseQuotaDataAndUsedQuota(t *testing.T) {
+func TestInviteeConsumeReportUsesQuotaDataRangeAndLifetimeTotals(t *testing.T) {
 	truncateTables(t)
 
 	now := time.Now()
 	currentMonthStart := time.Date(now.Year(), now.Month(), 1, 0, 0, 0, 0, now.Location())
 	previousMonthStart := currentMonthStart.AddDate(0, -1, 0)
+	rangeEnd := currentMonthStart.AddDate(0, 1, 0)
 
 	inviter := &User{Id: 801, Username: "consume-inviter", Status: common.UserStatusEnabled, AffCode: "consume-inviter-code"}
 	inviteeA := &User{Id: 802, Username: "consume-invitee-a", Status: common.UserStatusEnabled, AffCode: "consume-invitee-a-code", InviterId: inviter.Id, UsedQuota: 300}
@@ -256,21 +257,34 @@ func TestReferralOverviewInviteeConsumeStatsUseQuotaDataAndUsedQuota(t *testing.
 	overview, err := GetReferralOverview(inviter.Id, &common.PageInfo{Page: 1, PageSize: 20})
 	require.NoError(t, err)
 	assert.Equal(t, int64(800), overview.InviteeConsumeTotal)
-	require.Len(t, overview.InviteeConsumeMonths, referralInviteeConsumeMonthCount)
-	assert.Equal(t, previousMonthStart.Format("2006-01"), overview.InviteeConsumeMonths[len(overview.InviteeConsumeMonths)-2].MonthLabel)
-	assert.Equal(t, int64(200), overview.InviteeConsumeMonths[len(overview.InviteeConsumeMonths)-2].ConsumeQuota)
-	assert.Equal(t, currentMonthStart.Format("2006-01"), overview.InviteeConsumeMonths[len(overview.InviteeConsumeMonths)-1].MonthLabel)
-	assert.Equal(t, int64(50), overview.InviteeConsumeMonths[len(overview.InviteeConsumeMonths)-1].ConsumeQuota)
 
-	items, ok := overview.InvitedUsers.Items.([]ReferralInvitedUser)
+	previousReport, err := GetInviteeConsumeReport(inviter.Id, previousMonthStart.Unix(), currentMonthStart.Unix(), &common.PageInfo{Page: 1, PageSize: 20})
+	require.NoError(t, err)
+	assert.Equal(t, int64(200), previousReport.RangeConsumeTotal)
+	assert.Equal(t, int64(800), previousReport.LifetimeConsumeTotal)
+	previousItems, ok := previousReport.Users.Items.([]ReferralInviteeConsumeUser)
 	require.True(t, ok)
-	require.Len(t, items, 2)
-	byID := map[int]ReferralInvitedUser{}
-	for _, item := range items {
-		byID[item.Id] = item
+	require.Len(t, previousItems, 2)
+	previousByID := map[int]ReferralInviteeConsumeUser{}
+	for _, item := range previousItems {
+		previousByID[item.Id] = item
 	}
-	assert.Equal(t, int64(300), byID[inviteeA.Id].UsedQuota)
-	assert.Equal(t, int64(500), byID[inviteeB.Id].UsedQuota)
+	assert.Equal(t, int64(120), previousByID[inviteeA.Id].RangeConsumeQuota)
+	assert.Equal(t, int64(80), previousByID[inviteeB.Id].RangeConsumeQuota)
+	assert.Equal(t, int64(300), previousByID[inviteeA.Id].LifetimeConsumeQuota)
+	assert.Equal(t, int64(500), previousByID[inviteeB.Id].LifetimeConsumeQuota)
+
+	currentReport, err := GetInviteeConsumeReport(inviter.Id, currentMonthStart.Unix(), rangeEnd.Unix(), &common.PageInfo{Page: 1, PageSize: 20})
+	require.NoError(t, err)
+	assert.Equal(t, int64(50), currentReport.RangeConsumeTotal)
+	currentItems, ok := currentReport.Users.Items.([]ReferralInviteeConsumeUser)
+	require.True(t, ok)
+	currentByID := map[int]ReferralInviteeConsumeUser{}
+	for _, item := range currentItems {
+		currentByID[item.Id] = item
+	}
+	assert.Equal(t, int64(50), currentByID[inviteeA.Id].RangeConsumeQuota)
+	assert.Zero(t, currentByID[inviteeB.Id].RangeConsumeQuota)
 }
 
 func TestReferralInviterSummariesIncludeInviteeConsumeTotal(t *testing.T) {

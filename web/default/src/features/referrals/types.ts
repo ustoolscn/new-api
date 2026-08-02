@@ -29,12 +29,6 @@ export type ReferralInvitedUser = {
   used_quota: number
 }
 
-export type ReferralConsumeMonth = {
-  month_start: number
-  month_label: string
-  consume_quota: number
-}
-
 export type ReferralInvitedUsersPage = {
   page: number
   page_size: number
@@ -54,8 +48,31 @@ export type ReferralOverview = {
   invite_reward_pending_quota: number
   invite_reward_total_quota: number
   invitee_consume_total: number
-  invitee_consume_months: ReferralConsumeMonth[]
   invited_users: ReferralInvitedUsersPage
+}
+
+export type ReferralInviteeConsumeUser = {
+  id: number
+  username: string
+  display_name: string
+  created_at: number
+  range_consume_quota: number
+  lifetime_consume_quota: number
+}
+
+export type ReferralInviteeConsumeUsersPage = {
+  page: number
+  page_size: number
+  total: number
+  items: ReferralInviteeConsumeUser[]
+}
+
+export type ReferralInviteeConsumeReport = {
+  start_timestamp: number
+  end_timestamp: number
+  range_consume_total: number
+  lifetime_consume_total: number
+  users: ReferralInviteeConsumeUsersPage
 }
 
 export type ReferralClaimResult = {

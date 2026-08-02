@@ -170,10 +170,7 @@ export function UserReferralDrawer(props: UserReferralDrawerProps) {
                 />
               </div>
               <div className='shrink-0'>
-                <InviteeConsumeCard
-                  overview={overview}
-                  loading={overviewQuery.isLoading}
-                />
+                <InviteeConsumeCard inviterId={userId} />
               </div>
               <InvitedUsersCard
                 data={overview?.invited_users}

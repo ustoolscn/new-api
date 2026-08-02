@@ -264,10 +264,7 @@ export function Referrals() {
             onClaimCommission={() => claimMutation.mutate()}
           />
 
-          <InviteeConsumeCard
-            overview={overview}
-            loading={overviewQuery.isLoading}
-          />
+          <InviteeConsumeCard />
 
           {overviewQuery.isError ? (
             <Card data-card-hover='false'>

@@ -624,6 +624,40 @@ func AdminGetReferralOverview(c *gin.Context) {
 	common.ApiSuccess(c, overview)
 }
 
+func parseReferralConsumeRange(c *gin.Context) (int64, int64, error) {
+	startTimestamp, _ := strconv.ParseInt(strings.TrimSpace(c.Query("start_timestamp")), 10, 64)
+	endTimestamp, _ := strconv.ParseInt(strings.TrimSpace(c.Query("end_timestamp")), 10, 64)
+	return startTimestamp, endTimestamp, nil
+}
+
+func GetInviteeConsumeReport(c *gin.Context) {
+	id := c.GetInt("id")
+	pageInfo := common.GetPageQuery(c)
+	startTimestamp, endTimestamp, _ := parseReferralConsumeRange(c)
+	report, err := model.GetInviteeConsumeReport(id, startTimestamp, endTimestamp, pageInfo)
+	if err != nil {
+		common.ApiError(c, err)
+		return
+	}
+	common.ApiSuccess(c, report)
+}
+
+func AdminGetInviteeConsumeReport(c *gin.Context) {
+	id, err := strconv.Atoi(c.Param("id"))
+	if err != nil || id <= 0 {
+		common.ApiErrorI18n(c, i18n.MsgInvalidId)
+		return
+	}
+	pageInfo := common.GetPageQuery(c)
+	startTimestamp, endTimestamp, _ := parseReferralConsumeRange(c)
+	report, err := model.GetInviteeConsumeReport(id, startTimestamp, endTimestamp, pageInfo)
+	if err != nil {
+		common.ApiError(c, err)
+		return
+	}
+	common.ApiSuccess(c, report)
+}
+
 func ClaimReferralCommissions(c *gin.Context) {
 	if !requirePaymentCompliance(c) {
 		return
