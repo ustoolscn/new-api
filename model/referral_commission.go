@@ -61,22 +61,29 @@ type ReferralOverview struct {
 	InvitedUsers             *common.PageInfo `json:"invited_users"`
 }
 
-// ReferralInviteeConsumeUser is one invited user's consumption for a query range.
-// Range values come from quota_data (dashboard aggregates), not request logs.
-// Lifetime values come from users.used_quota.
+// ReferralInviteeConsumeUser is one invited user's metrics for a query range.
+// Top-up, commission, and consumption values are all filtered by the same range.
+// Consumption uses quota_data (dashboard aggregates), not request logs.
 type ReferralInviteeConsumeUser struct {
 	Id                   int    `json:"id"`
 	Username             string `json:"username"`
 	DisplayName          string `json:"display_name"`
 	CreatedAt            int64  `json:"created_at"`
+	TopUpCount           int64  `json:"top_up_count"`
+	RechargeQuotaTotal   int64  `json:"recharge_quota_total"`
+	CommissionQuotaTotal int64  `json:"commission_quota_total"`
+	LastCommissionAt     int64  `json:"last_commission_at"`
 	RangeConsumeQuota    int64  `json:"range_consume_quota"`
 	LifetimeConsumeQuota int64  `json:"lifetime_consume_quota"`
 }
 
-// ReferralInviteeConsumeReport is a filtered invitee consumption report.
+// ReferralInviteeConsumeReport is a date-filtered invitee activity report.
 type ReferralInviteeConsumeReport struct {
 	StartTimestamp       int64            `json:"start_timestamp"`
 	EndTimestamp         int64            `json:"end_timestamp"`
+	TopUpCountTotal      int64            `json:"top_up_count_total"`
+	RechargeQuotaTotal   int64            `json:"recharge_quota_total"`
+	CommissionQuotaTotal int64            `json:"commission_quota_total"`
 	RangeConsumeTotal    int64            `json:"range_consume_total"`
 	LifetimeConsumeTotal int64            `json:"lifetime_consume_total"`
 	Users                *common.PageInfo `json:"users"`
@@ -304,8 +311,9 @@ func GetReferralOverview(inviterId int, pageInfo *common.PageInfo) (*ReferralOve
 
 const maxReferralInviteeConsumeRangeSeconds = 366 * 24 * 60 * 60
 
-// GetInviteeConsumeReport returns per-invitee consumption for a time range.
-// Range consumption is aggregated from quota_data, not request logs.
+// GetInviteeConsumeReport returns per-invitee activity for a time range.
+// Top-ups, commissions, and consumption are all filtered by the same range.
+// Consumption is aggregated from quota_data, not request logs.
 func GetInviteeConsumeReport(inviterId int, startTimestamp int64, endTimestamp int64, pageInfo *common.PageInfo) (*ReferralInviteeConsumeReport, error) {
 	if inviterId <= 0 || pageInfo == nil {
 		return nil, errors.New("invalid referral consume query")
@@ -346,12 +354,25 @@ func GetInviteeConsumeReport(inviterId int, startTimestamp int64, endTimestamp i
 		return nil, err
 	}
 
-	var rangeTotal int64
+	var rangeConsumeTotal int64
 	if err := DB.Table("quota_data").
 		Select("COALESCE(SUM(quota_data.quota), 0)").
 		Joins("JOIN users ON users.id = quota_data.user_id").
 		Where("users.inviter_id = ? AND quota_data.created_at >= ? AND quota_data.created_at < ?", inviterId, startTimestamp, endTimestamp).
-		Scan(&rangeTotal).Error; err != nil {
+		Scan(&rangeConsumeTotal).Error; err != nil {
+		return nil, err
+	}
+
+	var commissionTotal int64
+	if err := DB.Model(&ReferralCommission{}).
+		Select("COALESCE(SUM(commission_quota), 0)").
+		Where("inviter_id = ? AND created_at >= ? AND created_at < ?", inviterId, startTimestamp, endTimestamp).
+		Scan(&commissionTotal).Error; err != nil {
+		return nil, err
+	}
+
+	topUpCountTotal, rechargeQuotaTotal, err := sumInviteeTopUpsInRange(inviterId, nil, startTimestamp, endTimestamp)
+	if err != nil {
 		return nil, err
 	}
 
@@ -374,19 +395,43 @@ func GetInviteeConsumeReport(inviterId int, startTimestamp int64, endTimestamp i
 			userIndex[users[index].Id] = index
 		}
 
+		if err := attachInviteeTopUpsInRange(users, userIndex, userIds, startTimestamp, endTimestamp); err != nil {
+			return nil, err
+		}
+
+		type commissionAggregate struct {
+			InviteeId            int
+			CommissionQuotaTotal int64
+			LastCommissionAt     int64
+		}
+		var commissions []commissionAggregate
+		if err := DB.Model(&ReferralCommission{}).
+			Select("invitee_id, COALESCE(SUM(commission_quota), 0) AS commission_quota_total, COALESCE(MAX(created_at), 0) AS last_commission_at").
+			Where("inviter_id = ? AND invitee_id IN ? AND created_at >= ? AND created_at < ?", inviterId, userIds, startTimestamp, endTimestamp).
+			Group("invitee_id").
+			Scan(&commissions).Error; err != nil {
+			return nil, err
+		}
+		for _, aggregate := range commissions {
+			if index, ok := userIndex[aggregate.InviteeId]; ok {
+				users[index].CommissionQuotaTotal = aggregate.CommissionQuotaTotal
+				users[index].LastCommissionAt = aggregate.LastCommissionAt
+			}
+		}
+
 		type rangeConsumeRow struct {
 			UserId       int
 			ConsumeQuota int64
 		}
-		var rows []rangeConsumeRow
+		var consumeRows []rangeConsumeRow
 		if err := DB.Table("quota_data").
 			Select("user_id, COALESCE(SUM(quota), 0) AS consume_quota").
 			Where("user_id IN ? AND created_at >= ? AND created_at < ?", userIds, startTimestamp, endTimestamp).
 			Group("user_id").
-			Scan(&rows).Error; err != nil {
+			Scan(&consumeRows).Error; err != nil {
 			return nil, err
 		}
-		for _, row := range rows {
+		for _, row := range consumeRows {
 			if index, ok := userIndex[row.UserId]; ok {
 				users[index].RangeConsumeQuota = row.ConsumeQuota
 			}
@@ -398,10 +443,134 @@ func GetInviteeConsumeReport(inviterId int, startTimestamp int64, endTimestamp i
 	return &ReferralInviteeConsumeReport{
 		StartTimestamp:       startTimestamp,
 		EndTimestamp:         endTimestamp,
-		RangeConsumeTotal:    rangeTotal,
+		TopUpCountTotal:      topUpCountTotal,
+		RechargeQuotaTotal:   rechargeQuotaTotal,
+		CommissionQuotaTotal: commissionTotal,
+		RangeConsumeTotal:    rangeConsumeTotal,
 		LifetimeConsumeTotal: lifetimeTotal,
 		Users:                pageInfo,
 	}, nil
+}
+
+func referralTopUpInRangeCondition(startTimestamp int64, endTimestamp int64) (string, []any) {
+	// Prefer complete_time for successful top-ups; fall back to create_time when complete_time is unset.
+	return "((complete_time > 0 AND complete_time >= ? AND complete_time < ?) OR ((complete_time = 0 OR complete_time IS NULL) AND create_time >= ? AND create_time < ?))",
+		[]any{startTimestamp, endTimestamp, startTimestamp, endTimestamp}
+}
+
+func sumInviteeTopUpsInRange(inviterId int, userIds []int, startTimestamp int64, endTimestamp int64) (int64, int64, error) {
+	type referralTopUpAggregate struct {
+		PaymentProvider string
+		PaymentMethod   string
+		TopUpCount      int64
+		AmountTotal     int64
+		MoneyTotal      float64
+	}
+
+	query := DB.Model(&TopUp{}).
+		Select("top_ups.payment_provider, top_ups.payment_method, COUNT(*) AS top_up_count, COALESCE(SUM(top_ups.amount), 0) AS amount_total, COALESCE(SUM(top_ups.money), 0) AS money_total").
+		Joins("JOIN users ON users.id = top_ups.user_id").
+		Where("users.inviter_id = ? AND top_ups.status = ? AND top_ups.amount > 0", inviterId, common.TopUpStatusSuccess)
+	if len(userIds) > 0 {
+		query = query.Where("top_ups.user_id IN ?", userIds)
+	}
+	condition, args := referralTopUpInRangeCondition(startTimestamp, endTimestamp)
+	query = query.Where(condition, args...)
+
+	var aggregates []referralTopUpAggregate
+	if err := query.Group("top_ups.payment_provider, top_ups.payment_method").Scan(&aggregates).Error; err != nil {
+		return 0, 0, err
+	}
+
+	quotaPerUnit := decimal.NewFromFloat(common.QuotaPerUnit)
+	totalCount := int64(0)
+	totalQuota := decimal.Zero
+	maxInt64 := int64(^uint64(0) >> 1)
+	for _, aggregate := range aggregates {
+		if aggregate.TopUpCount < 0 || totalCount > maxInt64-aggregate.TopUpCount {
+			return 0, 0, errors.New("referral top-up count exceeds limit")
+		}
+		totalCount += aggregate.TopUpCount
+		paymentProvider := aggregate.PaymentProvider
+		if paymentProvider == "" {
+			paymentProvider = aggregate.PaymentMethod
+		}
+		creditedQuota := decimal.NewFromInt(aggregate.AmountTotal).Mul(quotaPerUnit)
+		switch paymentProvider {
+		case PaymentProviderStripe:
+			creditedQuota = decimal.NewFromFloat(aggregate.MoneyTotal).Mul(quotaPerUnit)
+		case PaymentProviderCreem:
+			creditedQuota = decimal.NewFromInt(aggregate.AmountTotal)
+		}
+		if creditedQuota.IsNegative() {
+			return 0, 0, errors.New("invalid referral top-up quota")
+		}
+		totalQuota = totalQuota.Add(creditedQuota)
+	}
+	rounded := totalQuota.Round(0).BigInt()
+	if !rounded.IsInt64() || rounded.Sign() < 0 {
+		return 0, 0, errors.New("referral top-up quota exceeds limit")
+	}
+	return totalCount, rounded.Int64(), nil
+}
+
+func attachInviteeTopUpsInRange(users []ReferralInviteeConsumeUser, userIndex map[int]int, userIds []int, startTimestamp int64, endTimestamp int64) error {
+	type referralTopUpAggregate struct {
+		UserId          int
+		PaymentProvider string
+		PaymentMethod   string
+		TopUpCount      int64
+		AmountTotal     int64
+		MoneyTotal      float64
+	}
+
+	condition, args := referralTopUpInRangeCondition(startTimestamp, endTimestamp)
+	queryArgs := append([]any{userIds, common.TopUpStatusSuccess}, args...)
+	var aggregates []referralTopUpAggregate
+	if err := DB.Model(&TopUp{}).
+		Select("user_id, payment_provider, payment_method, COUNT(*) AS top_up_count, COALESCE(SUM(amount), 0) AS amount_total, COALESCE(SUM(money), 0) AS money_total").
+		Where("user_id IN ? AND status = ? AND amount > 0 AND "+condition, queryArgs...).
+		Group("user_id, payment_provider, payment_method").
+		Scan(&aggregates).Error; err != nil {
+		return err
+	}
+
+	quotaPerUnit := decimal.NewFromFloat(common.QuotaPerUnit)
+	rechargeQuotaTotals := make(map[int]decimal.Decimal, len(users))
+	maxInt64 := int64(^uint64(0) >> 1)
+	for _, aggregate := range aggregates {
+		index, ok := userIndex[aggregate.UserId]
+		if !ok {
+			continue
+		}
+		if aggregate.TopUpCount < 0 || users[index].TopUpCount > maxInt64-aggregate.TopUpCount {
+			return errors.New("referral top-up count exceeds limit")
+		}
+		paymentProvider := aggregate.PaymentProvider
+		if paymentProvider == "" {
+			paymentProvider = aggregate.PaymentMethod
+		}
+		creditedQuota := decimal.NewFromInt(aggregate.AmountTotal).Mul(quotaPerUnit)
+		switch paymentProvider {
+		case PaymentProviderStripe:
+			creditedQuota = decimal.NewFromFloat(aggregate.MoneyTotal).Mul(quotaPerUnit)
+		case PaymentProviderCreem:
+			creditedQuota = decimal.NewFromInt(aggregate.AmountTotal)
+		}
+		if creditedQuota.IsNegative() {
+			return errors.New("invalid referral top-up quota")
+		}
+		users[index].TopUpCount += aggregate.TopUpCount
+		rechargeQuotaTotals[aggregate.UserId] = rechargeQuotaTotals[aggregate.UserId].Add(creditedQuota)
+	}
+	for userId, total := range rechargeQuotaTotals {
+		rounded := total.Round(0).BigInt()
+		if !rounded.IsInt64() || rounded.Sign() < 0 {
+			return errors.New("referral top-up quota exceeds limit")
+		}
+		users[userIndex[userId]].RechargeQuotaTotal = rounded.Int64()
+	}
+	return nil
 }
 
 func GetReferralInviterSummaries(pageInfo *common.PageInfo, keyword string) ([]ReferralInviterSummary, int64, error) {

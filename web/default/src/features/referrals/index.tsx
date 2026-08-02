@@ -31,7 +31,6 @@ import {
   useQuery,
   useQueryClient,
 } from '@tanstack/react-query'
-import { useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { toast } from 'sonner'
 
@@ -64,7 +63,6 @@ import {
   getReferralOverview,
 } from './api'
 import { InviteeConsumeCard } from './components/invitee-consume-card'
-import { InvitedUsersCard } from './components/invited-users-card'
 import { ReferralRewardsCard } from './components/referral-rewards-card'
 
 const PAGE_SIZE = 10
@@ -73,8 +71,7 @@ export function Referrals() {
   const { t } = useTranslation()
   const queryClient = useQueryClient()
   const setUser = useAuthStore((state) => state.auth.setUser)
-  const [page, setPage] = useState(1)
-  const { copyToClipboard } = useCopyToClipboard()
+    const { copyToClipboard } = useCopyToClipboard()
 
   const codeQuery = useQuery({
     queryKey: ['referral-code'],
@@ -88,9 +85,9 @@ export function Referrals() {
   })
 
   const overviewQuery = useQuery({
-    queryKey: ['referrals', page, PAGE_SIZE],
+    queryKey: ['referrals', PAGE_SIZE],
     queryFn: async () => {
-      const response = await getReferralOverview(page, PAGE_SIZE)
+      const response = await getReferralOverview(1, PAGE_SIZE)
       if (!response.success || !response.data) {
         throw new Error(
           response.message || t('Failed to load referral information')
@@ -264,8 +261,6 @@ export function Referrals() {
             onClaimCommission={() => claimMutation.mutate()}
           />
 
-          <InviteeConsumeCard />
-
           {overviewQuery.isError ? (
             <Card data-card-hover='false'>
               <CardContent className='flex flex-col items-center gap-3 py-10 text-center'>
@@ -281,14 +276,9 @@ export function Referrals() {
                 </Button>
               </CardContent>
             </Card>
-          ) : (
-            <InvitedUsersCard
-              data={overview?.invited_users}
-              loading={overviewQuery.isLoading || overviewQuery.isFetching}
-              page={page}
-              onPageChange={setPage}
-            />
-          )}
+          ) : null}
+
+          <InviteeConsumeCard />
         </div>
       </SectionPageLayout.Content>
     </SectionPageLayout>

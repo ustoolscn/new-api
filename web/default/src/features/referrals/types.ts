@@ -56,6 +56,10 @@ export type ReferralInviteeConsumeUser = {
   username: string
   display_name: string
   created_at: number
+  top_up_count: number
+  recharge_quota_total: number
+  commission_quota_total: number
+  last_commission_at: number
   range_consume_quota: number
   lifetime_consume_quota: number
 }
@@ -70,6 +74,9 @@ export type ReferralInviteeConsumeUsersPage = {
 export type ReferralInviteeConsumeReport = {
   start_timestamp: number
   end_timestamp: number
+  top_up_count_total: number
+  recharge_quota_total: number
+  commission_quota_total: number
   range_consume_total: number
   lifetime_consume_total: number
   users: ReferralInviteeConsumeUsersPage

@@ -6,7 +6,6 @@ import {
   UsersRound,
   WalletCards,
 } from 'lucide-react'
-import { useState } from 'react'
 import { useTranslation } from 'react-i18next'
 
 import {
@@ -31,7 +30,6 @@ import {
 } from '@/components/ui/sheet'
 import { Skeleton } from '@/components/ui/skeleton'
 import { InviteeConsumeCard } from '@/features/referrals/components/invitee-consume-card'
-import { InvitedUsersCard } from '@/features/referrals/components/invited-users-card'
 import { ReferralRewardsCard } from '@/features/referrals/components/referral-rewards-card'
 import { formatQuota } from '@/lib/format'
 
@@ -47,15 +45,14 @@ type UserReferralDrawerProps = {
 
 export function UserReferralDrawer(props: UserReferralDrawerProps) {
   const { t } = useTranslation()
-  const [page, setPage] = useState(1)
-  const userId = props.user?.id ?? 0
+    const userId = props.user?.id ?? 0
 
   const overviewQuery = useQuery({
-    queryKey: ['admin-referral-overview', userId, page, DETAIL_PAGE_SIZE],
+    queryKey: ['admin-referral-overview', userId, DETAIL_PAGE_SIZE],
     queryFn: async () => {
       const response = await getAdminReferralOverview(
         userId,
-        page,
+        1,
         DETAIL_PAGE_SIZE
       )
       if (!response.success || !response.data) {
@@ -103,10 +100,7 @@ export function UserReferralDrawer(props: UserReferralDrawerProps) {
   return (
     <Sheet
       open={props.user !== null}
-      onOpenChange={(open) => {
-        if (!open) setPage(1)
-        props.onOpenChange(open)
-      }}
+      onOpenChange={props.onOpenChange}
     >
       <SheetContent className={sideDrawerContentClassName('sm:max-w-5xl')}>
         <SheetHeader className={sideDrawerHeaderClassName()}>
@@ -172,12 +166,6 @@ export function UserReferralDrawer(props: UserReferralDrawerProps) {
               <div className='shrink-0'>
                 <InviteeConsumeCard inviterId={userId} />
               </div>
-              <InvitedUsersCard
-                data={overview?.invited_users}
-                loading={overviewQuery.isLoading || overviewQuery.isFetching}
-                page={page}
-                onPageChange={setPage}
-              />
             </>
           )}
         </div>

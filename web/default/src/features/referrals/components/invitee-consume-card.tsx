@@ -19,8 +19,8 @@ For commercial licensing, please contact support@quantumnous.com
 import {
   ArrowLeft01Icon,
   ArrowRight01Icon,
-  ChartHistogramIcon,
   Search01Icon,
+  UserMultiple02Icon,
 } from '@hugeicons/core-free-icons'
 import { HugeiconsIcon } from '@hugeicons/react'
 import { keepPreviousData, useQuery } from '@tanstack/react-query'
@@ -84,7 +84,11 @@ function getPresetRange(preset: RangePreset) {
       }
     case 'last_year':
       return {
-        start: now.subtract(1, 'year').add(1, 'day').startOf('day').format(DATE_FORMAT),
+        start: now
+          .subtract(1, 'year')
+          .add(1, 'day')
+          .startOf('day')
+          .format(DATE_FORMAT),
         end: now.format(DATE_FORMAT),
       }
     case 'this_month':
@@ -102,11 +106,13 @@ function toQueryRange(startDate: string, endDate: string) {
   return {
     startTimestamp: start.unix(),
     endTimestamp: end.unix(),
-    valid:
-      start.isValid() &&
-      end.isValid() &&
-      end.unix() > start.unix(),
+    valid: start.isValid() && end.isValid() && end.unix() > start.unix(),
   }
+}
+
+function formatTimestamp(timestamp: number, emptyText: string): string {
+  if (!timestamp) return emptyText
+  return new Date(timestamp * 1000).toLocaleString()
 }
 
 export function InviteeConsumeCard(props: InviteeConsumeCardProps) {
@@ -126,9 +132,9 @@ export function InviteeConsumeCard(props: InviteeConsumeCardProps) {
     [appliedEndDate, appliedStartDate]
   )
 
-  const consumeQuery = useQuery({
+  const reportQuery = useQuery({
     queryKey: [
-      'invitee-consume-report',
+      'invitee-activity-report',
       props.inviterId ?? 'self',
       appliedRange.startTimestamp,
       appliedRange.endTimestamp,
@@ -152,7 +158,8 @@ export function InviteeConsumeCard(props: InviteeConsumeCardProps) {
       }
       return response.data
     },
-    enabled: appliedRange.valid && (props.inviterId == null || props.inviterId > 0),
+    enabled:
+      appliedRange.valid && (props.inviterId == null || props.inviterId > 0),
     placeholderData: keepPreviousData,
   })
 
@@ -177,8 +184,8 @@ export function InviteeConsumeCard(props: InviteeConsumeCardProps) {
     setPage(1)
   }
 
-  const items = consumeQuery.data?.users?.items ?? []
-  const total = consumeQuery.data?.users?.total ?? 0
+  const items = reportQuery.data?.users?.items ?? []
+  const total = reportQuery.data?.users?.total ?? 0
   const pageCount = Math.max(1, Math.ceil(total / PAGE_SIZE))
   const presets: Array<{ value: RangePreset; label: string }> = [
     { value: 'this_month', label: t('This Month') },
@@ -187,18 +194,37 @@ export function InviteeConsumeCard(props: InviteeConsumeCardProps) {
     { value: 'last_year', label: t('Last Year') },
   ]
 
+  const summaryCards = [
+    {
+      label: t('Top-ups'),
+      value: String(reportQuery.data?.top_up_count_total ?? 0),
+    },
+    {
+      label: t('Credited balance'),
+      value: formatQuota(reportQuery.data?.recharge_quota_total ?? 0),
+    },
+    {
+      label: t('Commission earned'),
+      value: formatQuota(reportQuery.data?.commission_quota_total ?? 0),
+    },
+    {
+      label: t('Period total consumption'),
+      value: formatQuota(reportQuery.data?.range_consume_total ?? 0),
+    },
+  ]
+
   return (
     <Card className={props.className} data-card-hover='false'>
       <CardHeader className='shrink-0 space-y-4'>
         <div className='flex items-start gap-3'>
           <IconBadge tone='primary' size='lg'>
-            <HugeiconsIcon icon={ChartHistogramIcon} strokeWidth={1.8} />
+            <HugeiconsIcon icon={UserMultiple02Icon} strokeWidth={1.8} />
           </IconBadge>
           <div className='min-w-0 flex-1'>
-            <CardTitle>{t('Invitee consumption')}</CardTitle>
+            <CardTitle>{t('Invited users')}</CardTitle>
             <CardDescription className='mt-1'>
               {t(
-                'Query each invited user’s consumption for a selected period, plus the period total. Period data comes from durable usage aggregates, not request logs.'
+                'Filter invited users by date range. Top-ups, credited balance, commission, and consumption all use the same selected period.'
               )}
             </CardDescription>
           </div>
@@ -220,11 +246,14 @@ export function InviteeConsumeCard(props: InviteeConsumeCardProps) {
 
         <div className='grid gap-3 sm:grid-cols-[1fr_1fr_auto] sm:items-end'>
           <div className='space-y-1.5'>
-            <label className='text-muted-foreground text-xs' htmlFor='invitee-consume-start'>
+            <label
+              className='text-muted-foreground text-xs'
+              htmlFor='invitee-activity-start'
+            >
               {t('Start Date')}
             </label>
             <Input
-              id='invitee-consume-start'
+              id='invitee-activity-start'
               type='date'
               value={draftStartDate}
               onChange={(event) => {
@@ -234,11 +263,14 @@ export function InviteeConsumeCard(props: InviteeConsumeCardProps) {
             />
           </div>
           <div className='space-y-1.5'>
-            <label className='text-muted-foreground text-xs' htmlFor='invitee-consume-end'>
+            <label
+              className='text-muted-foreground text-xs'
+              htmlFor='invitee-activity-end'
+            >
               {t('End Date')}
             </label>
             <Input
-              id='invitee-consume-end'
+              id='invitee-activity-end'
               type='date'
               value={draftEndDate}
               onChange={(event) => {
@@ -248,99 +280,136 @@ export function InviteeConsumeCard(props: InviteeConsumeCardProps) {
             />
           </div>
           <Button type='button' onClick={applyDraftRange} className='sm:mb-0.5'>
-            <HugeiconsIcon icon={Search01Icon} strokeWidth={2} data-icon='inline-start' />
+            <HugeiconsIcon
+              icon={Search01Icon}
+              strokeWidth={2}
+              data-icon='inline-start'
+            />
             {t('Search')}
           </Button>
         </div>
+
+        <p className='text-muted-foreground text-xs tabular-nums'>
+          {t('Selected period')}: {appliedStartDate} ~ {appliedEndDate}
+        </p>
       </CardHeader>
 
-      <CardContent className='space-y-4'>
-        <div className='grid gap-3 sm:grid-cols-2'>
-          <div className='rounded-xl border px-4 py-3'>
-            <p className='text-muted-foreground text-sm'>
-              {t('Period total consumption')}
-            </p>
-            {consumeQuery.isLoading ? (
-              <Skeleton className='mt-2 h-8 w-28' />
-            ) : (
-              <p className='mt-1 text-2xl font-semibold tabular-nums'>
-                {formatQuota(consumeQuery.data?.range_consume_total ?? 0)}
-              </p>
-            )}
-            <p className='text-muted-foreground mt-1 text-xs tabular-nums'>
-              {appliedStartDate} ~ {appliedEndDate}
-            </p>
-          </div>
-          <div className='rounded-xl border px-4 py-3'>
-            <p className='text-muted-foreground text-sm'>
-              {t('Lifetime invitee consumption')}
-            </p>
-            {consumeQuery.isLoading ? (
-              <Skeleton className='mt-2 h-8 w-28' />
-            ) : (
-              <p className='mt-1 text-2xl font-semibold tabular-nums'>
-                {formatQuota(consumeQuery.data?.lifetime_consume_total ?? 0)}
-              </p>
-            )}
-          </div>
+      <CardContent className={cn('space-y-4 px-0')}>
+        <div className='grid gap-3 px-6 sm:grid-cols-2 xl:grid-cols-4'>
+          {summaryCards.map((card) => (
+            <div key={card.label} className='rounded-xl border px-4 py-3'>
+              <p className='text-muted-foreground text-sm'>{card.label}</p>
+              {reportQuery.isLoading ? (
+                <Skeleton className='mt-2 h-7 w-24' />
+              ) : (
+                <p className='mt-1 text-xl font-semibold tabular-nums'>
+                  {card.value}
+                </p>
+              )}
+            </div>
+          ))}
         </div>
 
-        <div className={cn('overflow-hidden rounded-xl border')}>
-          <Table>
-            <TableHeader>
-              <TableRow>
-                <TableHead className='pl-4'>{t('User')}</TableHead>
-                <TableHead className='text-right'>
-                  {t('Period consumption')}
-                </TableHead>
-                <TableHead className='pr-4 text-right'>
-                  {t('Lifetime consumption')}
-                </TableHead>
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {consumeQuery.isLoading
-                ? Array.from({ length: 5 }, (_, index) => (
-                    <TableRow key={index}>
-                      <TableCell className='pl-4'>
-                        <Skeleton className='h-8 w-36' />
-                      </TableCell>
-                      <TableCell>
-                        <Skeleton className='ml-auto h-4 w-20' />
-                      </TableCell>
-                      <TableCell className='pr-4'>
-                        <Skeleton className='ml-auto h-4 w-20' />
-                      </TableCell>
-                    </TableRow>
-                  ))
-                : items.map((user) => (
-                    <TableRow key={user.id}>
-                      <TableCell className='pl-4'>
-                        <div className='min-w-36'>
-                          <p className='font-medium'>
-                            {user.display_name || user.username}
-                          </p>
-                          <p className='text-muted-foreground text-xs'>
-                            @{user.username}
-                          </p>
-                        </div>
-                      </TableCell>
-                      <TableCell className='text-right font-medium tabular-nums'>
-                        {formatQuota(user.range_consume_quota)}
-                      </TableCell>
-                      <TableCell className='pr-4 text-right font-medium tabular-nums'>
-                        {formatQuota(user.lifetime_consume_quota)}
-                      </TableCell>
-                    </TableRow>
-                  ))}
-            </TableBody>
-          </Table>
-          {!consumeQuery.isLoading && items.length === 0 ? (
-            <div className='text-muted-foreground px-4 py-8 text-center text-sm'>
-              {t('No invitee consumption yet')}
-            </div>
-          ) : null}
-        </div>
+        <Table>
+          <TableHeader>
+            <TableRow>
+              <TableHead className='pl-6'>{t('User')}</TableHead>
+              <TableHead>{t('Joined at')}</TableHead>
+              <TableHead className='text-right'>{t('Top-ups')}</TableHead>
+              <TableHead className='text-right'>
+                {t('Credited balance')}
+              </TableHead>
+              <TableHead className='text-right'>
+                {t('Commission earned')}
+              </TableHead>
+              <TableHead className='text-right'>
+                {t('Period consumption')}
+              </TableHead>
+              <TableHead className='pr-6 text-right'>
+                {t('Last commission')}
+              </TableHead>
+            </TableRow>
+          </TableHeader>
+          <TableBody>
+            {reportQuery.isLoading
+              ? Array.from({ length: 5 }, (_, index) => (
+                  <TableRow key={index}>
+                    <TableCell className='pl-6'>
+                      <Skeleton className='h-8 w-36' />
+                    </TableCell>
+                    <TableCell>
+                      <Skeleton className='h-4 w-28' />
+                    </TableCell>
+                    <TableCell>
+                      <Skeleton className='ml-auto h-4 w-10' />
+                    </TableCell>
+                    <TableCell>
+                      <Skeleton className='ml-auto h-4 w-20' />
+                    </TableCell>
+                    <TableCell>
+                      <Skeleton className='ml-auto h-4 w-20' />
+                    </TableCell>
+                    <TableCell>
+                      <Skeleton className='ml-auto h-4 w-20' />
+                    </TableCell>
+                    <TableCell className='pr-6'>
+                      <Skeleton className='ml-auto h-4 w-28' />
+                    </TableCell>
+                  </TableRow>
+                ))
+              : items.map((user) => (
+                  <TableRow key={user.id}>
+                    <TableCell className='pl-6'>
+                      <div className='min-w-36'>
+                        <p className='font-medium'>
+                          {user.display_name || user.username}
+                        </p>
+                        <p className='text-muted-foreground text-xs'>
+                          @{user.username}
+                        </p>
+                      </div>
+                    </TableCell>
+                    <TableCell>
+                      {formatTimestamp(user.created_at, '-')}
+                    </TableCell>
+                    <TableCell className='text-right tabular-nums'>
+                      {user.top_up_count}
+                    </TableCell>
+                    <TableCell className='text-right font-medium tabular-nums'>
+                      {formatQuota(user.recharge_quota_total)}
+                    </TableCell>
+                    <TableCell className='text-right font-medium tabular-nums'>
+                      {formatQuota(user.commission_quota_total)}
+                    </TableCell>
+                    <TableCell className='text-right font-medium tabular-nums'>
+                      {formatQuota(user.range_consume_quota)}
+                    </TableCell>
+                    <TableCell className='pr-6 text-right'>
+                      {formatTimestamp(
+                        user.last_commission_at,
+                        t('No commission yet')
+                      )}
+                    </TableCell>
+                  </TableRow>
+                ))}
+          </TableBody>
+        </Table>
+
+        {!reportQuery.isLoading && items.length === 0 ? (
+          <div className='flex flex-col items-center gap-2 px-6 py-12 text-center'>
+            <HugeiconsIcon
+              icon={UserMultiple02Icon}
+              strokeWidth={1.5}
+              className='text-muted-foreground size-10'
+            />
+            <p className='font-medium'>{t('No invited users yet')}</p>
+            <p className='text-muted-foreground max-w-sm text-sm'>
+              {t(
+                'Share your referral link. New users who register through it will appear here.'
+              )}
+            </p>
+          </div>
+        ) : null}
       </CardContent>
 
       {total > PAGE_SIZE ? (
@@ -356,7 +425,7 @@ export function InviteeConsumeCard(props: InviteeConsumeCardProps) {
               type='button'
               variant='outline'
               size='icon-sm'
-              disabled={page <= 1 || consumeQuery.isFetching}
+              disabled={page <= 1 || reportQuery.isFetching}
               onClick={() => setPage((current) => Math.max(1, current - 1))}
               aria-label={t('Previous page')}
             >
@@ -366,7 +435,7 @@ export function InviteeConsumeCard(props: InviteeConsumeCardProps) {
               type='button'
               variant='outline'
               size='icon-sm'
-              disabled={page >= pageCount || consumeQuery.isFetching}
+              disabled={page >= pageCount || reportQuery.isFetching}
               onClick={() =>
                 setPage((current) => Math.min(pageCount, current + 1))
               }

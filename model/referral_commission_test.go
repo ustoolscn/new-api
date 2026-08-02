@@ -230,7 +230,7 @@ func TestGetReferralInviterSummariesAggregatesAndSearches(t *testing.T) {
 	assert.Equal(t, firstInviter.Id, filtered[0].Id)
 }
 
-func TestInviteeConsumeReportUsesQuotaDataRangeAndLifetimeTotals(t *testing.T) {
+func TestInviteeConsumeReportUsesRangeForTopUpCommissionAndConsume(t *testing.T) {
 	truncateTables(t)
 
 	now := time.Now()
@@ -254,37 +254,43 @@ func TestInviteeConsumeReportUsesQuotaDataRangeAndLifetimeTotals(t *testing.T) {
 		{UserID: unrelated.Id, Username: unrelated.Username, ModelName: "gpt-test", CreatedAt: currentMonthStart.Unix() + 3600, Quota: 999},
 	}).Error)
 
-	overview, err := GetReferralOverview(inviter.Id, &common.PageInfo{Page: 1, PageSize: 20})
-	require.NoError(t, err)
-	assert.Equal(t, int64(800), overview.InviteeConsumeTotal)
+	require.NoError(t, DB.Create(&[]TopUp{
+		{UserId: inviteeA.Id, Amount: 2, Money: 2, TradeNo: "range-topup-a-prev", PaymentMethod: PaymentMethodWaffo, PaymentProvider: PaymentProviderWaffo, Status: common.TopUpStatusSuccess, CompleteTime: previousMonthStart.Unix() + 100},
+		{UserId: inviteeB.Id, Amount: 3, Money: 3, TradeNo: "range-topup-b-curr", PaymentMethod: PaymentMethodWaffo, PaymentProvider: PaymentProviderWaffo, Status: common.TopUpStatusSuccess, CompleteTime: currentMonthStart.Unix() + 100},
+		{UserId: unrelated.Id, Amount: 9, Money: 9, TradeNo: "range-topup-other", PaymentMethod: PaymentMethodWaffo, PaymentProvider: PaymentProviderWaffo, Status: common.TopUpStatusSuccess, CompleteTime: currentMonthStart.Unix() + 100},
+	}).Error)
+	require.NoError(t, DB.Create(&[]ReferralCommission{
+		{InviterId: inviter.Id, InviteeId: inviteeA.Id, TopUpId: 91001, RechargeQuota: 1000, CommissionQuota: 100, Status: ReferralCommissionStatusPending, CreatedAt: previousMonthStart.Unix() + 200},
+		{InviterId: inviter.Id, InviteeId: inviteeB.Id, TopUpId: 91002, RechargeQuota: 2000, CommissionQuota: 200, Status: ReferralCommissionStatusPending, CreatedAt: currentMonthStart.Unix() + 200},
+	}).Error)
 
 	previousReport, err := GetInviteeConsumeReport(inviter.Id, previousMonthStart.Unix(), currentMonthStart.Unix(), &common.PageInfo{Page: 1, PageSize: 20})
 	require.NoError(t, err)
 	assert.Equal(t, int64(200), previousReport.RangeConsumeTotal)
+	assert.Equal(t, int64(1), previousReport.TopUpCountTotal)
+	assert.Equal(t, int64(common.QuotaFromFloat(2*common.QuotaPerUnit)), previousReport.RechargeQuotaTotal)
+	assert.Equal(t, int64(100), previousReport.CommissionQuotaTotal)
 	assert.Equal(t, int64(800), previousReport.LifetimeConsumeTotal)
+
 	previousItems, ok := previousReport.Users.Items.([]ReferralInviteeConsumeUser)
 	require.True(t, ok)
-	require.Len(t, previousItems, 2)
 	previousByID := map[int]ReferralInviteeConsumeUser{}
 	for _, item := range previousItems {
 		previousByID[item.Id] = item
 	}
+	assert.Equal(t, int64(1), previousByID[inviteeA.Id].TopUpCount)
+	assert.Equal(t, int64(common.QuotaFromFloat(2*common.QuotaPerUnit)), previousByID[inviteeA.Id].RechargeQuotaTotal)
+	assert.Equal(t, int64(100), previousByID[inviteeA.Id].CommissionQuotaTotal)
 	assert.Equal(t, int64(120), previousByID[inviteeA.Id].RangeConsumeQuota)
+	assert.Zero(t, previousByID[inviteeB.Id].TopUpCount)
+	assert.Zero(t, previousByID[inviteeB.Id].CommissionQuotaTotal)
 	assert.Equal(t, int64(80), previousByID[inviteeB.Id].RangeConsumeQuota)
-	assert.Equal(t, int64(300), previousByID[inviteeA.Id].LifetimeConsumeQuota)
-	assert.Equal(t, int64(500), previousByID[inviteeB.Id].LifetimeConsumeQuota)
 
 	currentReport, err := GetInviteeConsumeReport(inviter.Id, currentMonthStart.Unix(), rangeEnd.Unix(), &common.PageInfo{Page: 1, PageSize: 20})
 	require.NoError(t, err)
 	assert.Equal(t, int64(50), currentReport.RangeConsumeTotal)
-	currentItems, ok := currentReport.Users.Items.([]ReferralInviteeConsumeUser)
-	require.True(t, ok)
-	currentByID := map[int]ReferralInviteeConsumeUser{}
-	for _, item := range currentItems {
-		currentByID[item.Id] = item
-	}
-	assert.Equal(t, int64(50), currentByID[inviteeA.Id].RangeConsumeQuota)
-	assert.Zero(t, currentByID[inviteeB.Id].RangeConsumeQuota)
+	assert.Equal(t, int64(1), currentReport.TopUpCountTotal)
+	assert.Equal(t, int64(200), currentReport.CommissionQuotaTotal)
 }
 
 func TestReferralInviterSummariesIncludeInviteeConsumeTotal(t *testing.T) {
