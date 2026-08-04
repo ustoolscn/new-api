@@ -767,25 +767,29 @@ func GetReferralInviterSummaries(pageInfo *common.PageInfo, keyword string) ([]R
 		pageInfo.PageSize = 100
 	}
 
-	inviterIds := DB.Model(&User{}).Select("inviter_id").Where("inviter_id > 0")
-	commissionInviterIds := DB.Model(&ReferralCommission{}).Select("inviter_id").Where("inviter_id > 0")
-	query := DB.Model(&User{}).Where(
-		"(aff_count > ? OR aff_quota > ? OR aff_history > ? OR id IN (?) OR id IN (?))",
-		0,
-		0,
-		0,
-		inviterIds,
-		commissionInviterIds,
-	)
-
 	keyword = strings.TrimSpace(keyword)
+	query := DB.Model(&User{})
 	if keyword != "" {
+		// Keyword search includes users with no prior invite activity so admins can
+		// open a first-time inviter and manually bind invitees.
 		pattern := "%" + keyword + "%"
 		if userId, err := strconv.Atoi(keyword); err == nil && userId > 0 {
 			query = query.Where("(username LIKE ? OR display_name LIKE ? OR id = ?)", pattern, pattern, userId)
 		} else {
 			query = query.Where("(username LIKE ? OR display_name LIKE ?)", pattern, pattern)
 		}
+	} else {
+		// Default list only shows users who already participate in referrals.
+		inviterIds := DB.Model(&User{}).Select("inviter_id").Where("inviter_id > 0")
+		commissionInviterIds := DB.Model(&ReferralCommission{}).Select("inviter_id").Where("inviter_id > 0")
+		query = query.Where(
+			"(aff_count > ? OR aff_quota > ? OR aff_history > ? OR id IN (?) OR id IN (?))",
+			0,
+			0,
+			0,
+			inviterIds,
+			commissionInviterIds,
+		)
 	}
 
 	var total int64

@@ -209,12 +209,12 @@ export function ReferralUsersTable() {
         emptyDescription={
           referralsQuery.isError
             ? referralsQuery.error.message
-            : t('Users with invitations or referral rewards will appear here.')
+            : t('Users with invitations or referral rewards appear here by default. Search by username or ID to find first-time inviters and bind invitees.')
         }
         skeletonKeyPrefix='referral-users-skeleton'
         applyHeaderSize
         toolbarProps={{
-          searchPlaceholder: t('Search referral users...'),
+          searchPlaceholder: t('Search username or ID to bind invitees...'),
         }}
       />
 

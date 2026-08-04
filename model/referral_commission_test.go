@@ -438,16 +438,28 @@ func TestGetReferralInviterSummariesAggregatesAndSearches(t *testing.T) {
 	}
 	require.NoError(t, DB.Create(&commissions).Error)
 
-	summaries, total, err := GetReferralInviterSummaries(&common.PageInfo{Page: 1, PageSize: 20}, "summary")
+	// Default list only includes users with referral activity.
+	defaultSummaries, defaultTotal, err := GetReferralInviterSummaries(&common.PageInfo{Page: 1, PageSize: 20}, "")
 	require.NoError(t, err)
-	assert.Equal(t, int64(2), total)
-	require.Len(t, summaries, 2)
+	assert.Equal(t, int64(2), defaultTotal)
+	require.Len(t, defaultSummaries, 2)
 
-	byId := make(map[int]ReferralInviterSummary, len(summaries))
-	for _, summary := range summaries {
-		byId[summary.Id] = summary
-	}
-	first := byId[firstInviter.Id]
+	// Keyword search can surface users with no invite history for first-time binding.
+	noHistory, noHistoryTotal, err := GetReferralInviterSummaries(&common.PageInfo{Page: 1, PageSize: 20}, unrelated.Username)
+	require.NoError(t, err)
+	assert.Equal(t, int64(1), noHistoryTotal)
+	require.Len(t, noHistory, 1)
+	assert.Equal(t, unrelated.Id, noHistory[0].Id)
+	assert.Zero(t, noHistory[0].InviteCount)
+	assert.Zero(t, noHistory[0].TotalQuota)
+
+	summaries, total, err := GetReferralInviterSummaries(&common.PageInfo{Page: 1, PageSize: 20}, "summary-first")
+	require.NoError(t, err)
+	assert.Equal(t, int64(1), total)
+	require.Len(t, summaries, 1)
+
+	first := summaries[0]
+	assert.Equal(t, firstInviter.Id, first.Id)
 	assert.Equal(t, int64(2), first.InviteCount)
 	assert.Equal(t, 2, first.RewardedInviteCount)
 	assert.Equal(t, 800, first.InviteRewardQuota)
@@ -457,7 +469,11 @@ func TestGetReferralInviterSummariesAggregatesAndSearches(t *testing.T) {
 	assert.Equal(t, int64(80), first.ClaimedQuota)
 	assert.Equal(t, int64(200), first.TotalQuota)
 
-	second := byId[secondInviter.Id]
+	secondList, secondTotal, err := GetReferralInviterSummaries(&common.PageInfo{Page: 1, PageSize: 20}, "summary-second")
+	require.NoError(t, err)
+	assert.Equal(t, int64(1), secondTotal)
+	require.Len(t, secondList, 1)
+	second := secondList[0]
 	assert.Zero(t, second.InviteCount)
 	assert.Equal(t, 400, second.InviteRewardTotalQuota)
 	assert.Equal(t, int64(40), second.PendingQuota)
