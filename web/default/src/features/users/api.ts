@@ -144,6 +144,18 @@ export async function getAdminReferralOverview(
 /**
  * Get single user by ID
  */
+export async function assignReferralInvitee(
+  inviterId: number,
+  payload: { user_id?: number; username?: string }
+): Promise<ApiResponse<{ inviter_id: number; invitee_id: number }>> {
+  const res = await api.post(
+    `/api/user/referrals/admin/${inviterId}/invitees`,
+    payload
+  )
+  return res.data
+}
+
+
 export async function getUser(id: number): Promise<ApiResponse<User>> {
   const res = await api.get(`/api/user/${id}`)
   return res.data

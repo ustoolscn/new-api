@@ -142,6 +142,7 @@ func SetApiRouter(router *gin.Engine) {
 				adminRoute.GET("/referrals/admin", controller.AdminGetReferralInviterSummaries)
 				adminRoute.GET("/referrals/admin/:id", controller.AdminGetReferralOverview)
 				adminRoute.GET("/referrals/admin/:id/consume", controller.AdminGetInviteeConsumeReport)
+				adminRoute.POST("/referrals/admin/:id/invitees", middleware.CriticalRateLimit(), controller.AdminAssignReferralInvitee)
 				adminRoute.POST("/device/:id/ban", controller.BanUserDevice)
 				adminRoute.POST("/device/:id/unban", controller.UnbanUserDevice)
 				adminRoute.GET("/", controller.GetAllUsers)

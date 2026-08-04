@@ -1,4 +1,5 @@
 import { useQuery } from '@tanstack/react-query'
+import { useState } from 'react'
 import {
   ChartColumn,
   Percent,
@@ -30,6 +31,7 @@ import {
 } from '@/components/ui/sheet'
 import { Skeleton } from '@/components/ui/skeleton'
 import { InviteeConsumeCard } from '@/features/referrals/components/invitee-consume-card'
+import { AddReferralInviteeDialog } from './add-referral-invitee-dialog'
 import { ReferralRewardsCard } from '@/features/referrals/components/referral-rewards-card'
 import { formatQuota } from '@/lib/format'
 
@@ -45,7 +47,8 @@ type UserReferralDrawerProps = {
 
 export function UserReferralDrawer(props: UserReferralDrawerProps) {
   const { t } = useTranslation()
-    const userId = props.user?.id ?? 0
+  const [addInviteeOpen, setAddInviteeOpen] = useState(false)
+  const userId = props.user?.id ?? 0
 
   const overviewQuery = useQuery({
     queryKey: ['admin-referral-overview', userId, DETAIL_PAGE_SIZE],
@@ -104,15 +107,27 @@ export function UserReferralDrawer(props: UserReferralDrawerProps) {
     >
       <SheetContent className={sideDrawerContentClassName('sm:max-w-5xl')}>
         <SheetHeader className={sideDrawerHeaderClassName()}>
-          <SheetTitle>{t('Referral details')}</SheetTitle>
-          <SheetDescription>
-            {props.user
-              ? t('Referral details for {{username}} (ID: {{id}}).', {
-                  username: props.user.display_name || props.user.username,
-                  id: props.user.id,
-                })
-              : null}
-          </SheetDescription>
+          <div className='flex items-start justify-between gap-3'>
+            <div className='min-w-0'>
+              <SheetTitle>{t('Referral details')}</SheetTitle>
+              <SheetDescription>
+                {props.user
+                  ? t('Referral details for {{username}} (ID: {{id}}).', {
+                      username: props.user.display_name || props.user.username,
+                      id: props.user.id,
+                    })
+                  : null}
+              </SheetDescription>
+            </div>
+            <Button
+              type='button'
+              size='sm'
+              disabled={userId <= 0}
+              onClick={() => setAddInviteeOpen(true)}
+            >
+              {t('Add invitee')}
+            </Button>
+          </div>
         </SheetHeader>
 
         <div className={sideDrawerFormClassName('gap-4')}>
@@ -170,6 +185,19 @@ export function UserReferralDrawer(props: UserReferralDrawerProps) {
           )}
         </div>
       </SheetContent>
+      <AddReferralInviteeDialog
+        inviterId={userId}
+        inviterName={
+          props.user
+            ? props.user.display_name || props.user.username
+            : undefined
+        }
+        open={addInviteeOpen}
+        onOpenChange={setAddInviteeOpen}
+        onSuccess={() => {
+          void overviewQuery.refetch()
+        }}
+      />
     </Sheet>
   )
 }

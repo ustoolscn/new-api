@@ -1,37 +1,97 @@
 import fs from 'node:fs/promises'
 import path from 'node:path'
 const LOCALES_DIR = path.resolve('src/i18n/locales')
-function stableStringify(obj) { return JSON.stringify(obj, null, 2) + '\n' }
+function stableStringify(obj){return JSON.stringify(obj,null,2)+'\n'}
 const newKeys = {
   en: {
-    'Selected period': 'Selected period',
-    'Filter invited users by date range. Top-ups, credited balance, commission, and consumption all use the same selected period.':
-      'Filter invited users by date range. Top-ups, credited balance, commission, and consumption all use the same selected period.',
+    'Add invitee': 'Add invitee',
+    'Adding...': 'Adding...',
+    'Invitee added successfully': 'Invitee added successfully',
+    'Failed to add invitee': 'Failed to add invitee',
+    'Please enter a user ID or username': 'Please enter a user ID or username',
+    'User ID or username': 'User ID or username',
+    'Enter user ID or username': 'Enter user ID or username',
+    'Link an existing user as an invitee of {{username}}. This only sets the invite relationship and does not grant registration rewards.':
+      'Link an existing user as an invitee of {{username}}. This only sets the invite relationship and does not grant registration rewards.',
+    'Link an existing user as an invitee. This only sets the invite relationship and does not grant registration rewards.':
+      'Link an existing user as an invitee. This only sets the invite relationship and does not grant registration rewards.',
+    'Total invitation revenue including registration rewards and top-up commissions':
+      'Total invitation revenue including registration rewards and top-up commissions',
   },
   zh: {
-    'Selected period': '已选时间范围',
-    'Filter invited users by date range. Top-ups, credited balance, commission, and consumption all use the same selected period.':
-      '按时间范围筛选受邀用户。充值次数、到账额度、返佣和消耗都使用同一选定区间。',
+    'Add invitee': '添加被邀请人',
+    'Adding...': '添加中...',
+    'Invitee added successfully': '被邀请人添加成功',
+    'Failed to add invitee': '添加被邀请人失败',
+    'Please enter a user ID or username': '请输入用户 ID 或用户名',
+    'User ID or username': '用户 ID 或用户名',
+    'Enter user ID or username': '输入用户 ID 或用户名',
+    'Link an existing user as an invitee of {{username}}. This only sets the invite relationship and does not grant registration rewards.':
+      '将已有用户绑定为 {{username}} 的被邀请人。仅设置邀请关系，不会发放注册邀请奖励。',
+    'Link an existing user as an invitee. This only sets the invite relationship and does not grant registration rewards.':
+      '将已有用户绑定为被邀请人。仅设置邀请关系，不会发放注册邀请奖励。',
+    'Total invitation revenue including registration rewards and top-up commissions':
+      '邀请总收入（含注册邀请奖励与充值返佣）',
   },
   fr: {
-    'Selected period': 'Période sélectionnée',
-    'Filter invited users by date range. Top-ups, credited balance, commission, and consumption all use the same selected period.':
-      'Filtrez les utilisateurs invités par période. Recharges, solde crédité, commission et consommation utilisent la même période sélectionnée.',
+    'Add invitee': 'Ajouter un invité',
+    'Adding...': 'Ajout...',
+    'Invitee added successfully': 'Invité ajouté avec succès',
+    'Failed to add invitee': 'Échec de l’ajout de l’invité',
+    'Please enter a user ID or username': 'Veuillez saisir un ID utilisateur ou un nom d’utilisateur',
+    'User ID or username': 'ID utilisateur ou nom d’utilisateur',
+    'Enter user ID or username': 'Saisir l’ID ou le nom d’utilisateur',
+    'Link an existing user as an invitee of {{username}}. This only sets the invite relationship and does not grant registration rewards.':
+      'Associer un utilisateur existant comme invité de {{username}}. Cela définit uniquement la relation d’invitation et n’accorde pas de récompenses d’inscription.',
+    'Link an existing user as an invitee. This only sets the invite relationship and does not grant registration rewards.':
+      'Associer un utilisateur existant comme invité. Cela définit uniquement la relation d’invitation et n’accorde pas de récompenses d’inscription.',
+    'Total invitation revenue including registration rewards and top-up commissions':
+      'Revenu total d’invitation incluant les récompenses d’inscription et les commissions de recharge',
   },
   ja: {
-    'Selected period': '選択した期間',
-    'Filter invited users by date range. Top-ups, credited balance, commission, and consumption all use the same selected period.':
-      '期間で招待ユーザーを絞り込みます。チャージ回数、入金額、コミッション、消費はすべて同じ期間を使います。',
+    'Add invitee': '被招待ユーザーを追加',
+    'Adding...': '追加中...',
+    'Invitee added successfully': '被招待ユーザーを追加しました',
+    'Failed to add invitee': '被招待ユーザーの追加に失敗しました',
+    'Please enter a user ID or username': 'ユーザーIDまたはユーザー名を入力してください',
+    'User ID or username': 'ユーザーIDまたはユーザー名',
+    'Enter user ID or username': 'ユーザーIDまたはユーザー名を入力',
+    'Link an existing user as an invitee of {{username}}. This only sets the invite relationship and does not grant registration rewards.':
+      '既存ユーザーを {{username}} の被招待ユーザーとして紐付けます。招待関係のみ設定し、登録時の招待報酬は付与しません。',
+    'Link an existing user as an invitee. This only sets the invite relationship and does not grant registration rewards.':
+      '既存ユーザーを被招待ユーザーとして紐付けます。招待関係のみ設定し、登録時の招待報酬は付与しません。',
+    'Total invitation revenue including registration rewards and top-up commissions':
+      '登録招待報酬とチャージコミッションを含む招待総収益',
   },
   ru: {
-    'Selected period': 'Выбранный период',
-    'Filter invited users by date range. Top-ups, credited balance, commission, and consumption all use the same selected period.':
-      'Фильтруйте приглашённых пользователей по периоду. Пополнения, зачисленный баланс, комиссия и расход используют один и тот же выбранный период.',
+    'Add invitee': 'Добавить приглашённого',
+    'Adding...': 'Добавление...',
+    'Invitee added successfully': 'Приглашённый пользователь добавлен',
+    'Failed to add invitee': 'Не удалось добавить приглашённого',
+    'Please enter a user ID or username': 'Введите ID или имя пользователя',
+    'User ID or username': 'ID или имя пользователя',
+    'Enter user ID or username': 'Введите ID или имя пользователя',
+    'Link an existing user as an invitee of {{username}}. This only sets the invite relationship and does not grant registration rewards.':
+      'Привязать существующего пользователя как приглашённого для {{username}}. Устанавливается только связь приглашения, регистрационные награды не выдаются.',
+    'Link an existing user as an invitee. This only sets the invite relationship and does not grant registration rewards.':
+      'Привязать существующего пользователя как приглашённого. Устанавливается только связь приглашения, регистрационные награды не выдаются.',
+    'Total invitation revenue including registration rewards and top-up commissions':
+      'Суммарный доход от приглашений, включая регистрационные награды и комиссии с пополнений',
   },
   vi: {
-    'Selected period': 'Kỳ đã chọn',
-    'Filter invited users by date range. Top-ups, credited balance, commission, and consumption all use the same selected period.':
-      'Lọc người dùng được mời theo khoảng thời gian. Lượt nạp, số dư ghi có, hoa hồng và tiêu thụ đều dùng cùng kỳ đã chọn.',
+    'Add invitee': 'Thêm người được mời',
+    'Adding...': 'Đang thêm...',
+    'Invitee added successfully': 'Đã thêm người được mời',
+    'Failed to add invitee': 'Thêm người được mời thất bại',
+    'Please enter a user ID or username': 'Vui lòng nhập ID hoặc tên người dùng',
+    'User ID or username': 'ID hoặc tên người dùng',
+    'Enter user ID or username': 'Nhập ID hoặc tên người dùng',
+    'Link an existing user as an invitee of {{username}}. This only sets the invite relationship and does not grant registration rewards.':
+      'Liên kết người dùng hiện có thành người được mời của {{username}}. Chỉ thiết lập quan hệ mời, không cấp thưởng đăng ký.',
+    'Link an existing user as an invitee. This only sets the invite relationship and does not grant registration rewards.':
+      'Liên kết người dùng hiện có thành người được mời. Chỉ thiết lập quan hệ mời, không cấp thưởng đăng ký.',
+    'Total invitation revenue including registration rewards and top-up commissions':
+      'Tổng thu nhập mời bao gồm thưởng đăng ký và hoa hồng nạp tiền',
   },
 }
 for (const [locale, trans] of Object.entries(newKeys)) {

@@ -309,3 +309,39 @@ func TestReferralInviterSummariesIncludeInviteeConsumeTotal(t *testing.T) {
 	require.Len(t, summaries, 1)
 	assert.Equal(t, int64(400), summaries[0].InviteeConsumeTotal)
 }
+
+func TestAdminAssignReferralInviteeAndUserListReferralStats(t *testing.T) {
+	truncateTables(t)
+
+	inviter := &User{Id: 901, Username: "assign-inviter", Status: common.UserStatusEnabled, AffCode: "assign-inviter", AffHistoryQuota: 1000}
+	invitee := &User{Id: 902, Username: "assign-invitee", Status: common.UserStatusEnabled, AffCode: "assign-invitee"}
+	taken := &User{Id: 903, Username: "assign-taken", Status: common.UserStatusEnabled, AffCode: "assign-taken", InviterId: 999}
+	require.NoError(t, DB.Create(inviter).Error)
+	require.NoError(t, DB.Create(invitee).Error)
+	require.NoError(t, DB.Create(taken).Error)
+	require.NoError(t, DB.Create(&ReferralCommission{
+		InviterId: inviter.Id, InviteeId: invitee.Id, TopUpId: 92001, CommissionQuota: 250, Status: ReferralCommissionStatusPending, CreatedAt: 1,
+	}).Error)
+
+	require.NoError(t, AdminAssignReferralInvitee(inviter.Id, invitee.Id))
+	var got User
+	require.NoError(t, DB.Select("id", "inviter_id").Where("id = ?", invitee.Id).First(&got).Error)
+	assert.Equal(t, inviter.Id, got.InviterId)
+
+	err := AdminAssignReferralInvitee(inviter.Id, invitee.Id)
+	require.Error(t, err)
+	err = AdminAssignReferralInvitee(inviter.Id, taken.Id)
+	require.Error(t, err)
+	err = AdminAssignReferralInvitee(inviter.Id, inviter.Id)
+	require.Error(t, err)
+
+	resolved, err := ResolveUserIdByIdentifier("assign-invitee")
+	require.NoError(t, err)
+	assert.Equal(t, invitee.Id, resolved)
+
+	users := []*User{inviter}
+	require.NoError(t, fillUsersReferralStats(users))
+	assert.Equal(t, int64(1), users[0].InviteCount)
+	assert.Equal(t, int64(250), users[0].ReferralCommissionTotal)
+	assert.Equal(t, int64(1250), users[0].ReferralRevenueTotal)
+}

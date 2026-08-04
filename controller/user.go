@@ -658,6 +658,46 @@ func AdminGetInviteeConsumeReport(c *gin.Context) {
 	common.ApiSuccess(c, report)
 }
 
+func AdminAssignReferralInvitee(c *gin.Context) {
+	inviterId, err := strconv.Atoi(c.Param("id"))
+	if err != nil || inviterId <= 0 {
+		common.ApiErrorI18n(c, i18n.MsgInvalidParams)
+		return
+	}
+
+	var req struct {
+		UserId   int    `json:"user_id"`
+		Username string `json:"username"`
+	}
+	if err := common.DecodeJson(c.Request.Body, &req); err != nil {
+		common.ApiError(c, errors.New("invalid request body"))
+		return
+	}
+
+	inviteeId := req.UserId
+	if inviteeId <= 0 {
+		identifier := strings.TrimSpace(req.Username)
+		if identifier == "" {
+			common.ApiError(c, errors.New("user_id or username is required"))
+			return
+		}
+		inviteeId, err = model.ResolveUserIdByIdentifier(identifier)
+		if err != nil {
+			common.ApiError(c, err)
+			return
+		}
+	}
+
+	if err := model.AdminAssignReferralInvitee(inviterId, inviteeId); err != nil {
+		common.ApiError(c, err)
+		return
+	}
+	common.ApiSuccess(c, gin.H{
+		"inviter_id": inviterId,
+		"invitee_id": inviteeId,
+	})
+}
+
 func ClaimReferralCommissions(c *gin.Context) {
 	if !requirePaymentCompliance(c) {
 		return

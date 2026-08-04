@@ -573,6 +573,89 @@ func attachInviteeTopUpsInRange(users []ReferralInviteeConsumeUser, userIndex ma
 	return nil
 }
 
+// AdminAssignReferralInvitee links an existing user as an invitee of inviterId.
+// Manual binding only sets inviter_id; it does not grant registration invite rewards.
+func AdminAssignReferralInvitee(inviterId int, inviteeId int) error {
+	if inviterId <= 0 || inviteeId <= 0 {
+		return errors.New("invalid inviter or invitee")
+	}
+	if inviterId == inviteeId {
+		return errors.New("cannot invite yourself")
+	}
+
+	return DB.Transaction(func(tx *gorm.DB) error {
+		var inviter User
+		if err := tx.Select("id", "status").Where("id = ?", inviterId).First(&inviter).Error; err != nil {
+			if errors.Is(err, gorm.ErrRecordNotFound) {
+				return errors.New("inviter not found")
+			}
+			return err
+		}
+
+		var invitee User
+		if err := lockForUpdate(tx).Select("id", "inviter_id", "username").Where("id = ?", inviteeId).First(&invitee).Error; err != nil {
+			if errors.Is(err, gorm.ErrRecordNotFound) {
+				return errors.New("invitee not found")
+			}
+			return err
+		}
+		if invitee.InviterId > 0 {
+			if invitee.InviterId == inviterId {
+				return errors.New("user is already invited by this inviter")
+			}
+			return fmt.Errorf("user already has inviter_id=%d", invitee.InviterId)
+		}
+
+		// Prevent simple two-node cycles: inviter must not already be invitee of inviteeId.
+		var reverseCount int64
+		if err := tx.Model(&User{}).Where("id = ? AND inviter_id = ?", inviterId, inviteeId).Count(&reverseCount).Error; err != nil {
+			return err
+		}
+		if reverseCount > 0 {
+			return errors.New("cannot create circular invite relationship")
+		}
+
+		if err := tx.Model(&User{}).Where("id = ? AND (inviter_id = 0 OR inviter_id IS NULL)", inviteeId).
+			Update("inviter_id", inviterId).Error; err != nil {
+			return err
+		}
+		// Confirm write took effect under concurrent updates.
+		var updated User
+		if err := tx.Select("id", "inviter_id").Where("id = ?", inviteeId).First(&updated).Error; err != nil {
+			return err
+		}
+		if updated.InviterId != inviterId {
+			return errors.New("failed to assign invitee")
+		}
+		return nil
+	})
+}
+
+func ResolveUserIdByIdentifier(identifier string) (int, error) {
+	identifier = strings.TrimSpace(identifier)
+	if identifier == "" {
+		return 0, errors.New("user identifier is required")
+	}
+	if userId, err := strconv.Atoi(identifier); err == nil && userId > 0 {
+		var count int64
+		if err := DB.Model(&User{}).Where("id = ?", userId).Count(&count).Error; err != nil {
+			return 0, err
+		}
+		if count == 0 {
+			return 0, errors.New("user not found")
+		}
+		return userId, nil
+	}
+	var user User
+	if err := DB.Select("id").Where("username = ?", identifier).First(&user).Error; err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return 0, errors.New("user not found")
+		}
+		return 0, err
+	}
+	return user.Id, nil
+}
+
 func GetReferralInviterSummaries(pageInfo *common.PageInfo, keyword string) ([]ReferralInviterSummary, int64, error) {
 	if pageInfo == nil {
 		return nil, 0, errors.New("invalid referral query")

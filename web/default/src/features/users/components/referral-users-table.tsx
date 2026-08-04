@@ -5,7 +5,7 @@ import type {
   OnChangeFn,
   PaginationState,
 } from '@tanstack/react-table'
-import { Eye } from 'lucide-react'
+import { Eye, UserPlus } from 'lucide-react'
 import { useCallback, useMemo, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 
@@ -15,6 +15,7 @@ import { formatQuota } from '@/lib/format'
 
 import { getReferralInviters } from '../api'
 import type { ReferralInviterSummary } from '../types'
+import { AddReferralInviteeDialog } from './add-referral-invitee-dialog'
 import { UserReferralDrawer } from './user-referral-drawer'
 
 export function ReferralUsersTable() {
@@ -26,6 +27,8 @@ export function ReferralUsersTable() {
     pageSize: 20,
   })
   const [selectedUser, setSelectedUser] =
+    useState<ReferralInviterSummary | null>(null)
+  const [addInviteeUser, setAddInviteeUser] =
     useState<ReferralInviterSummary | null>(null)
 
   const handleGlobalFilterChange = useCallback<OnChangeFn<string>>((value) => {
@@ -150,15 +153,26 @@ export function ReferralUsersTable() {
         id: 'actions',
         header: t('Actions'),
         cell: ({ row }) => (
-          <Button
-            type='button'
-            size='sm'
-            variant='outline'
-            onClick={() => setSelectedUser(row.original)}
-          >
-            <Eye data-icon='inline-start' />
-            {t('View details')}
-          </Button>
+          <div className='flex flex-wrap gap-2'>
+            <Button
+              type='button'
+              size='sm'
+              variant='outline'
+              onClick={() => setSelectedUser(row.original)}
+            >
+              <Eye data-icon='inline-start' />
+              {t('View details')}
+            </Button>
+            <Button
+              type='button'
+              size='sm'
+              variant='outline'
+              onClick={() => setAddInviteeUser(row.original)}
+            >
+              <UserPlus data-icon='inline-start' />
+              {t('Add invitee')}
+            </Button>
+          </div>
         ),
         enableSorting: false,
       },
@@ -207,6 +221,16 @@ export function ReferralUsersTable() {
       <UserReferralDrawer
         user={selectedUser}
         onOpenChange={(open) => !open && setSelectedUser(null)}
+      />
+      <AddReferralInviteeDialog
+        inviterId={addInviteeUser?.id ?? 0}
+        inviterName={
+          addInviteeUser
+            ? addInviteeUser.display_name || addInviteeUser.username
+            : undefined
+        }
+        open={addInviteeUser !== null}
+        onOpenChange={(open) => !open && setAddInviteeUser(null)}
       />
     </>
   )
