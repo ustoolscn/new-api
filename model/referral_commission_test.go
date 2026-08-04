@@ -144,15 +144,177 @@ func TestReferralOverviewUsesSuccessfulTopUpsWithoutCommissionRows(t *testing.T)
 	require.True(t, ok)
 	require.Len(t, items, 1)
 
+	// External subscription companion top-up (amount=0, money=20) is included by paid money.
 	expectedRechargeQuota := int64(common.QuotaFromFloat(2*common.QuotaPerUnit)) +
 		int64(common.QuotaFromFloat(3.5*common.QuotaPerUnit)) +
 		1234 +
-		int64(common.QuotaFromFloat(1.25*common.QuotaPerUnit))
-	assert.Equal(t, int64(4), items[0].TopUpCount)
+		int64(common.QuotaFromFloat(1.25*common.QuotaPerUnit)) +
+		int64(common.QuotaFromFloat(20*common.QuotaPerUnit))
+	assert.Equal(t, int64(5), items[0].TopUpCount)
 	assert.Equal(t, expectedRechargeQuota, items[0].RechargeQuotaTotal)
 	assert.Zero(t, items[0].CommissionQuotaTotal)
 	assert.Zero(t, items[0].LastCommissionAt)
 	assert.Zero(t, overview.TotalQuota)
+}
+
+func TestReferralOverviewIncludesExternalSubscriptionAndExcludesBalance(t *testing.T) {
+	truncateTables(t)
+
+	paymentSetting := operation_setting.GetPaymentSetting()
+	originalRate := paymentSetting.ReferralCommissionRate
+	originalConfirmed := paymentSetting.ComplianceConfirmed
+	originalVersion := paymentSetting.ComplianceTermsVersion
+	t.Cleanup(func() {
+		paymentSetting.ReferralCommissionRate = originalRate
+		paymentSetting.ComplianceConfirmed = originalConfirmed
+		paymentSetting.ComplianceTermsVersion = originalVersion
+	})
+	paymentSetting.ReferralCommissionRate = 0
+	paymentSetting.ComplianceConfirmed = true
+	paymentSetting.ComplianceTermsVersion = operation_setting.CurrentComplianceTermsVersion
+
+	inviter := &User{Id: 731, Username: "sub-stats-inviter", Status: common.UserStatusEnabled, AffCode: "sub-stats-inviter-code"}
+	invitee := &User{Id: 732, Username: "sub-stats-invitee", Status: common.UserStatusEnabled, AffCode: "sub-stats-invitee-code", InviterId: inviter.Id}
+	require.NoError(t, DB.Create(inviter).Error)
+	require.NoError(t, DB.Create(invitee).Error)
+
+	topUps := []TopUp{
+		{UserId: invitee.Id, Amount: 2, Money: 2, TradeNo: "sub-stats-recharge", PaymentMethod: PaymentMethodWaffo, PaymentProvider: PaymentProviderWaffo, Status: common.TopUpStatusSuccess},
+		{UserId: invitee.Id, Amount: 0, Money: 15, TradeNo: "sub-stats-external", PaymentMethod: PaymentMethodStripe, PaymentProvider: PaymentProviderStripe, Status: common.TopUpStatusSuccess},
+		// Balance-paid subscription companion rows (if present) must never count.
+		{UserId: invitee.Id, Amount: 0, Money: 99, TradeNo: "sub-stats-balance", PaymentMethod: PaymentMethodBalance, PaymentProvider: PaymentProviderBalance, Status: common.TopUpStatusSuccess},
+		{UserId: invitee.Id, Amount: 0, Money: 0, TradeNo: "sub-stats-free", PaymentMethod: PaymentMethodStripe, PaymentProvider: PaymentProviderStripe, Status: common.TopUpStatusSuccess},
+	}
+	require.NoError(t, DB.Create(&topUps).Error)
+
+	overview, err := GetReferralOverview(inviter.Id, &common.PageInfo{Page: 1, PageSize: 20})
+	require.NoError(t, err)
+	items, ok := overview.InvitedUsers.Items.([]ReferralInvitedUser)
+	require.True(t, ok)
+	require.Len(t, items, 1)
+
+	expected := int64(common.QuotaFromFloat(2*common.QuotaPerUnit)) + int64(common.QuotaFromFloat(15*common.QuotaPerUnit))
+	assert.Equal(t, int64(2), items[0].TopUpCount)
+	assert.Equal(t, expected, items[0].RechargeQuotaTotal)
+}
+
+func TestCompleteSubscriptionOrderCreatesReferralCommission(t *testing.T) {
+	truncateTables(t)
+
+	paymentSetting := operation_setting.GetPaymentSetting()
+	originalRate := paymentSetting.ReferralCommissionRate
+	originalConfirmed := paymentSetting.ComplianceConfirmed
+	originalVersion := paymentSetting.ComplianceTermsVersion
+	t.Cleanup(func() {
+		paymentSetting.ReferralCommissionRate = originalRate
+		paymentSetting.ComplianceConfirmed = originalConfirmed
+		paymentSetting.ComplianceTermsVersion = originalVersion
+	})
+	paymentSetting.ReferralCommissionRate = 10
+	paymentSetting.ComplianceConfirmed = true
+	paymentSetting.ComplianceTermsVersion = operation_setting.CurrentComplianceTermsVersion
+
+	inviter := &User{Id: 741, Username: "sub-commission-inviter", Status: common.UserStatusEnabled, AffCode: "sub-commission-inviter-code"}
+	invitee := &User{Id: 742, Username: "sub-commission-invitee", Status: common.UserStatusEnabled, AffCode: "sub-commission-invitee-code", InviterId: inviter.Id, Quota: 0}
+	require.NoError(t, DB.Create(inviter).Error)
+	require.NoError(t, DB.Create(invitee).Error)
+
+	plan := &SubscriptionPlan{
+		Id:            7401,
+		Title:         "Commission Plan",
+		PriceAmount:   20,
+		DurationUnit:  SubscriptionDurationMonth,
+		DurationValue: 1,
+		Enabled:       true,
+		TotalAmount:   1000,
+	}
+	require.NoError(t, DB.Create(plan).Error)
+
+	order := &SubscriptionOrder{
+		UserId:          invitee.Id,
+		PlanId:          plan.Id,
+		Money:           20,
+		TradeNo:         "sub-commission-order",
+		PaymentMethod:   PaymentMethodStripe,
+		PaymentProvider: PaymentProviderStripe,
+		Status:          common.TopUpStatusPending,
+		CreateTime:      common.GetTimestamp(),
+	}
+	require.NoError(t, order.Insert())
+
+	require.NoError(t, CompleteSubscriptionOrder(order.TradeNo, "{\"ok\":true}", PaymentProviderStripe, ""))
+	// Idempotent second completion should not create another commission.
+	require.NoError(t, CompleteSubscriptionOrder(order.TradeNo, "{\"ok\":true}", PaymentProviderStripe, ""))
+
+	expectedRechargeQuota := common.QuotaFromFloat(20 * common.QuotaPerUnit)
+	expectedCommissionQuota := expectedRechargeQuota / 10
+
+	var commissions []ReferralCommission
+	require.NoError(t, DB.Find(&commissions).Error)
+	require.Len(t, commissions, 1)
+	assert.Equal(t, inviter.Id, commissions[0].InviterId)
+	assert.Equal(t, invitee.Id, commissions[0].InviteeId)
+	assert.Equal(t, expectedRechargeQuota, commissions[0].RechargeQuota)
+	assert.Equal(t, expectedCommissionQuota, commissions[0].CommissionQuota)
+
+	var topUp TopUp
+	require.NoError(t, DB.Where("trade_no = ?", order.TradeNo).First(&topUp).Error)
+	assert.Equal(t, int64(0), topUp.Amount)
+	assert.Equal(t, 20.0, topUp.Money)
+	assert.Equal(t, PaymentProviderStripe, topUp.PaymentProvider)
+}
+
+func TestPurchaseSubscriptionWithBalanceDoesNotCreateReferralCommission(t *testing.T) {
+	truncateTables(t)
+
+	paymentSetting := operation_setting.GetPaymentSetting()
+	originalRate := paymentSetting.ReferralCommissionRate
+	originalConfirmed := paymentSetting.ComplianceConfirmed
+	originalVersion := paymentSetting.ComplianceTermsVersion
+	t.Cleanup(func() {
+		paymentSetting.ReferralCommissionRate = originalRate
+		paymentSetting.ComplianceConfirmed = originalConfirmed
+		paymentSetting.ComplianceTermsVersion = originalVersion
+	})
+	paymentSetting.ReferralCommissionRate = 10
+	paymentSetting.ComplianceConfirmed = true
+	paymentSetting.ComplianceTermsVersion = operation_setting.CurrentComplianceTermsVersion
+
+	inviter := &User{Id: 751, Username: "sub-balance-inviter", Status: common.UserStatusEnabled, AffCode: "sub-balance-inviter-code"}
+	invitee := &User{Id: 752, Username: "sub-balance-invitee", Status: common.UserStatusEnabled, AffCode: "sub-balance-invitee-code", InviterId: inviter.Id, Quota: common.QuotaFromFloat(100 * common.QuotaPerUnit)}
+	require.NoError(t, DB.Create(inviter).Error)
+	require.NoError(t, DB.Create(invitee).Error)
+
+	allowBalance := true
+	plan := &SubscriptionPlan{
+		Id:              7501,
+		Title:           "Balance Plan",
+		PriceAmount:     10,
+		DurationUnit:    SubscriptionDurationMonth,
+		DurationValue:   1,
+		Enabled:         true,
+		TotalAmount:     500,
+		AllowBalancePay: &allowBalance,
+	}
+	require.NoError(t, DB.Create(plan).Error)
+	require.NoError(t, PurchaseSubscriptionWithBalance(invitee.Id, plan.Id))
+
+	var commissions []ReferralCommission
+	require.NoError(t, DB.Find(&commissions).Error)
+	assert.Empty(t, commissions)
+
+	var topUpCount int64
+	require.NoError(t, DB.Model(&TopUp{}).Count(&topUpCount).Error)
+	assert.Zero(t, topUpCount)
+
+	overview, err := GetReferralOverview(inviter.Id, &common.PageInfo{Page: 1, PageSize: 20})
+	require.NoError(t, err)
+	items, ok := overview.InvitedUsers.Items.([]ReferralInvitedUser)
+	require.True(t, ok)
+	require.Len(t, items, 1)
+	assert.Zero(t, items[0].TopUpCount)
+	assert.Zero(t, items[0].RechargeQuotaTotal)
+	assert.Zero(t, items[0].CommissionQuotaTotal)
 }
 
 func TestGetReferralInviterSummariesAggregatesAndSearches(t *testing.T) {

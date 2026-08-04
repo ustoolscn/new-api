@@ -502,7 +502,7 @@ func CreateUserSubscriptionFromPlanTx(tx *gorm.DB, userId int, plan *Subscriptio
 			return nil, errors.New("已达到该套餐购买上限")
 		}
 	}
-	nowUnix := GetDBTimestamp()
+	nowUnix := GetDBTimestampTx(tx)
 	now := time.Unix(nowUnix, 0)
 	endUnix, err := calcPlanEndTime(now, plan)
 	if err != nil {
@@ -587,7 +587,7 @@ func CompleteSubscriptionOrder(tradeNo string, providerPayload string, expectedP
 		if order.Status != common.TopUpStatusPending {
 			return ErrSubscriptionOrderStatusInvalid
 		}
-		plan, err := GetSubscriptionPlanById(order.PlanId)
+		plan, err := getSubscriptionPlanByIdTx(tx, order.PlanId)
 		if err != nil {
 			return err
 		}
@@ -599,7 +599,11 @@ func CompleteSubscriptionOrder(tradeNo string, providerPayload string, expectedP
 		if err != nil {
 			return err
 		}
-		if err := upsertSubscriptionTopUpTx(tx, &order); err != nil {
+		if actualPaymentMethod != "" && order.PaymentMethod != actualPaymentMethod {
+			order.PaymentMethod = actualPaymentMethod
+		}
+		topUp, err := upsertSubscriptionTopUpTx(tx, &order)
+		if err != nil {
 			return err
 		}
 		order.Status = common.TopUpStatusSuccess
@@ -607,11 +611,24 @@ func CompleteSubscriptionOrder(tradeNo string, providerPayload string, expectedP
 		if providerPayload != "" {
 			order.ProviderPayload = providerPayload
 		}
-		if actualPaymentMethod != "" && order.PaymentMethod != actualPaymentMethod {
-			order.PaymentMethod = actualPaymentMethod
-		}
 		if err := tx.Save(&order).Error; err != nil {
 			return err
+		}
+		// External subscription payments participate in referral commission based on paid money.
+		// Balance-paid subscriptions use a separate path and must never commission here.
+		if topUp != nil &&
+			order.PaymentMethod != PaymentMethodBalance &&
+			order.PaymentProvider != PaymentProviderBalance &&
+			order.Money > 0 {
+			rechargeQuota, quotaErr := topUpQuotaFromDecimal(
+				decimal.NewFromFloat(order.Money).Mul(decimal.NewFromFloat(common.QuotaPerUnit)),
+			)
+			if quotaErr != nil {
+				return quotaErr
+			}
+			if err := createReferralCommissionTx(tx, topUp, rechargeQuota); err != nil {
+				return err
+			}
 		}
 		logUserId = order.UserId
 		logPlanTitle = plan.Title
@@ -632,40 +649,52 @@ func CompleteSubscriptionOrder(tradeNo string, providerPayload string, expectedP
 	return nil
 }
 
-func upsertSubscriptionTopUpTx(tx *gorm.DB, order *SubscriptionOrder) error {
+func upsertSubscriptionTopUpTx(tx *gorm.DB, order *SubscriptionOrder) (*TopUp, error) {
 	if tx == nil || order == nil {
-		return errors.New("invalid subscription order")
+		return nil, errors.New("invalid subscription order")
 	}
 	now := common.GetTimestamp()
 	var topup TopUp
 	if err := tx.Where("trade_no = ?", order.TradeNo).First(&topup).Error; err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
 			topup = TopUp{
-				UserId:        order.UserId,
-				Amount:        0,
-				Money:         order.Money,
-				TradeNo:       order.TradeNo,
-				PaymentMethod: order.PaymentMethod,
-				CreateTime:    order.CreateTime,
-				CompleteTime:  now,
-				Status:        common.TopUpStatusSuccess,
+				UserId:          order.UserId,
+				Amount:          0,
+				Money:           order.Money,
+				TradeNo:         order.TradeNo,
+				PaymentMethod:   order.PaymentMethod,
+				PaymentProvider: order.PaymentProvider,
+				CreateTime:      order.CreateTime,
+				CompleteTime:    now,
+				Status:          common.TopUpStatusSuccess,
 			}
-			return tx.Create(&topup).Error
+			if err := tx.Create(&topup).Error; err != nil {
+				return nil, err
+			}
+			return &topup, nil
 		}
-		return err
+		return nil, err
 	}
 	topup.Money = order.Money
 	if topup.PaymentMethod == "" {
 		topup.PaymentMethod = order.PaymentMethod
 	} else if topup.PaymentMethod != order.PaymentMethod {
-		return ErrPaymentMethodMismatch
+		return nil, ErrPaymentMethodMismatch
+	}
+	if topup.PaymentProvider == "" {
+		topup.PaymentProvider = order.PaymentProvider
+	} else if order.PaymentProvider != "" && topup.PaymentProvider != order.PaymentProvider {
+		return nil, ErrPaymentMethodMismatch
 	}
 	if topup.CreateTime == 0 {
 		topup.CreateTime = order.CreateTime
 	}
 	topup.CompleteTime = now
 	topup.Status = common.TopUpStatusSuccess
-	return tx.Save(&topup).Error
+	if err := tx.Save(&topup).Error; err != nil {
+		return nil, err
+	}
+	return &topup, nil
 }
 
 func ExpireSubscriptionOrder(tradeNo string, expectedPaymentProvider string) error {

@@ -104,6 +104,113 @@ type ReferralInviterSummary struct {
 	TotalQuota               int64  `json:"total_quota"`
 }
 
+type referralTopUpAggregate struct {
+	UserId          int
+	PaymentProvider string
+	PaymentMethod   string
+	TopUpCount      int64
+	AmountTotal     int64
+	MoneyTotal      float64
+}
+
+// referralNonBalancePaymentCondition excludes wallet-balance payments so that
+// balance-paid subscriptions are never double-counted after a prior recharge.
+func referralNonBalancePaymentCondition(tableAlias string) (string, []any) {
+	prefix := ""
+	if tableAlias != "" {
+		prefix = tableAlias + "."
+	}
+	return fmt.Sprintf("(%spayment_method IS NULL OR %spayment_method <> ?) AND (%spayment_provider IS NULL OR %spayment_provider <> ?)",
+			prefix, prefix, prefix, prefix),
+		[]any{PaymentMethodBalance, PaymentProviderBalance}
+}
+
+// referralCreditedQuotaFromAggregate converts successful payments to system quota.
+// External subscription companion top-ups store paid money with amount=0.
+func referralCreditedQuotaFromAggregate(isSubscription bool, amountTotal int64, moneyTotal float64, paymentProvider string, paymentMethod string) (decimal.Decimal, error) {
+	quotaPerUnit := decimal.NewFromFloat(common.QuotaPerUnit)
+	if isSubscription {
+		creditedQuota := decimal.NewFromFloat(moneyTotal).Mul(quotaPerUnit)
+		if creditedQuota.IsNegative() {
+			return decimal.Zero, errors.New("invalid referral top-up quota")
+		}
+		return creditedQuota, nil
+	}
+	provider := paymentProvider
+	if provider == "" {
+		provider = paymentMethod
+	}
+	creditedQuota := decimal.NewFromInt(amountTotal).Mul(quotaPerUnit)
+	switch provider {
+	case PaymentProviderStripe:
+		creditedQuota = decimal.NewFromFloat(moneyTotal).Mul(quotaPerUnit)
+	case PaymentProviderCreem:
+		creditedQuota = decimal.NewFromInt(amountTotal)
+	}
+	if creditedQuota.IsNegative() {
+		return decimal.Zero, errors.New("invalid referral top-up quota")
+	}
+	return creditedQuota, nil
+}
+
+func queryReferralTopUpAggregates(base *gorm.DB, tableAlias string, includeUserId bool, isSubscription bool, startTimestamp int64, endTimestamp int64) ([]referralTopUpAggregate, error) {
+	prefix := ""
+	if tableAlias != "" {
+		prefix = tableAlias + "."
+	}
+	selectCols := fmt.Sprintf("%spayment_provider, %spayment_method, COUNT(*) AS top_up_count, COALESCE(SUM(%samount), 0) AS amount_total, COALESCE(SUM(%smoney), 0) AS money_total",
+		prefix, prefix, prefix, prefix)
+	if includeUserId {
+		selectCols = prefix + "user_id, " + selectCols
+	}
+	nonBalanceCondition, nonBalanceArgs := referralNonBalancePaymentCondition(tableAlias)
+	query := base.Select(selectCols).Where(nonBalanceCondition, nonBalanceArgs...)
+	if isSubscription {
+		query = query.Where(prefix + "amount = 0 AND " + prefix + "money > 0")
+	} else {
+		query = query.Where(prefix + "amount > 0")
+	}
+	if endTimestamp > 0 {
+		condition, args := referralTopUpInRangeCondition(startTimestamp, endTimestamp)
+		if tableAlias != "" {
+			condition = strings.ReplaceAll(condition, "complete_time", tableAlias+".complete_time")
+			condition = strings.ReplaceAll(condition, "create_time", tableAlias+".create_time")
+		}
+		query = query.Where(condition, args...)
+	}
+	if includeUserId {
+		query = query.Group(prefix + "user_id, " + prefix + "payment_provider, " + prefix + "payment_method")
+	} else {
+		query = query.Group(prefix + "payment_provider, " + prefix + "payment_method")
+	}
+	var aggregates []referralTopUpAggregate
+	if err := query.Scan(&aggregates).Error; err != nil {
+		return nil, err
+	}
+	return aggregates, nil
+}
+
+func roundReferralQuotaTotal(total decimal.Decimal) (int64, error) {
+	rounded := total.Round(0).BigInt()
+	if !rounded.IsInt64() || rounded.Sign() < 0 {
+		return 0, errors.New("referral top-up quota exceeds limit")
+	}
+	return rounded.Int64(), nil
+}
+
+func accumulateReferralTopUpAggregates(aggregates []referralTopUpAggregate, isSubscription bool, add func(userId int, count int64, credited decimal.Decimal) error) error {
+	for _, aggregate := range aggregates {
+		credited, err := referralCreditedQuotaFromAggregate(isSubscription, aggregate.AmountTotal, aggregate.MoneyTotal, aggregate.PaymentProvider, aggregate.PaymentMethod)
+		if err != nil {
+			return err
+		}
+		if err := add(aggregate.UserId, aggregate.TopUpCount, credited); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
 func createReferralCommissionTx(tx *gorm.DB, topUp *TopUp, rechargeQuota int) error {
 	if tx == nil || topUp == nil || topUp.Id == 0 || topUp.UserId == 0 || rechargeQuota <= 0 {
 		return nil
@@ -192,59 +299,41 @@ func GetReferralOverview(inviterId int, pageInfo *common.PageInfo) (*ReferralOve
 			userIndex[users[index].Id] = index
 		}
 
-		type referralTopUpAggregate struct {
-			UserId          int
-			PaymentProvider string
-			PaymentMethod   string
-			TopUpCount      int64
-			AmountTotal     int64
-			MoneyTotal      float64
-		}
-		var topUpAggregates []referralTopUpAggregate
-		if err := DB.Model(&TopUp{}).
-			Select("user_id, payment_provider, payment_method, COUNT(*) AS top_up_count, COALESCE(SUM(amount), 0) AS amount_total, COALESCE(SUM(money), 0) AS money_total").
-			Where("user_id IN ? AND status = ? AND amount > 0", userIds, common.TopUpStatusSuccess).
-			Group("user_id, payment_provider, payment_method").
-			Scan(&topUpAggregates).Error; err != nil {
-			return nil, err
-		}
-
-		quotaPerUnit := decimal.NewFromFloat(common.QuotaPerUnit)
 		rechargeQuotaTotals := make(map[int]decimal.Decimal, len(users))
 		maxInt64 := int64(^uint64(0) >> 1)
-		for _, aggregate := range topUpAggregates {
-			index, ok := userIndex[aggregate.UserId]
-			if !ok {
-				continue
+		for _, isSubscription := range []bool{false, true} {
+			topUpAggregates, err := queryReferralTopUpAggregates(
+				DB.Model(&TopUp{}).Where("user_id IN ? AND status = ?", userIds, common.TopUpStatusSuccess),
+				"",
+				true,
+				isSubscription,
+				0,
+				0,
+			)
+			if err != nil {
+				return nil, err
 			}
-			if aggregate.TopUpCount < 0 || users[index].TopUpCount > maxInt64-aggregate.TopUpCount {
-				return nil, errors.New("referral top-up count exceeds limit")
+			if err := accumulateReferralTopUpAggregates(topUpAggregates, isSubscription, func(userId int, count int64, credited decimal.Decimal) error {
+				index, ok := userIndex[userId]
+				if !ok {
+					return nil
+				}
+				if count < 0 || users[index].TopUpCount > maxInt64-count {
+					return errors.New("referral top-up count exceeds limit")
+				}
+				users[index].TopUpCount += count
+				rechargeQuotaTotals[userId] = rechargeQuotaTotals[userId].Add(credited)
+				return nil
+			}); err != nil {
+				return nil, err
 			}
-
-			paymentProvider := aggregate.PaymentProvider
-			if paymentProvider == "" {
-				paymentProvider = aggregate.PaymentMethod
-			}
-			creditedQuota := decimal.NewFromInt(aggregate.AmountTotal).Mul(quotaPerUnit)
-			switch paymentProvider {
-			case PaymentProviderStripe:
-				creditedQuota = decimal.NewFromFloat(aggregate.MoneyTotal).Mul(quotaPerUnit)
-			case PaymentProviderCreem:
-				creditedQuota = decimal.NewFromInt(aggregate.AmountTotal)
-			}
-			if creditedQuota.IsNegative() {
-				return nil, errors.New("invalid referral top-up quota")
-			}
-
-			users[index].TopUpCount += aggregate.TopUpCount
-			rechargeQuotaTotals[aggregate.UserId] = rechargeQuotaTotals[aggregate.UserId].Add(creditedQuota)
 		}
 		for userId, total := range rechargeQuotaTotals {
-			rounded := total.Round(0).BigInt()
-			if !rounded.IsInt64() || rounded.Sign() < 0 {
-				return nil, errors.New("referral top-up quota exceeds limit")
+			rounded, err := roundReferralQuotaTotal(total)
+			if err != nil {
+				return nil, err
 			}
-			users[userIndex[userId]].RechargeQuotaTotal = rounded.Int64()
+			users[userIndex[userId]].RechargeQuotaTotal = rounded
 		}
 
 		type referralCommissionAggregate struct {
@@ -459,116 +548,76 @@ func referralTopUpInRangeCondition(startTimestamp int64, endTimestamp int64) (st
 }
 
 func sumInviteeTopUpsInRange(inviterId int, userIds []int, startTimestamp int64, endTimestamp int64) (int64, int64, error) {
-	type referralTopUpAggregate struct {
-		PaymentProvider string
-		PaymentMethod   string
-		TopUpCount      int64
-		AmountTotal     int64
-		MoneyTotal      float64
-	}
-
-	query := DB.Model(&TopUp{}).
-		Select("top_ups.payment_provider, top_ups.payment_method, COUNT(*) AS top_up_count, COALESCE(SUM(top_ups.amount), 0) AS amount_total, COALESCE(SUM(top_ups.money), 0) AS money_total").
-		Joins("JOIN users ON users.id = top_ups.user_id").
-		Where("users.inviter_id = ? AND top_ups.status = ? AND top_ups.amount > 0", inviterId, common.TopUpStatusSuccess)
-	if len(userIds) > 0 {
-		query = query.Where("top_ups.user_id IN ?", userIds)
-	}
-	condition, args := referralTopUpInRangeCondition(startTimestamp, endTimestamp)
-	query = query.Where(condition, args...)
-
-	var aggregates []referralTopUpAggregate
-	if err := query.Group("top_ups.payment_provider, top_ups.payment_method").Scan(&aggregates).Error; err != nil {
-		return 0, 0, err
-	}
-
-	quotaPerUnit := decimal.NewFromFloat(common.QuotaPerUnit)
 	totalCount := int64(0)
 	totalQuota := decimal.Zero
 	maxInt64 := int64(^uint64(0) >> 1)
-	for _, aggregate := range aggregates {
-		if aggregate.TopUpCount < 0 || totalCount > maxInt64-aggregate.TopUpCount {
-			return 0, 0, errors.New("referral top-up count exceeds limit")
+
+	for _, isSubscription := range []bool{false, true} {
+		query := DB.Model(&TopUp{}).
+			Joins("JOIN users ON users.id = top_ups.user_id").
+			Where("users.inviter_id = ? AND top_ups.status = ?", inviterId, common.TopUpStatusSuccess)
+		if len(userIds) > 0 {
+			query = query.Where("top_ups.user_id IN ?", userIds)
 		}
-		totalCount += aggregate.TopUpCount
-		paymentProvider := aggregate.PaymentProvider
-		if paymentProvider == "" {
-			paymentProvider = aggregate.PaymentMethod
+		aggregates, err := queryReferralTopUpAggregates(query, "top_ups", false, isSubscription, startTimestamp, endTimestamp)
+		if err != nil {
+			return 0, 0, err
 		}
-		creditedQuota := decimal.NewFromInt(aggregate.AmountTotal).Mul(quotaPerUnit)
-		switch paymentProvider {
-		case PaymentProviderStripe:
-			creditedQuota = decimal.NewFromFloat(aggregate.MoneyTotal).Mul(quotaPerUnit)
-		case PaymentProviderCreem:
-			creditedQuota = decimal.NewFromInt(aggregate.AmountTotal)
+		if err := accumulateReferralTopUpAggregates(aggregates, isSubscription, func(_ int, count int64, credited decimal.Decimal) error {
+			if count < 0 || totalCount > maxInt64-count {
+				return errors.New("referral top-up count exceeds limit")
+			}
+			totalCount += count
+			totalQuota = totalQuota.Add(credited)
+			return nil
+		}); err != nil {
+			return 0, 0, err
 		}
-		if creditedQuota.IsNegative() {
-			return 0, 0, errors.New("invalid referral top-up quota")
-		}
-		totalQuota = totalQuota.Add(creditedQuota)
 	}
-	rounded := totalQuota.Round(0).BigInt()
-	if !rounded.IsInt64() || rounded.Sign() < 0 {
-		return 0, 0, errors.New("referral top-up quota exceeds limit")
+
+	rounded, err := roundReferralQuotaTotal(totalQuota)
+	if err != nil {
+		return 0, 0, err
 	}
-	return totalCount, rounded.Int64(), nil
+	return totalCount, rounded, nil
 }
 
 func attachInviteeTopUpsInRange(users []ReferralInviteeConsumeUser, userIndex map[int]int, userIds []int, startTimestamp int64, endTimestamp int64) error {
-	type referralTopUpAggregate struct {
-		UserId          int
-		PaymentProvider string
-		PaymentMethod   string
-		TopUpCount      int64
-		AmountTotal     int64
-		MoneyTotal      float64
-	}
-
-	condition, args := referralTopUpInRangeCondition(startTimestamp, endTimestamp)
-	queryArgs := append([]any{userIds, common.TopUpStatusSuccess}, args...)
-	var aggregates []referralTopUpAggregate
-	if err := DB.Model(&TopUp{}).
-		Select("user_id, payment_provider, payment_method, COUNT(*) AS top_up_count, COALESCE(SUM(amount), 0) AS amount_total, COALESCE(SUM(money), 0) AS money_total").
-		Where("user_id IN ? AND status = ? AND amount > 0 AND "+condition, queryArgs...).
-		Group("user_id, payment_provider, payment_method").
-		Scan(&aggregates).Error; err != nil {
-		return err
-	}
-
-	quotaPerUnit := decimal.NewFromFloat(common.QuotaPerUnit)
 	rechargeQuotaTotals := make(map[int]decimal.Decimal, len(users))
 	maxInt64 := int64(^uint64(0) >> 1)
-	for _, aggregate := range aggregates {
-		index, ok := userIndex[aggregate.UserId]
-		if !ok {
-			continue
+	for _, isSubscription := range []bool{false, true} {
+		aggregates, err := queryReferralTopUpAggregates(
+			DB.Model(&TopUp{}).Where("user_id IN ? AND status = ?", userIds, common.TopUpStatusSuccess),
+			"",
+			true,
+			isSubscription,
+			startTimestamp,
+			endTimestamp,
+		)
+		if err != nil {
+			return err
 		}
-		if aggregate.TopUpCount < 0 || users[index].TopUpCount > maxInt64-aggregate.TopUpCount {
-			return errors.New("referral top-up count exceeds limit")
+		if err := accumulateReferralTopUpAggregates(aggregates, isSubscription, func(userId int, count int64, credited decimal.Decimal) error {
+			index, ok := userIndex[userId]
+			if !ok {
+				return nil
+			}
+			if count < 0 || users[index].TopUpCount > maxInt64-count {
+				return errors.New("referral top-up count exceeds limit")
+			}
+			users[index].TopUpCount += count
+			rechargeQuotaTotals[userId] = rechargeQuotaTotals[userId].Add(credited)
+			return nil
+		}); err != nil {
+			return err
 		}
-		paymentProvider := aggregate.PaymentProvider
-		if paymentProvider == "" {
-			paymentProvider = aggregate.PaymentMethod
-		}
-		creditedQuota := decimal.NewFromInt(aggregate.AmountTotal).Mul(quotaPerUnit)
-		switch paymentProvider {
-		case PaymentProviderStripe:
-			creditedQuota = decimal.NewFromFloat(aggregate.MoneyTotal).Mul(quotaPerUnit)
-		case PaymentProviderCreem:
-			creditedQuota = decimal.NewFromInt(aggregate.AmountTotal)
-		}
-		if creditedQuota.IsNegative() {
-			return errors.New("invalid referral top-up quota")
-		}
-		users[index].TopUpCount += aggregate.TopUpCount
-		rechargeQuotaTotals[aggregate.UserId] = rechargeQuotaTotals[aggregate.UserId].Add(creditedQuota)
 	}
 	for userId, total := range rechargeQuotaTotals {
-		rounded := total.Round(0).BigInt()
-		if !rounded.IsInt64() || rounded.Sign() < 0 {
-			return errors.New("referral top-up quota exceeds limit")
+		rounded, err := roundReferralQuotaTotal(total)
+		if err != nil {
+			return err
 		}
-		users[userIndex[userId]].RechargeQuotaTotal = rounded.Int64()
+		users[userIndex[userId]].RechargeQuotaTotal = rounded
 	}
 	return nil
 }
