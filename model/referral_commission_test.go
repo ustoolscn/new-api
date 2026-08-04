@@ -178,9 +178,17 @@ func TestReferralOverviewIncludesExternalSubscriptionAndExcludesBalance(t *testi
 	require.NoError(t, DB.Create(inviter).Error)
 	require.NoError(t, DB.Create(invitee).Error)
 
+	originalPrice := operation_setting.Price
+	t.Cleanup(func() { operation_setting.Price = originalPrice })
+	operation_setting.Price = 7
+
 	topUps := []TopUp{
 		{UserId: invitee.Id, Amount: 2, Money: 2, TradeNo: "sub-stats-recharge", PaymentMethod: PaymentMethodWaffo, PaymentProvider: PaymentProviderWaffo, Status: common.TopUpStatusSuccess},
 		{UserId: invitee.Id, Amount: 0, Money: 15, TradeNo: "sub-stats-external", PaymentMethod: PaymentMethodStripe, PaymentProvider: PaymentProviderStripe, Status: common.TopUpStatusSuccess},
+		// Epay subscription money is CNY: 140 CNY / Price 7 = 20 USD.
+		{UserId: invitee.Id, Amount: 0, Money: 140, TradeNo: "sub-stats-epay-cny", PaymentMethod: "wxpay", PaymentProvider: PaymentProviderEpay, Status: common.TopUpStatusSuccess},
+		// Historical companion rows may omit provider and only keep epay method.
+		{UserId: invitee.Id, Amount: 0, Money: 70, TradeNo: "sub-stats-epay-legacy", PaymentMethod: "alipay", Status: common.TopUpStatusSuccess},
 		// Balance-paid subscription companion rows (if present) must never count.
 		{UserId: invitee.Id, Amount: 0, Money: 99, TradeNo: "sub-stats-balance", PaymentMethod: PaymentMethodBalance, PaymentProvider: PaymentProviderBalance, Status: common.TopUpStatusSuccess},
 		{UserId: invitee.Id, Amount: 0, Money: 0, TradeNo: "sub-stats-free", PaymentMethod: PaymentMethodStripe, PaymentProvider: PaymentProviderStripe, Status: common.TopUpStatusSuccess},
@@ -193,9 +201,78 @@ func TestReferralOverviewIncludesExternalSubscriptionAndExcludesBalance(t *testi
 	require.True(t, ok)
 	require.Len(t, items, 1)
 
-	expected := int64(common.QuotaFromFloat(2*common.QuotaPerUnit)) + int64(common.QuotaFromFloat(15*common.QuotaPerUnit))
-	assert.Equal(t, int64(2), items[0].TopUpCount)
+	expected := int64(common.QuotaFromFloat(2*common.QuotaPerUnit)) +
+		int64(common.QuotaFromFloat(15*common.QuotaPerUnit)) +
+		int64(common.QuotaFromFloat(20*common.QuotaPerUnit)) +
+		int64(common.QuotaFromFloat(10*common.QuotaPerUnit))
+	assert.Equal(t, int64(4), items[0].TopUpCount)
 	assert.Equal(t, expected, items[0].RechargeQuotaTotal)
+}
+
+func TestCompleteEpaySubscriptionOrderCommissionsUSDNotCNY(t *testing.T) {
+	truncateTables(t)
+
+	paymentSetting := operation_setting.GetPaymentSetting()
+	originalRate := paymentSetting.ReferralCommissionRate
+	originalConfirmed := paymentSetting.ComplianceConfirmed
+	originalVersion := paymentSetting.ComplianceTermsVersion
+	originalPrice := operation_setting.Price
+	t.Cleanup(func() {
+		paymentSetting.ReferralCommissionRate = originalRate
+		paymentSetting.ComplianceConfirmed = originalConfirmed
+		paymentSetting.ComplianceTermsVersion = originalVersion
+		operation_setting.Price = originalPrice
+	})
+	paymentSetting.ReferralCommissionRate = 10
+	paymentSetting.ComplianceConfirmed = true
+	paymentSetting.ComplianceTermsVersion = operation_setting.CurrentComplianceTermsVersion
+	operation_setting.Price = 7
+
+	inviter := &User{Id: 761, Username: "epay-sub-inviter", Status: common.UserStatusEnabled, AffCode: "epay-sub-inviter-code"}
+	invitee := &User{Id: 762, Username: "epay-sub-invitee", Status: common.UserStatusEnabled, AffCode: "epay-sub-invitee-code", InviterId: inviter.Id}
+	require.NoError(t, DB.Create(inviter).Error)
+	require.NoError(t, DB.Create(invitee).Error)
+
+	plan := &SubscriptionPlan{
+		Id:            7601,
+		Title:         "Epay Plan",
+		PriceAmount:   20,
+		DurationUnit:  SubscriptionDurationMonth,
+		DurationValue: 1,
+		Enabled:       true,
+		TotalAmount:   1000,
+	}
+	require.NoError(t, DB.Create(plan).Error)
+
+	order := &SubscriptionOrder{
+		UserId:          invitee.Id,
+		PlanId:          plan.Id,
+		Money:           140, // CNY paid via epay
+		TradeNo:         "epay-sub-commission-order",
+		PaymentMethod:   "wxpay",
+		PaymentProvider: PaymentProviderEpay,
+		Status:          common.TopUpStatusPending,
+		CreateTime:      common.GetTimestamp(),
+	}
+	require.NoError(t, order.Insert())
+	require.NoError(t, CompleteSubscriptionOrder(order.TradeNo, "{\"ok\":true}", PaymentProviderEpay, "wxpay"))
+
+	expectedRechargeQuota := common.QuotaFromFloat(20 * common.QuotaPerUnit) // 140 CNY / 7 = 20 USD
+	expectedCommissionQuota := expectedRechargeQuota / 10
+
+	var commissions []ReferralCommission
+	require.NoError(t, DB.Find(&commissions).Error)
+	require.Len(t, commissions, 1)
+	assert.Equal(t, expectedRechargeQuota, commissions[0].RechargeQuota)
+	assert.Equal(t, expectedCommissionQuota, commissions[0].CommissionQuota)
+
+	overview, err := GetReferralOverview(inviter.Id, &common.PageInfo{Page: 1, PageSize: 20})
+	require.NoError(t, err)
+	items, ok := overview.InvitedUsers.Items.([]ReferralInvitedUser)
+	require.True(t, ok)
+	require.Len(t, items, 1)
+	assert.Equal(t, int64(1), items[0].TopUpCount)
+	assert.Equal(t, int64(expectedRechargeQuota), items[0].RechargeQuotaTotal)
 }
 
 func TestCompleteSubscriptionOrderCreatesReferralCommission(t *testing.T) {

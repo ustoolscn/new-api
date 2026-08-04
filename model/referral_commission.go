@@ -125,12 +125,61 @@ func referralNonBalancePaymentCondition(tableAlias string) (string, []any) {
 		[]any{PaymentMethodBalance, PaymentProviderBalance}
 }
 
+// isReferralCNYMoneyPayment reports whether money is stored in CNY.
+// Epay subscription/top-up money is CNY (USD price * operation_setting.Price).
+// Stripe/Creem/Waffo money is USD. Historical subscription companion rows may have
+// empty payment_provider and only wxpay/alipay method.
+func isReferralCNYMoneyPayment(paymentProvider string, paymentMethod string) bool {
+	provider := strings.TrimSpace(paymentProvider)
+	method := strings.TrimSpace(paymentMethod)
+	if provider == PaymentProviderEpay {
+		return true
+	}
+	// Historical subscription companion top-ups often omit provider and only store epay method.
+	if provider == "" {
+		switch method {
+		case "wxpay", "alipay", "qqpay":
+			return true
+		}
+		if method != "" && operation_setting.ContainsPayMethod(method) {
+			return true
+		}
+	}
+	switch provider {
+	case "wxpay", "alipay", "qqpay":
+		return true
+	}
+	return false
+}
+
+// referralSubscriptionMoneyUSD converts subscription paid money to USD.
+// Epay stores CNY; overseas gateways store USD plan price.
+func referralSubscriptionMoneyUSD(money float64, paymentProvider string, paymentMethod string) (decimal.Decimal, error) {
+	if money < 0 {
+		return decimal.Zero, errors.New("invalid referral subscription money")
+	}
+	usd := decimal.NewFromFloat(money)
+	if isReferralCNYMoneyPayment(paymentProvider, paymentMethod) {
+		price := operation_setting.Price
+		if price <= 0 {
+			return decimal.Zero, errors.New("invalid USD to CNY price")
+		}
+		usd = usd.Div(decimal.NewFromFloat(price))
+	}
+	return usd, nil
+}
+
 // referralCreditedQuotaFromAggregate converts successful payments to system quota.
 // External subscription companion top-ups store paid money with amount=0.
+// Subscription money is normalized to USD before multiplying QuotaPerUnit.
 func referralCreditedQuotaFromAggregate(isSubscription bool, amountTotal int64, moneyTotal float64, paymentProvider string, paymentMethod string) (decimal.Decimal, error) {
 	quotaPerUnit := decimal.NewFromFloat(common.QuotaPerUnit)
 	if isSubscription {
-		creditedQuota := decimal.NewFromFloat(moneyTotal).Mul(quotaPerUnit)
+		usd, err := referralSubscriptionMoneyUSD(moneyTotal, paymentProvider, paymentMethod)
+		if err != nil {
+			return decimal.Zero, err
+		}
+		creditedQuota := usd.Mul(quotaPerUnit)
 		if creditedQuota.IsNegative() {
 			return decimal.Zero, errors.New("invalid referral top-up quota")
 		}

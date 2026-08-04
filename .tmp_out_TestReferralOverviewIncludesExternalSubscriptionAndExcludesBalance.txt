@@ -1,0 +1,3 @@
+=== RUN   TestReferralOverviewIncludesExternalSubscriptionAndExcludesBalance
+--- PASS: TestReferralOverviewIncludesExternalSubscriptionAndExcludesBalance (0.00s)
+PASS

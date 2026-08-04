@@ -614,14 +614,19 @@ func CompleteSubscriptionOrder(tradeNo string, providerPayload string, expectedP
 		if err := tx.Save(&order).Error; err != nil {
 			return err
 		}
-		// External subscription payments participate in referral commission based on paid money.
+		// External subscription payments participate in referral commission based on USD value.
+		// Epay order.Money is CNY (plan USD * Price); overseas gateways store USD.
 		// Balance-paid subscriptions use a separate path and must never commission here.
 		if topUp != nil &&
 			order.PaymentMethod != PaymentMethodBalance &&
 			order.PaymentProvider != PaymentProviderBalance &&
 			order.Money > 0 {
+			usd, usdErr := referralSubscriptionMoneyUSD(order.Money, order.PaymentProvider, order.PaymentMethod)
+			if usdErr != nil {
+				return usdErr
+			}
 			rechargeQuota, quotaErr := topUpQuotaFromDecimal(
-				decimal.NewFromFloat(order.Money).Mul(decimal.NewFromFloat(common.QuotaPerUnit)),
+				usd.Mul(decimal.NewFromFloat(common.QuotaPerUnit)),
 			)
 			if quotaErr != nil {
 				return quotaErr

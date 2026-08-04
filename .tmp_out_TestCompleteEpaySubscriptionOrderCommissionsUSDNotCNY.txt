@@ -1,0 +1,6 @@
+=== RUN   TestCompleteEpaySubscriptionOrderCommissionsUSDNotCNY
+
+2026/08/04 12:29:45 [31;1mD:/Coding/new-api/model/subscription.go:663 [35;1mrecord not found
+[0m[33m[0.000ms] [34;1m[rows:0][0m SELECT * FROM `top_ups` WHERE trade_no = "epay-sub-commission-order" ORDER BY `top_ups`.`id` LIMIT 1
+--- PASS: TestCompleteEpaySubscriptionOrderCommissionsUSDNotCNY (0.01s)
+PASS
