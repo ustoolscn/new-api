@@ -222,6 +222,8 @@ export function UsersTable() {
       applyHeaderSize
       toolbarProps={{
         searchPlaceholder: t('Filter by username, name, email or phone...'),
+        searchMode: 'submit',
+        searchLoading: isFetching,
         filters: [
           {
             columnId: 'status',

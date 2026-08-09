@@ -8,6 +8,7 @@ import (
 	"testing"
 
 	"github.com/QuantumNous/new-api/common"
+	"github.com/QuantumNous/new-api/constant"
 	"github.com/QuantumNous/new-api/model"
 	"github.com/gin-gonic/gin"
 	"github.com/glebarez/sqlite"
@@ -78,6 +79,8 @@ func requestOAuthAccessAuth(t *testing.T, authorization string, requiredScope st
 	router := gin.New()
 	router.GET("/protected", OAuthAccessAuth(requiredScope), func(c *gin.Context) {
 		assert.NotZero(t, c.GetInt("id"))
+		assert.Equal(t, "oauth-access-1", c.GetString("username"))
+		assert.Equal(t, "oauth-access-1", common.GetContextKeyString(c, constant.ContextKeyUserName))
 		assert.NotZero(t, c.GetInt("oauth_access_token_id"))
 		assert.Equal(t, model.OAuthPublicClientID, c.GetString("oauth_client_id"))
 		assert.Equal(t, model.OAuthPublicScope, c.GetString("oauth_scopes"))

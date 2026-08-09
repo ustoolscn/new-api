@@ -6,6 +6,7 @@ import (
 	"strings"
 
 	"github.com/QuantumNous/new-api/common"
+	"github.com/QuantumNous/new-api/constant"
 	"github.com/QuantumNous/new-api/i18n"
 	"github.com/QuantumNous/new-api/model"
 	"github.com/gin-gonic/gin"
@@ -70,6 +71,7 @@ func OAuthAccessAuth(requiredScopes ...string) gin.HandlerFunc {
 
 		normalizedScope, _ := model.NormalizeOAuthScope(token.Scope)
 		c.Set("id", token.UserId)
+		common.SetContextKey(c, constant.ContextKeyUserName, userCache.Username)
 		c.Set("oauth_access_token_id", token.Id)
 		c.Set("oauth_client_id", token.ClientID)
 		c.Set("oauth_scopes", normalizedScope)

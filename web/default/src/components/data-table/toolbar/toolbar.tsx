@@ -55,6 +55,11 @@ export type DataTableToolbarProps<TData> = {
    */
   searchPlaceholder?: string
   /**
+   * Controls when the default search input commits its value. Defaults to
+   * immediate updates (optionally debounced with `searchDebounceMs`).
+   */
+  searchMode?: 'instant' | 'submit'
+  /**
    * Delay committing the default search input. Defaults to immediate updates.
    */
   searchDebounceMs?: number
@@ -104,9 +109,10 @@ export type DataTableToolbarProps<TData> = {
    */
   preActions?: ReactNode
   /**
-   * Explicit "Search" / "Apply" callback. When provided the toolbar
-   * shows a primary Search button. Filters are committed only on click
-   * (form-mode workflow).
+   * Explicit "Search" / "Apply" callback invoked when the Search button is
+   * submitted. Providing this callback also shows the button for backwards
+   * compatibility; use `searchMode="submit"` to make the default input
+   * commit only on submit.
    */
   onSearch?: () => void
   /**
@@ -158,12 +164,8 @@ export function DataTableToolbar<TData>(props: DataTableToolbarProps<TData>) {
 
   const filters = props.filters ?? []
   const hasExpandable = props.expandable != null
-  const hasSearch = props.onSearch != null
-
-  const isFiltered =
-    props.table.getState().columnFilters.length > 0 ||
-    !!props.table.getState().globalFilter ||
-    !!props.hasAdditionalFilters
+  const isSubmitSearch = props.searchMode === 'submit'
+  const hasSearch = isSubmitSearch || props.onSearch != null
 
   const placeholder = props.searchPlaceholder ?? t('Filter...')
   const currentSearchValue = props.searchKey
@@ -178,6 +180,11 @@ export function DataTableToolbar<TData>(props: DataTableToolbarProps<TData>) {
       ? searchDraft
       : null
   const searchValue = activeSearchDraft?.value ?? currentSearchValue
+  const isFiltered =
+    props.table.getState().columnFilters.length > 0 ||
+    !!props.table.getState().globalFilter ||
+    !!props.hasAdditionalFilters ||
+    (isSubmitSearch && searchValue !== currentSearchValue)
   const searchDebounceMs = Math.max(0, props.searchDebounceMs ?? 0)
   const debouncedSearchValue = useDebounce(searchValue, searchDebounceMs)
 
@@ -199,6 +206,7 @@ export function DataTableToolbar<TData>(props: DataTableToolbarProps<TData>) {
 
   React.useEffect(() => {
     if (
+      isSubmitSearch ||
       searchDebounceMs <= 0 ||
       isSearchComposing ||
       debouncedSearchValue !== searchValue
@@ -211,11 +219,16 @@ export function DataTableToolbar<TData>(props: DataTableToolbarProps<TData>) {
     commitSearchValue,
     debouncedSearchValue,
     isSearchComposing,
+    isSubmitSearch,
     searchDebounceMs,
     searchValue,
   ])
 
   const queueSearchValue = (value: string) => {
+    if (isSubmitSearch) {
+      return
+    }
+
     if (searchDebounceMs <= 0) {
       commitSearchValue(value)
     }
@@ -243,6 +256,34 @@ export function DataTableToolbar<TData>(props: DataTableToolbarProps<TData>) {
     queueSearchValue(value)
   }
 
+  const handleSearchSubmit = () => {
+    if (props.searchLoading) {
+      return
+    }
+
+    if (isSubmitSearch) {
+      commitSearchValue(searchValue)
+    }
+
+    props.onSearch?.()
+  }
+
+  const handleSearchKeyDown = (
+    event: React.KeyboardEvent<HTMLInputElement>
+  ) => {
+    if (
+      event.key !== 'Enter' ||
+      !isSubmitSearch ||
+      isSearchComposing ||
+      event.nativeEvent.isComposing
+    ) {
+      return
+    }
+
+    event.preventDefault()
+    handleSearchSubmit()
+  }
+
   const searchInput = (
     <Input
       placeholder={placeholder}
@@ -250,6 +291,7 @@ export function DataTableToolbar<TData>(props: DataTableToolbarProps<TData>) {
       onChange={handleSearchChange}
       onCompositionStart={handleSearchCompositionStart}
       onCompositionEnd={handleSearchCompositionEnd}
+      onKeyDown={handleSearchKeyDown}
       className='w-full sm:w-[200px] lg:w-[240px]'
     />
   )
@@ -305,7 +347,7 @@ export function DataTableToolbar<TData>(props: DataTableToolbarProps<TData>) {
   }
 
   const searchButton = hasSearch ? (
-    <Button onClick={props.onSearch} disabled={props.searchLoading}>
+    <Button onClick={handleSearchSubmit} disabled={props.searchLoading}>
       {props.searchLoading && <Loader2 className='animate-spin' />}
       {t('Search')}
     </Button>

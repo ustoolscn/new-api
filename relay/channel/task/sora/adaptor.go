@@ -374,7 +374,19 @@ func (a *TaskAdaptor) ParseTaskResult(respBody []byte) (*relaycommon.TaskInfo, e
 		} else {
 			taskResult.Reason = "task failed"
 		}
+	case "unknown":
+		// Some OpenAI-compatible upstreams expose an internal/not-yet-started
+		// task as "unknown". Keep polling when it is not accompanied by an
+		// explicit error; an error response intentionally keeps an empty
+		// status so the service poller can inspect the original envelope.
+		if resTask.Error == nil {
+			taskResult.Status = model.TaskStatusInProgress
+		}
 	default:
+		// Preserve the existing empty-status behavior for malformed or newer
+		// status values. The service poller can then apply its normal error
+		// envelope handling instead of silently treating arbitrary responses as
+		// in progress.
 	}
 	if resTask.Progress > 0 && resTask.Progress < 100 {
 		taskResult.Progress = fmt.Sprintf("%d%%", resTask.Progress)

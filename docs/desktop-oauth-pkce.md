@@ -263,6 +263,7 @@ Successful responses use the normal application envelope:
 {
   "success": true,
   "data": {
+    "username": "example",
     "balance": {
       "quota": 500000,
       "used_quota": 12000,

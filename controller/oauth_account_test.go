@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/QuantumNous/new-api/common"
+	"github.com/QuantumNous/new-api/constant"
 	"github.com/QuantumNous/new-api/model"
 	"github.com/gin-gonic/gin"
 	"github.com/glebarez/sqlite"
@@ -101,6 +102,7 @@ func requestOAuthAccount(t *testing.T, userID int) (httptest.ResponseRecorder, o
 	ctx, _ := gin.CreateTestContext(recorder)
 	ctx.Request = httptest.NewRequest(http.MethodGet, "/api/oauth/account", nil)
 	ctx.Set("id", userID)
+	common.SetContextKey(ctx, constant.ContextKeyUserName, fmt.Sprintf("oauth-account-%d", userID))
 	GetOAuthAccount(ctx)
 
 	var envelope oauthAccountEnvelope
@@ -193,6 +195,7 @@ func TestGetOAuthAccountReturnsBalanceAndActiveSubscriptionSnapshots(t *testing.
 	assert.Equal(t, 7000, envelope.Data.Balance.Quota)
 	assert.Equal(t, 321, envelope.Data.Balance.UsedQuota)
 	assert.Equal(t, 123456.0, envelope.Data.Balance.QuotaPerUnit)
+	assert.Equal(t, "oauth-account-101", envelope.Data.Username)
 
 	require.Len(t, envelope.Data.Subscriptions, 3)
 	assert.Equal(t, []int{10, 11, 12}, []int{
