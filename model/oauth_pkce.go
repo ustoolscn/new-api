@@ -7,17 +7,19 @@ import (
 	"encoding/base64"
 	"encoding/hex"
 	"errors"
+	"strings"
+	"time"
 
 	"github.com/QuantumNous/new-api/common"
-	"github.com/QuantumNous/new-api/setting/operation_setting"
 	"gorm.io/gorm"
 )
 
 const (
 	OAuthPublicClientID   = "hi-codex"
 	OAuthPublicClientName = "Hi Codex"
-	OAuthPublicScope      = "api"
-	OAuthTokenSource      = "oauth"
+	OAuthScopeAPIKeysRead = "api_keys:read"
+	OAuthScopeAccountRead = "account:read"
+	OAuthPublicScope      = OAuthScopeAPIKeysRead + " " + OAuthScopeAccountRead
 
 	OAuthAuthorizationRequestTTL = int64(10 * 60)
 	OAuthAuthorizationCodeTTL    = int64(2 * 60)
@@ -40,7 +42,6 @@ var (
 	ErrOAuthAuthorizationCodeExpired     = errors.New("oauth authorization code expired")
 	ErrOAuthAuthorizationCodeUsed        = errors.New("oauth authorization code already used")
 	ErrOAuthAuthorizationUserDisabled    = errors.New("oauth authorization user disabled")
-	ErrOAuthAuthorizationTokenLimit      = errors.New("oauth token limit reached")
 )
 
 // OAuthAuthorizationRequest is the short-lived browser authorization request.
@@ -78,7 +79,11 @@ type OAuthAuthorizationCode struct {
 	CreatedAt           int64  `json:"-" gorm:"bigint;not null"`
 	ExpiresAt           int64  `json:"-" gorm:"bigint;not null;index"`
 	ConsumedAt          *int64 `json:"-" gorm:"bigint;index"`
-	TokenId             int    `json:"-" gorm:"index"`
+	// TokenId is retained for incremental compatibility with databases that
+	// were migrated by an unreleased OAuth API-key implementation. New code
+	// must never populate this legacy column.
+	TokenId       int `json:"-" gorm:"index"`
+	AccessTokenId int `json:"-" gorm:"index"`
 }
 
 type OAuthAuthorizationDecision struct {
@@ -143,6 +148,51 @@ func VerifyOAuthCodeChallenge(verifier string, challenge string) bool {
 	return subtle.ConstantTimeCompare([]byte(computed), []byte(challenge)) == 1
 }
 
+// NormalizeOAuthScope validates the public OAuth scope contract and returns
+// its canonical representation. Scope values are whitespace-separated and
+// may be supplied in either order, but both permissions must appear exactly
+// once and no unknown permissions are accepted.
+func NormalizeOAuthScope(scope string) (string, error) {
+	parts := strings.Fields(scope)
+	if len(parts) != 2 {
+		return "", errors.New("scope must contain api_keys:read and account:read exactly once")
+	}
+	seen := make(map[string]struct{}, len(parts))
+	for _, part := range parts {
+		if part != OAuthScopeAPIKeysRead && part != OAuthScopeAccountRead {
+			return "", errors.New("scope contains an unknown permission")
+		}
+		if _, exists := seen[part]; exists {
+			return "", errors.New("scope contains duplicate permissions")
+		}
+		seen[part] = struct{}{}
+	}
+	if len(seen) != 2 {
+		return "", errors.New("scope must contain api_keys:read and account:read")
+	}
+	return OAuthPublicScope, nil
+}
+
+// OAuthScopeAllows reports whether a canonical OAuth scope grants every
+// requested permission.
+func OAuthScopeAllows(scope string, requiredScopes ...string) bool {
+	normalized, err := NormalizeOAuthScope(scope)
+	if err != nil {
+		return false
+	}
+	granted := make(map[string]struct{}, 2)
+	for _, part := range strings.Fields(normalized) {
+		granted[part] = struct{}{}
+	}
+	for _, required := range requiredScopes {
+		required = strings.TrimSpace(required)
+		if _, ok := granted[required]; !ok {
+			return false
+		}
+	}
+	return true
+}
+
 // CreateOAuthAuthorizationRequest persists a request while returning its
 // plaintext request id and browser nonce for the active session.
 func CreateOAuthAuthorizationRequest(userID int, clientID, redirectURI, state, scope, codeChallenge, codeChallengeMethod string, now int64) (string, string, error) {
@@ -150,6 +200,10 @@ func CreateOAuthAuthorizationRequest(userID int, clientID, redirectURI, state, s
 		return "", "", gorm.ErrInvalidDB
 	}
 	if codeChallengeMethod != "S256" || !ValidateOAuthCodeChallenge(codeChallenge) {
+		return "", "", ErrOAuthAuthorizationCodeInvalid
+	}
+	normalizedScope, err := NormalizeOAuthScope(scope)
+	if err != nil {
 		return "", "", ErrOAuthAuthorizationCodeInvalid
 	}
 	requestID, err := generateOAuthSecret()
@@ -167,7 +221,7 @@ func CreateOAuthAuthorizationRequest(userID int, clientID, redirectURI, state, s
 		ClientID:            clientID,
 		RedirectURI:         redirectURI,
 		State:               state,
-		Scope:               scope,
+		Scope:               normalizedScope,
 		CodeChallenge:       codeChallenge,
 		CodeChallengeMethod: codeChallengeMethod,
 		Status:              OAuthAuthorizationRequestPending,
@@ -275,8 +329,33 @@ func DecideOAuthAuthorizationRequest(requestIDHash string, userID int, browserNo
 }
 
 // RedeemOAuthAuthorizationCode atomically validates and consumes a code,
-// creating the dedicated Hi Codex API token in the same transaction.
-func RedeemOAuthAuthorizationCode(code, clientID, redirectURI, codeVerifier string, now int64) (*Token, string, error) {
+// creating one dedicated OAuth access token in the same transaction. SQLite
+// has no row-level FOR UPDATE and may report a transient writer deadlock when
+// two redemptions race; retrying the whole transaction lets the winner commit
+// and the loser observe consumed_at on its next attempt.
+func RedeemOAuthAuthorizationCode(code, clientID, redirectURI, codeVerifier string, now int64) (*OAuthAccessToken, string, error) {
+	for attempt := 0; attempt < 3; attempt++ {
+		accessToken, value, err := redeemOAuthAuthorizationCodeOnce(code, clientID, redirectURI, codeVerifier, now)
+		if !isOAuthSQLiteBusyError(err) || attempt == 2 {
+			return accessToken, value, err
+		}
+		time.Sleep(time.Duration(attempt+1) * 5 * time.Millisecond)
+	}
+	return nil, "", ErrOAuthAuthorizationCodeUsed
+}
+
+func isOAuthSQLiteBusyError(err error) bool {
+	if err == nil || !common.UsingMainDatabase(common.DatabaseTypeSQLite) {
+		return false
+	}
+	message := strings.ToLower(err.Error())
+	return strings.Contains(message, "database is locked") ||
+		strings.Contains(message, "database table is locked") ||
+		strings.Contains(message, "database is deadlocked") ||
+		strings.Contains(message, "database is busy")
+}
+
+func redeemOAuthAuthorizationCodeOnce(code, clientID, redirectURI, codeVerifier string, now int64) (*OAuthAccessToken, string, error) {
 	if DB == nil {
 		return nil, "", gorm.ErrInvalidDB
 	}
@@ -309,6 +388,11 @@ func RedeemOAuthAuthorizationCode(code, clientID, redirectURI, codeVerifier stri
 		tx.Rollback()
 		return nil, "", ErrOAuthAuthorizationCodeInvalid
 	}
+	normalizedScope, err := NormalizeOAuthScope(codeRecord.Scope)
+	if err != nil {
+		tx.Rollback()
+		return nil, "", ErrOAuthAuthorizationCodeInvalid
+	}
 
 	var user User
 	if err := lockForUpdate(tx).Select("id", "status").Where("id = ?", codeRecord.UserId).First(&user).Error; err != nil {
@@ -322,49 +406,53 @@ func RedeemOAuthAuthorizationCode(code, clientID, redirectURI, codeVerifier stri
 		tx.Rollback()
 		return nil, "", ErrOAuthAuthorizationUserDisabled
 	}
-	maxTokens := operation_setting.GetMaxUserTokens()
-	var tokenCount int64
-	if err := tx.Model(&Token{}).Where("user_id = ?", codeRecord.UserId).Count(&tokenCount).Error; err != nil {
-		tx.Rollback()
-		return nil, "", err
-	}
-	if maxTokens <= 0 || tokenCount >= int64(maxTokens) {
-		tx.Rollback()
-		return nil, "", ErrOAuthAuthorizationTokenLimit
-	}
-
-	key, err := common.GenerateKey()
+	secret, err := generateOAuthSecret()
 	if err != nil {
 		tx.Rollback()
 		return nil, "", err
 	}
-	token := &Token{
-		UserId:         codeRecord.UserId,
-		Key:            key,
-		Status:         common.TokenStatusEnabled,
-		Name:           OAuthPublicClientName,
-		CreatedTime:    now,
-		AccessedTime:   now,
-		ExpiredTime:    now + OAuthTokenTTL,
-		UnlimitedQuota: true,
-		Source:         OAuthTokenSource,
-		OAuthClientID:  codeRecord.ClientID,
-		OAuthScopes:    codeRecord.Scope,
-	}
-	if err := tx.Create(token).Error; err != nil {
-		tx.Rollback()
-		return nil, "", err
-	}
 	consumedAt := now
-	if err := tx.Model(&codeRecord).Updates(map[string]any{
-		"consumed_at": consumedAt,
-		"token_id":    token.Id,
-	}).Error; err != nil {
+	// Claim the one-time code before inserting the access token. On SQLite
+	// this turns a concurrent loser into a retry/used result instead of two
+	// transactions both attempting to create token rows while reading the
+	// same unconsumed code snapshot.
+	claim := tx.Model(&OAuthAuthorizationCode{}).
+		Where("id = ? AND consumed_at IS NULL", codeRecord.Id).
+		Update("consumed_at", consumedAt)
+	if claim.Error != nil {
+		tx.Rollback()
+		return nil, "", claim.Error
+	}
+	if claim.RowsAffected != 1 {
+		tx.Rollback()
+		return nil, "", ErrOAuthAuthorizationCodeUsed
+	}
+	accessTokenValue := "oa-" + secret
+	accessToken := &OAuthAccessToken{
+		TokenHash: HashOAuthValue(accessTokenValue),
+		UserId:    codeRecord.UserId,
+		ClientID:  codeRecord.ClientID,
+		Scope:     normalizedScope,
+		CreatedAt: now,
+		ExpiresAt: now + OAuthTokenTTL,
+	}
+	if err := tx.Create(accessToken).Error; err != nil {
 		tx.Rollback()
 		return nil, "", err
+	}
+	result := tx.Model(&OAuthAuthorizationCode{}).
+		Where("id = ? AND consumed_at IS NOT NULL", codeRecord.Id).
+		Update("access_token_id", accessToken.Id)
+	if result.Error != nil {
+		tx.Rollback()
+		return nil, "", result.Error
+	}
+	if result.RowsAffected != 1 {
+		tx.Rollback()
+		return nil, "", ErrOAuthAuthorizationCodeUsed
 	}
 	if err := tx.Commit().Error; err != nil {
 		return nil, "", err
 	}
-	return token, "sk-" + key, nil
+	return accessToken, accessTokenValue, nil
 }

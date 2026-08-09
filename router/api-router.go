@@ -3,6 +3,7 @@ package router
 import (
 	"github.com/QuantumNous/new-api/controller"
 	"github.com/QuantumNous/new-api/middleware"
+	"github.com/QuantumNous/new-api/model"
 
 	// Import oauth package to register providers via init()
 	_ "github.com/QuantumNous/new-api/oauth"
@@ -50,6 +51,8 @@ func SetApiRouter(router *gin.Engine) {
 		apiRouter.GET("/oauth/authorize", middleware.SessionOnlyAuth(), middleware.CriticalRateLimit(), controller.OAuthAuthorize)
 		apiRouter.POST("/oauth/authorize/decision", middleware.SessionOnlyAuth(), middleware.CriticalRateLimit(), anonymousRequestBodyLimit, controller.OAuthAuthorizeDecision)
 		apiRouter.POST("/oauth/token", middleware.CriticalRateLimit(), anonymousRequestBodyLimit, controller.OAuthToken)
+		apiRouter.GET("/oauth/api-keys", middleware.OAuthAccessAuth(model.OAuthScopeAPIKeysRead), middleware.DisableCache(), controller.GetOAuthAPIKeys)
+		apiRouter.GET("/oauth/account", middleware.OAuthAccessAuth(model.OAuthScopeAccountRead), middleware.DisableCache(), controller.GetOAuthAccount)
 		apiRouter.POST("/oauth/email/bind", middleware.CriticalRateLimit(), anonymousRequestBodyLimit, controller.EmailBind)
 		// Non-standard OAuth (WeChat, Telegram) - keep original routes
 		apiRouter.GET("/oauth/wechat", middleware.CriticalRateLimit(), controller.WeChatAuth)

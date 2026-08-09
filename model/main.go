@@ -313,6 +313,7 @@ func migrateDB() error {
 		&Token{},
 		&OAuthAuthorizationRequest{},
 		&OAuthAuthorizationCode{},
+		&OAuthAccessToken{},
 		&User{},
 		&UserDevice{},
 		&PasskeyCredential{},
@@ -350,6 +351,9 @@ func migrateDB() error {
 	if err != nil {
 		return err
 	}
+	if err := migrateLegacyOAuthTokens(); err != nil {
+		return err
+	}
 	if common.UsingMainDatabase(common.DatabaseTypeSQLite) {
 		if err := ensureSubscriptionPlanTableSQLite(); err != nil {
 			return err
@@ -374,6 +378,7 @@ func migrateDBFast() error {
 		{&Token{}, "Token"},
 		{&OAuthAuthorizationRequest{}, "OAuthAuthorizationRequest"},
 		{&OAuthAuthorizationCode{}, "OAuthAuthorizationCode"},
+		{&OAuthAccessToken{}, "OAuthAccessToken"},
 		{&User{}, "User"},
 		{&UserDevice{}, "UserDevice"},
 		{&PasskeyCredential{}, "PasskeyCredential"},
@@ -428,6 +433,9 @@ func migrateDBFast() error {
 		if err != nil {
 			return err
 		}
+	}
+	if err := migrateLegacyOAuthTokens(); err != nil {
+		return err
 	}
 	if common.UsingMainDatabase(common.DatabaseTypeSQLite) {
 		if err := ensureSubscriptionPlanTableSQLite(); err != nil {

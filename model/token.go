@@ -17,9 +17,6 @@ type Token struct {
 	Key                string         `json:"key" gorm:"type:varchar(128);uniqueIndex"`
 	Status             int            `json:"status" gorm:"default:1"`
 	Name               string         `json:"name" gorm:"index" `
-	Source             string         `json:"-" gorm:"type:varchar(32);index"`
-	OAuthClientID      string         `json:"-" gorm:"type:varchar(64);index"`
-	OAuthScopes        string         `json:"-" gorm:"type:varchar(256)"`
 	CreatedTime        int64          `json:"created_time" gorm:"bigint"`
 	AccessedTime       int64          `json:"accessed_time" gorm:"bigint"`
 	ExpiredTime        int64          `json:"expired_time" gorm:"bigint;default:-1"` // -1 means never expired

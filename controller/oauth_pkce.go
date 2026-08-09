@@ -116,9 +116,14 @@ func validateOAuthAuthorizeParams(c *gin.Context) (url.Values, string, string, s
 		return nil, "", "", "", "", "", "", err
 	}
 	scope, err := oauthAuthorizationParam(values, "scope", true)
-	if err != nil || scope != model.OAuthPublicScope {
-		return nil, "", "", "", "", "", "", errors.New("scope must be api")
+	if err != nil {
+		return nil, "", "", "", "", "", "", err
 	}
+	normalizedScope, err := model.NormalizeOAuthScope(scope)
+	if err != nil {
+		return nil, "", "", "", "", "", "", err
+	}
+	scope = normalizedScope
 	codeChallenge, err := oauthAuthorizationParam(values, "code_challenge", true)
 	if err != nil || !model.ValidateOAuthCodeChallenge(codeChallenge) {
 		return nil, "", "", "", "", "", "", errors.New("code_challenge is invalid")
@@ -164,7 +169,7 @@ func OAuthAuthorize(c *gin.Context) {
 		"client_id":    clientID,
 		"client_name":  model.OAuthPublicClientName,
 		"redirect_uri": redirectURI,
-		"scopes":       []string{scope},
+		"scopes":       []string{model.OAuthScopeAPIKeysRead, model.OAuthScopeAccountRead},
 		"user":         user,
 		"expires_at":   now + model.OAuthAuthorizationRequestTTL,
 	}
@@ -316,7 +321,7 @@ func OAuthToken(c *gin.Context) {
 		oauthError(c, http.StatusBadRequest, "invalid_grant", "code_verifier is invalid")
 		return
 	}
-	token, accessToken, err := model.RedeemOAuthAuthorizationCode(code, clientID, redirectURI, codeVerifier, common.GetTimestamp())
+	_, accessToken, err := model.RedeemOAuthAuthorizationCode(code, clientID, redirectURI, codeVerifier, common.GetTimestamp())
 	if err != nil {
 		switch {
 		case errors.Is(err, model.ErrOAuthAuthorizationCodeInvalid),
@@ -324,8 +329,6 @@ func OAuthToken(c *gin.Context) {
 			errors.Is(err, model.ErrOAuthAuthorizationCodeUsed),
 			errors.Is(err, model.ErrOAuthAuthorizationUserDisabled):
 			oauthError(c, http.StatusBadRequest, "invalid_grant", "authorization code is invalid, expired, or already used")
-		case errors.Is(err, model.ErrOAuthAuthorizationTokenLimit):
-			oauthError(c, http.StatusBadRequest, "invalid_request", "maximum token limit reached")
 		default:
 			common.SysError("failed to redeem OAuth authorization code: " + err.Error())
 			oauthError(c, http.StatusInternalServerError, "server_error", "failed to issue access token")
@@ -338,6 +341,6 @@ func OAuthToken(c *gin.Context) {
 		"access_token": accessToken,
 		"token_type":   "Bearer",
 		"expires_in":   model.OAuthTokenTTL,
-		"scope":        token.OAuthScopes,
+		"scope":        model.OAuthPublicScope,
 	})
 }

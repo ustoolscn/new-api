@@ -43,7 +43,7 @@ func setupTokenAuthReadOnlyExpiryTestDB(t *testing.T) *gorm.DB {
 	return db
 }
 
-func TestTokenAuthReadOnlyRejectsExpiredOAuthTokenButAllowsLegacyExpiredToken(t *testing.T) {
+func TestTokenAuthReadOnlyAllowsExpiredLegacyTokenAndRejectsOAuthAccessToken(t *testing.T) {
 	db := setupTokenAuthReadOnlyExpiryTestDB(t)
 	user := &model.User{
 		Username: "readonly-expiry-user",
@@ -55,21 +55,12 @@ func TestTokenAuthReadOnlyRejectsExpiredOAuthTokenButAllowsLegacyExpiredToken(t 
 	require.NoError(t, db.Create(user).Error)
 
 	expiredAt := common.GetTimestamp() - 1
-	oauthToken := &model.Token{
-		UserId:      user.Id,
-		Key:         "oauthExpiredReadonlyTokenKey",
-		Status:      common.TokenStatusEnabled,
-		ExpiredTime: expiredAt,
-		Source:      model.OAuthTokenSource,
-	}
 	legacyToken := &model.Token{
 		UserId:      user.Id,
 		Key:         "legacyExpiredReadonlyTokenKey",
 		Status:      common.TokenStatusEnabled,
 		ExpiredTime: expiredAt,
-		Source:      "",
 	}
-	require.NoError(t, db.Create(oauthToken).Error)
 	require.NoError(t, db.Create(legacyToken).Error)
 
 	router := gin.New()
@@ -78,19 +69,19 @@ func TestTokenAuthReadOnlyRejectsExpiredOAuthTokenButAllowsLegacyExpiredToken(t 
 	})
 
 	tests := []struct {
-		name       string
-		key        string
-		statusCode int
+		name          string
+		authorization string
+		statusCode    int
 	}{
 		{
-			name:       "expired oauth token is rejected",
-			key:        oauthToken.Key,
-			statusCode: http.StatusUnauthorized,
+			name:          "oauth access token is rejected",
+			authorization: "Bearer oa-not-a-token",
+			statusCode:    http.StatusUnauthorized,
 		},
 		{
-			name:       "expired legacy token remains readable",
-			key:        legacyToken.Key,
-			statusCode: http.StatusNoContent,
+			name:          "expired legacy token remains readable",
+			authorization: "Bearer sk-" + legacyToken.Key,
+			statusCode:    http.StatusNoContent,
 		},
 	}
 
@@ -98,7 +89,7 @@ func TestTokenAuthReadOnlyRejectsExpiredOAuthTokenButAllowsLegacyExpiredToken(t 
 		t.Run(tt.name, func(t *testing.T) {
 			recorder := httptest.NewRecorder()
 			request := httptest.NewRequest(http.MethodGet, "/protected", nil)
-			request.Header.Set("Authorization", "Bearer sk-"+tt.key)
+			request.Header.Set("Authorization", tt.authorization)
 			router.ServeHTTP(recorder, request)
 
 			assert.Equal(t, tt.statusCode, recorder.Code)

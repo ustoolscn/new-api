@@ -3,6 +3,7 @@ package controller
 import (
 	"crypto/sha256"
 	"encoding/base64"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -10,6 +11,7 @@ import (
 	"net/http/httptest"
 	"net/url"
 	"strings"
+	"sync"
 	"testing"
 
 	"github.com/QuantumNous/new-api/common"
@@ -41,9 +43,10 @@ type oauthPKCEAuthorizeResponse struct {
 	Success bool   `json:"success"`
 	Message string `json:"message"`
 	Data    struct {
-		RequestID  string `json:"request_id"`
-		ClientID   string `json:"client_id"`
-		ClientName string `json:"client_name"`
+		RequestID  string   `json:"request_id"`
+		ClientID   string   `json:"client_id"`
+		ClientName string   `json:"client_name"`
+		Scopes     []string `json:"scopes"`
 	} `json:"data"`
 }
 
@@ -74,6 +77,7 @@ func setupOAuthPKCETestDB(t *testing.T) *gorm.DB {
 		&model.Token{},
 		&model.OAuthAuthorizationRequest{},
 		&model.OAuthAuthorizationCode{},
+		&model.OAuthAccessToken{},
 	))
 
 	t.Cleanup(func() {
@@ -212,6 +216,7 @@ func beginOAuthPKCEAuthorization(t *testing.T, server *httptest.Server, client *
 	require.NotEmpty(t, payload.Data.RequestID)
 	require.Equal(t, oauthPKCETestClientID, payload.Data.ClientID)
 	require.Equal(t, "Hi Codex", payload.Data.ClientName)
+	require.Equal(t, []string{model.OAuthScopeAPIKeysRead, model.OAuthScopeAccountRead}, payload.Data.Scopes)
 	return payload.Data.RequestID
 }
 
@@ -263,23 +268,24 @@ func TestOAuthPKCEAuthorizeApproveTokenFlow(t *testing.T) {
 
 	status, payload, _ := postOAuthPKCEToken(t, server, client, code, oauthPKCETestClientID, oauthPKCETestRedirect, oauthPKCETestVerifier)
 	require.Equal(t, http.StatusOK, status)
-	assert.True(t, strings.HasPrefix(payload.AccessToken, "sk-"))
+	assert.True(t, strings.HasPrefix(payload.AccessToken, "oa-"))
 	assert.Equal(t, "Bearer", payload.TokenType)
 	assert.Equal(t, model.OAuthPublicScope, payload.Scope)
 	assert.GreaterOrEqual(t, payload.ExpiresIn, model.OAuthTokenTTL-1)
 	assert.LessOrEqual(t, payload.ExpiresIn, model.OAuthTokenTTL)
 
-	var token model.Token
-	require.NoError(t, db.Where("user_id = ? AND source = ?", user.Id, model.OAuthTokenSource).First(&token).Error)
+	var token model.OAuthAccessToken
+	require.NoError(t, db.Where("user_id = ?", user.Id).First(&token).Error)
 	assert.Equal(t, user.Id, token.UserId)
-	assert.Equal(t, oauthPKCETestClientID, token.OAuthClientID)
-	assert.Equal(t, model.OAuthPublicScope, token.OAuthScopes)
-	assert.Equal(t, model.OAuthTokenTTL, token.ExpiredTime-token.CreatedTime)
-	assert.Equal(t, "sk-"+token.Key, payload.AccessToken)
+	assert.Equal(t, oauthPKCETestClientID, token.ClientID)
+	assert.Equal(t, model.OAuthPublicScope, token.Scope)
+	assert.Equal(t, model.OAuthTokenTTL, token.ExpiresAt-token.CreatedAt)
+	assert.Equal(t, model.HashOAuthValue(payload.AccessToken), token.TokenHash)
+	assert.NotEqual(t, payload.AccessToken, token.TokenHash)
 
 	var tokenCount int64
-	require.NoError(t, db.Model(&model.Token{}).Where("user_id = ? AND source = ?", user.Id, model.OAuthTokenSource).Count(&tokenCount).Error)
-	assert.Equal(t, int64(1), tokenCount)
+	require.NoError(t, db.Model(&model.Token{}).Where("user_id = ?", user.Id).Count(&tokenCount).Error)
+	assert.Zero(t, tokenCount)
 }
 
 func TestOAuthPKCEAuthorizeRequiresLogin(t *testing.T) {
@@ -333,6 +339,42 @@ func TestOAuthPKCEAuthorizeRejectsInvalidParameters(t *testing.T) {
 	}
 }
 
+func TestOAuthPKCEScopeNormalizationAndValidation(t *testing.T) {
+	db := setupOAuthPKCETestDB(t)
+	user := seedOAuthPKCETestUser(t, db)
+	server, client := newOAuthPKCETestServer(t, user.Id)
+	loginOAuthPKCETestClient(t, server, client)
+
+	values := oauthPKCEAuthorizeValues(oauthPKCETestVerifier, "scope-state", oauthPKCETestRedirect)
+	values.Set("scope", "  account:read   api_keys:read ")
+	response, err := client.Get(server.URL + "/oauth/authorize?" + values.Encode())
+	require.NoError(t, err)
+	require.Equal(t, http.StatusOK, response.StatusCode)
+	payload := readOAuthPKCEAuthorizeResponse(t, response)
+	require.True(t, payload.Success)
+	assert.Equal(t, []string{model.OAuthScopeAPIKeysRead, model.OAuthScopeAccountRead}, payload.Data.Scopes)
+	var request model.OAuthAuthorizationRequest
+	require.NoError(t, db.Where("request_id_hash = ?", model.HashOAuthValue(payload.Data.RequestID)).First(&request).Error)
+	assert.Equal(t, model.OAuthPublicScope, request.Scope)
+
+	for _, scope := range []string{
+		"api",
+		"api_keys:read",
+		"account:read account:read",
+		"api_keys:read account:read unknown:read",
+	} {
+		t.Run(scope, func(t *testing.T) {
+			invalidValues := oauthPKCEAuthorizeValues(oauthPKCETestVerifier, "invalid-scope-state", oauthPKCETestRedirect)
+			invalidValues.Set("scope", scope)
+			invalidResponse, err := client.Get(server.URL + "/oauth/authorize?" + invalidValues.Encode())
+			require.NoError(t, err)
+			require.Equal(t, http.StatusBadRequest, invalidResponse.StatusCode)
+			payload := readOAuthPKCEErrorResponse(t, invalidResponse)
+			assert.Equal(t, "invalid_request", payload.Error)
+		})
+	}
+}
+
 func TestOAuthPKCEDeniedAuthorizationPreservesState(t *testing.T) {
 	db := setupOAuthPKCETestDB(t)
 	user := seedOAuthPKCETestUser(t, db)
@@ -374,6 +416,7 @@ func TestOAuthPKCEWrongVerifierDoesNotConsumeCode(t *testing.T) {
 	require.NoError(t, db.Where("code_hash = ?", model.HashOAuthValue(code)).First(&authorizationCode).Error)
 	assert.Nil(t, authorizationCode.ConsumedAt)
 	assert.Zero(t, authorizationCode.TokenId)
+	assert.Zero(t, authorizationCode.AccessTokenId)
 
 	status, tokenPayload, _ := postOAuthPKCEToken(t, server, client, code, oauthPKCETestClientID, oauthPKCETestRedirect, oauthPKCETestVerifier)
 	require.Equal(t, http.StatusOK, status)
@@ -447,7 +490,59 @@ func TestOAuthPKCEAuthorizationCodeCanOnlyBeRedeemedOnce(t *testing.T) {
 	require.Equal(t, http.StatusBadRequest, status)
 	assert.Equal(t, "invalid_grant", errorPayload.Error)
 
+	var accessTokenCount int64
+	require.NoError(t, db.Model(&model.OAuthAccessToken{}).Where("user_id = ?", user.Id).Count(&accessTokenCount).Error)
+	assert.Equal(t, int64(1), accessTokenCount)
 	var tokenCount int64
-	require.NoError(t, db.Model(&model.Token{}).Where("user_id = ? AND source = ?", user.Id, model.OAuthTokenSource).Count(&tokenCount).Error)
-	assert.Equal(t, int64(1), tokenCount)
+	require.NoError(t, db.Model(&model.Token{}).Where("user_id = ?", user.Id).Count(&tokenCount).Error)
+	assert.Zero(t, tokenCount)
+}
+
+func TestOAuthPKCEAuthorizationCodeConcurrentRedemptionCreatesOneAccessToken(t *testing.T) {
+	db := setupOAuthPKCETestDB(t)
+	user := seedOAuthPKCETestUser(t, db)
+	server, client := newOAuthPKCETestServer(t, user.Id)
+	loginOAuthPKCETestClient(t, server, client)
+
+	requestID := beginOAuthPKCEAuthorization(t, server, client, oauthPKCETestVerifier, "concurrent-state", oauthPKCETestRedirect)
+	location := decideOAuthPKCEAuthorization(t, server, client, requestID, "approve")
+	code := location.Query().Get("code")
+	require.NotEmpty(t, code)
+
+	type result struct {
+		accessToken string
+		err         error
+	}
+	results := make(chan result, 2)
+	var waitGroup sync.WaitGroup
+	for range 2 {
+		waitGroup.Add(1)
+		go func() {
+			defer waitGroup.Done()
+			_, accessToken, err := model.RedeemOAuthAuthorizationCode(code, oauthPKCETestClientID, oauthPKCETestRedirect, oauthPKCETestVerifier, common.GetTimestamp())
+			results <- result{accessToken: accessToken, err: err}
+		}()
+	}
+	waitGroup.Wait()
+	close(results)
+
+	successes := 0
+	usedErrors := 0
+	for outcome := range results {
+		if outcome.err == nil {
+			successes++
+			assert.True(t, strings.HasPrefix(outcome.accessToken, "oa-"))
+		} else if errors.Is(outcome.err, model.ErrOAuthAuthorizationCodeUsed) {
+			usedErrors++
+		}
+	}
+	assert.Equal(t, 1, successes)
+	assert.Equal(t, 1, usedErrors)
+
+	var accessTokenCount int64
+	require.NoError(t, db.Model(&model.OAuthAccessToken{}).Where("user_id = ?", user.Id).Count(&accessTokenCount).Error)
+	assert.Equal(t, int64(1), accessTokenCount)
+	var tokenCount int64
+	require.NoError(t, db.Model(&model.Token{}).Where("user_id = ?", user.Id).Count(&tokenCount).Error)
+	assert.Zero(t, tokenCount)
 }

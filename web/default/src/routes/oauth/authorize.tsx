@@ -82,12 +82,37 @@ type AuthorizationResponse = {
   data?: AuthorizationRequest
 }
 
-function getScopes(scopes: AuthorizationRequest['scopes']): string[] {
-  if (Array.isArray(scopes)) return scopes.filter(Boolean)
-  return scopes
-    .split(/[\s,]+/)
+const REQUIRED_OAUTH_SCOPES = new Set(['api_keys:read', 'account:read'])
+const REQUIRED_OAUTH_SCOPE_COUNT = 2
+const SCOPE_LABEL_KEYS = new Map([
+  ['api_keys:read', 'Read your API keys'],
+  ['account:read', 'Read your account information'],
+])
+
+function splitScopes(value: string): string[] {
+  return value
+    .trim()
+    .split(/\s+/)
     .map((scope) => scope.trim())
     .filter(Boolean)
+}
+
+function getScopes(scopes: AuthorizationRequest['scopes']): string[] {
+  const values = Array.isArray(scopes) ? scopes : [scopes]
+  return values.flatMap(splitScopes)
+}
+
+function hasRequiredOAuthScopes(scope?: string): boolean {
+  if (!scope) return false
+
+  const requestedScopes = splitScopes(scope)
+  return (
+    requestedScopes.length === REQUIRED_OAUTH_SCOPE_COUNT &&
+    new Set(requestedScopes).size === REQUIRED_OAUTH_SCOPE_COUNT &&
+    requestedScopes.every((requestedScope) =>
+      REQUIRED_OAUTH_SCOPES.has(requestedScope)
+    )
+  )
 }
 
 function formatExpiry(
@@ -148,7 +173,7 @@ function OAuthAuthorize() {
     search.response_type === 'code' &&
     search.client_id === 'hi-codex' &&
     Boolean(search.redirect_uri) &&
-    search.scope === 'api' &&
+    hasRequiredOAuthScopes(search.scope) &&
     Boolean(search.state) &&
     Boolean(search.code_challenge) &&
     search.code_challenge_method === 'S256'
@@ -264,16 +289,21 @@ function OAuthAuthorize() {
                 {t('Requested permissions')}
               </p>
               <ul className='space-y-2'>
-                {scopes.map((scope) => (
-                  <li key={scope} className='flex items-center gap-2 text-sm'>
-                    <Check className='text-primary size-4' aria-hidden='true' />
-                    <span>
-                      {scope === 'api'
-                        ? t('Use the API on your behalf')
-                        : scope}
-                    </span>
-                  </li>
-                ))}
+                {scopes.map((scope) => {
+                  const labelKey = SCOPE_LABEL_KEYS.get(scope)
+                  return (
+                    <li
+                      key={scope}
+                      className='flex items-center gap-2 text-sm'
+                    >
+                      <Check
+                        className='text-primary size-4'
+                        aria-hidden='true'
+                      />
+                      <span>{labelKey ? t(labelKey) : scope}</span>
+                    </li>
+                  )
+                })}
               </ul>
             </div>
 

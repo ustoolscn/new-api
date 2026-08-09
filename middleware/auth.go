@@ -52,6 +52,14 @@ func authHelper(c *gin.Context, minRole int) {
 			c.Abort()
 			return
 		}
+		if isOAuthAccessTokenHeader(accessToken) {
+			c.JSON(http.StatusUnauthorized, gin.H{
+				"success": false,
+				"message": common.TranslateMessage(c, i18n.MsgAuthAccessTokenInvalid),
+			})
+			c.Abort()
+			return
+		}
 		user, authErr := model.ValidateAccessToken(accessToken)
 		if authErr != nil {
 			if errors.Is(authErr, model.ErrDatabase) {
@@ -373,6 +381,10 @@ func TokenAuthReadOnly() func(c *gin.Context) {
 			c.Abort()
 			return
 		}
+		if isOAuthAccessTokenHeader(key) {
+			oauthAccessUnauthorized(c)
+			return
+		}
 		if strings.HasPrefix(key, "Bearer ") || strings.HasPrefix(key, "bearer ") {
 			key = strings.TrimSpace(key[7:])
 		}
@@ -400,10 +412,7 @@ func TokenAuthReadOnly() func(c *gin.Context) {
 
 		// TokenAuthReadOnly must keep allowing other token states to query read-only
 		// data, such as token usage logs; only explicitly disabled tokens are denied.
-		// OAuth-issued tokens are short-lived credentials, so an expired one must
-		// not retain the historical-query exception granted to manual tokens.
-		if token.Status == common.TokenStatusDisabled ||
-			(token.Source == model.OAuthTokenSource && token.ExpiredTime != -1 && token.ExpiredTime < common.GetTimestamp()) {
+		if token.Status == common.TokenStatusDisabled {
 			c.JSON(http.StatusUnauthorized, gin.H{
 				"success": false,
 				"message": common.TranslateMessage(c, i18n.MsgTokenStatusUnavailable),
@@ -477,6 +486,11 @@ func TokenAuth() func(c *gin.Context) {
 			}
 		}
 		key := c.Request.Header.Get("Authorization")
+		if isOAuthAccessTokenHeader(key) {
+			abortWithOpenAiMessage(c, http.StatusUnauthorized,
+				common.TranslateMessage(c, i18n.MsgTokenInvalid))
+			return
+		}
 		parts := make([]string, 0)
 		if strings.HasPrefix(key, "Bearer ") || strings.HasPrefix(key, "bearer ") {
 			key = strings.TrimSpace(key[7:])
@@ -569,6 +583,14 @@ func TokenAuth() func(c *gin.Context) {
 		}
 		c.Next()
 	}
+}
+
+func isOAuthAccessTokenHeader(value string) bool {
+	value = strings.TrimSpace(value)
+	if strings.HasPrefix(value, "Bearer ") || strings.HasPrefix(value, "bearer ") {
+		value = strings.TrimSpace(value[7:])
+	}
+	return strings.HasPrefix(value, "oa-")
 }
 
 func SetupContextForToken(c *gin.Context, token *model.Token, parts ...string) error {

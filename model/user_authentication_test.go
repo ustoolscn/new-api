@@ -16,6 +16,7 @@ import (
 
 func TestHardDeleteUserPurgesAuthenticationDataWhenRedisFails(t *testing.T) {
 	truncateTables(t)
+	require.NoError(t, DB.AutoMigrate(&OAuthAccessToken{}))
 
 	user := User{Username: "hard-delete-user", Password: "password"}
 	require.NoError(t, DB.Create(&user).Error)
@@ -24,6 +25,14 @@ func TestHardDeleteUserPurgesAuthenticationDataWhenRedisFails(t *testing.T) {
 	require.NoError(t, DB.Create(&TwoFABackupCode{UserId: user.Id, CodeHash: "hash"}).Error)
 	require.NoError(t, DB.Create(&PasskeyCredential{UserID: user.Id, CredentialID: "credential", PublicKey: "public-key"}).Error)
 	require.NoError(t, DB.Create(&UserOAuthBinding{UserId: user.Id, ProviderId: 1, ProviderUserId: "provider-user"}).Error)
+	require.NoError(t, DB.Create(&OAuthAccessToken{
+		TokenHash: HashOAuthValue("oa-hard-delete-token"),
+		UserId:    user.Id,
+		ClientID:  OAuthPublicClientID,
+		Scope:     OAuthPublicScope,
+		CreatedAt: common.GetTimestamp() - 1,
+		ExpiresAt: common.GetTimestamp() + 60,
+	}).Error)
 
 	oldRedisEnabled, oldRDB := common.RedisEnabled, common.RDB
 	common.RedisEnabled = true
@@ -55,6 +64,7 @@ func TestHardDeleteUserPurgesAuthenticationDataWhenRedisFails(t *testing.T) {
 		&TwoFABackupCode{},
 		&PasskeyCredential{},
 		&UserOAuthBinding{},
+		&OAuthAccessToken{},
 	} {
 		require.NoError(t, DB.Unscoped().Model(record).Where("user_id = ?", user.Id).Count(&count).Error)
 		assert.Zero(t, count)
