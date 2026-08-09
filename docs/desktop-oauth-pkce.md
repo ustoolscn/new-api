@@ -1,12 +1,12 @@
 # Desktop OAuth 2.0 Authorization Code + PKCE
 
 This document describes the existing desktop-client integration. It is intended
-for High Codex and other native desktop clients that need an API token for the
+for Hi Codex and other native desktop clients that need an API token for the
 currently signed-in account.
 
 The flow is a public OAuth client flow:
 
-- `client_id`: `high-codex` (fixed; do not register another client ID)
+- `client_id`: `hi-codex` (fixed; do not register another client ID)
 - `scope`: `api` (fixed)
 - `response_type`: `code` (fixed)
 - PKCE: S256 is required; `plain` is rejected
@@ -37,7 +37,7 @@ Open this URL in the user's browser:
 ```text
 GET BASE_ORIGIN/oauth/authorize
     ?response_type=code
-    &client_id=high-codex
+    &client_id=hi-codex
     &redirect_uri=http%3A%2F%2F127.0.0.1%3A45678%2Foauth%2Fcallback
     &state=<url-encoded-state>
     &scope=api
@@ -55,7 +55,7 @@ Authorization query parameters:
 | Parameter | Required | Value or rule |
 | --- | --- | --- |
 | `response_type` | yes | Exactly `code`. |
-| `client_id` | yes | Exactly `high-codex`. |
+| `client_id` | yes | Exactly `hi-codex`. |
 | `redirect_uri` | yes | Valid loopback URI; see [Loopback redirect rules](#loopback-redirect-rules). |
 | `state` | yes | Fresh, non-empty client value, at most 256 bytes, without control characters. |
 | `scope` | yes | Exactly `api`. |
@@ -81,8 +81,8 @@ response uses the application's normal envelope:
   "success": true,
   "data": {
     "request_id": "<opaque-request-id>",
-    "client_id": "high-codex",
-    "client_name": "High Codex",
+    "client_id": "hi-codex",
+    "client_name": "Hi Codex",
     "redirect_uri": "http://127.0.0.1:45678/oauth/callback",
     "scopes": ["api"],
     "user": {"id": 123, "username": "example"},
@@ -135,7 +135,7 @@ Required form fields:
 | Field | Value |
 | --- | --- |
 | `grant_type` | `authorization_code` |
-| `client_id` | `high-codex` |
+| `client_id` | `hi-codex` |
 | `code` | The code received at the loopback callback. |
 | `redirect_uri` | The exact same loopback URI sent in the authorization request. |
 | `code_verifier` | The original PKCE verifier; never substitute the challenge. |
@@ -177,7 +177,7 @@ The main error codes are:
 | --- | --- |
 | `invalid_request` | Missing form field, malformed request, or the per-user token limit was reached. |
 | `unsupported_grant_type` | `grant_type` was not `authorization_code`. |
-| `invalid_client` | `client_id` was not `high-codex`. |
+| `invalid_client` | `client_id` was not `hi-codex`. |
 | `invalid_grant` | Invalid, expired, already-used, mismatched, or PKCE-invalid code; invalid redirect URI/verifier; or a disabled authorizing user. |
 | `server_error` | The server could not issue the token. |
 
@@ -265,7 +265,7 @@ state = base64url_nopad(random_bytes(32))
 
 open_browser(BASE_ORIGIN + "/oauth/authorize?" + url_encode({
   response_type: "code",
-  client_id: "high-codex",
+  client_id: "hi-codex",
   redirect_uri: redirect_uri,
   state: state,
   scope: "api",
@@ -282,7 +282,7 @@ code = callback.query.code
 
 token = POST_FORM(BASE_ORIGIN + "/api/oauth/token", {
   grant_type: "authorization_code",
-  client_id: "high-codex",
+  client_id: "hi-codex",
   code: code,
   redirect_uri: redirect_uri,
   code_verifier: verifier

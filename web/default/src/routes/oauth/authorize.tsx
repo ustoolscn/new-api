@@ -146,7 +146,7 @@ function OAuthAuthorize() {
   const search = useSearch({ from: '/oauth/authorize' }) as AuthorizeSearch
   const requestIsValid =
     search.response_type === 'code' &&
-    search.client_id === 'high-codex' &&
+    search.client_id === 'hi-codex' &&
     Boolean(search.redirect_uri) &&
     search.scope === 'api' &&
     Boolean(search.state) &&
@@ -243,7 +243,7 @@ function OAuthAuthorize() {
             </div>
             <div className='space-y-1'>
               <CardTitle className='text-xl'>
-                {request.client_name || t('High Codex')}
+                {request.client_name || t('Hi Codex')}
               </CardTitle>
               <CardDescription>
                 {t('wants to access your account')}

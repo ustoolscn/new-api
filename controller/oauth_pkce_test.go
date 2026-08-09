@@ -25,6 +25,7 @@ import (
 )
 
 const (
+	oauthPKCETestClientID = "hi-codex"
 	oauthPKCETestVerifier = "oauth-test-verifier-abcdefghijklmnopqrstuvwxyz-0123456789"
 	oauthPKCETestRedirect = "http://127.0.0.1:45678/callback"
 )
@@ -40,7 +41,9 @@ type oauthPKCEAuthorizeResponse struct {
 	Success bool   `json:"success"`
 	Message string `json:"message"`
 	Data    struct {
-		RequestID string `json:"request_id"`
+		RequestID  string `json:"request_id"`
+		ClientID   string `json:"client_id"`
+		ClientName string `json:"client_name"`
 	} `json:"data"`
 }
 
@@ -151,7 +154,7 @@ func oauthPKCEChallenge(verifier string) string {
 
 func oauthPKCEAuthorizeValues(verifier, state, redirectURI string) url.Values {
 	return url.Values{
-		"client_id":             {model.OAuthPublicClientID},
+		"client_id":             {oauthPKCETestClientID},
 		"response_type":         {"code"},
 		"redirect_uri":          {redirectURI},
 		"state":                 {state},
@@ -207,6 +210,8 @@ func beginOAuthPKCEAuthorization(t *testing.T, server *httptest.Server, client *
 	payload := readOAuthPKCEAuthorizeResponse(t, response)
 	require.True(t, payload.Success, payload.Message)
 	require.NotEmpty(t, payload.Data.RequestID)
+	require.Equal(t, oauthPKCETestClientID, payload.Data.ClientID)
+	require.Equal(t, "Hi Codex", payload.Data.ClientName)
 	return payload.Data.RequestID
 }
 
@@ -256,7 +261,7 @@ func TestOAuthPKCEAuthorizeApproveTokenFlow(t *testing.T) {
 	code := query.Get("code")
 	require.NotEmpty(t, code)
 
-	status, payload, _ := postOAuthPKCEToken(t, server, client, code, model.OAuthPublicClientID, oauthPKCETestRedirect, oauthPKCETestVerifier)
+	status, payload, _ := postOAuthPKCEToken(t, server, client, code, oauthPKCETestClientID, oauthPKCETestRedirect, oauthPKCETestVerifier)
 	require.Equal(t, http.StatusOK, status)
 	assert.True(t, strings.HasPrefix(payload.AccessToken, "sk-"))
 	assert.Equal(t, "Bearer", payload.TokenType)
@@ -267,7 +272,7 @@ func TestOAuthPKCEAuthorizeApproveTokenFlow(t *testing.T) {
 	var token model.Token
 	require.NoError(t, db.Where("user_id = ? AND source = ?", user.Id, model.OAuthTokenSource).First(&token).Error)
 	assert.Equal(t, user.Id, token.UserId)
-	assert.Equal(t, model.OAuthPublicClientID, token.OAuthClientID)
+	assert.Equal(t, oauthPKCETestClientID, token.OAuthClientID)
 	assert.Equal(t, model.OAuthPublicScope, token.OAuthScopes)
 	assert.Equal(t, model.OAuthTokenTTL, token.ExpiredTime-token.CreatedTime)
 	assert.Equal(t, "sk-"+token.Key, payload.AccessToken)
@@ -361,7 +366,7 @@ func TestOAuthPKCEWrongVerifierDoesNotConsumeCode(t *testing.T) {
 	require.NotEmpty(t, code)
 
 	wrongVerifier := strings.Repeat("x", 43)
-	status, _, payload := postOAuthPKCEToken(t, server, client, code, model.OAuthPublicClientID, oauthPKCETestRedirect, wrongVerifier)
+	status, _, payload := postOAuthPKCEToken(t, server, client, code, oauthPKCETestClientID, oauthPKCETestRedirect, wrongVerifier)
 	require.Equal(t, http.StatusBadRequest, status)
 	assert.Equal(t, "invalid_grant", payload.Error)
 
@@ -370,7 +375,7 @@ func TestOAuthPKCEWrongVerifierDoesNotConsumeCode(t *testing.T) {
 	assert.Nil(t, authorizationCode.ConsumedAt)
 	assert.Zero(t, authorizationCode.TokenId)
 
-	status, tokenPayload, _ := postOAuthPKCEToken(t, server, client, code, model.OAuthPublicClientID, oauthPKCETestRedirect, oauthPKCETestVerifier)
+	status, tokenPayload, _ := postOAuthPKCEToken(t, server, client, code, oauthPKCETestClientID, oauthPKCETestRedirect, oauthPKCETestVerifier)
 	require.Equal(t, http.StatusOK, status)
 	assert.NotEmpty(t, tokenPayload.AccessToken)
 }
@@ -390,11 +395,11 @@ func TestOAuthPKCEGrantRejectsMismatchedClientAndRedirectWithoutConsumingCode(t 
 	require.Equal(t, http.StatusBadRequest, status)
 	assert.Equal(t, "invalid_client", payload.Error)
 
-	status, _, payload = postOAuthPKCEToken(t, server, client, code, model.OAuthPublicClientID, "http://127.0.0.1:45679/callback", oauthPKCETestVerifier)
+	status, _, payload = postOAuthPKCEToken(t, server, client, code, oauthPKCETestClientID, "http://127.0.0.1:45679/callback", oauthPKCETestVerifier)
 	require.Equal(t, http.StatusBadRequest, status)
 	assert.Equal(t, "invalid_grant", payload.Error)
 
-	status, tokenPayload, _ := postOAuthPKCEToken(t, server, client, code, model.OAuthPublicClientID, oauthPKCETestRedirect, oauthPKCETestVerifier)
+	status, tokenPayload, _ := postOAuthPKCEToken(t, server, client, code, oauthPKCETestClientID, oauthPKCETestRedirect, oauthPKCETestVerifier)
 	require.Equal(t, http.StatusOK, status)
 	assert.NotEmpty(t, tokenPayload.AccessToken)
 }
@@ -414,7 +419,7 @@ func TestOAuthPKCEExpiredCodeCannotBeRedeemed(t *testing.T) {
 		Where("code_hash = ?", model.HashOAuthValue(code)).
 		Update("expires_at", common.GetTimestamp()-1).Error)
 
-	status, _, payload := postOAuthPKCEToken(t, server, client, code, model.OAuthPublicClientID, oauthPKCETestRedirect, oauthPKCETestVerifier)
+	status, _, payload := postOAuthPKCEToken(t, server, client, code, oauthPKCETestClientID, oauthPKCETestRedirect, oauthPKCETestVerifier)
 	require.Equal(t, http.StatusBadRequest, status)
 	assert.Equal(t, "invalid_grant", payload.Error)
 
@@ -434,11 +439,11 @@ func TestOAuthPKCEAuthorizationCodeCanOnlyBeRedeemedOnce(t *testing.T) {
 	code := location.Query().Get("code")
 	require.NotEmpty(t, code)
 
-	status, tokenPayload, _ := postOAuthPKCEToken(t, server, client, code, model.OAuthPublicClientID, oauthPKCETestRedirect, oauthPKCETestVerifier)
+	status, tokenPayload, _ := postOAuthPKCEToken(t, server, client, code, oauthPKCETestClientID, oauthPKCETestRedirect, oauthPKCETestVerifier)
 	require.Equal(t, http.StatusOK, status)
 	assert.NotEmpty(t, tokenPayload.AccessToken)
 
-	status, _, errorPayload := postOAuthPKCEToken(t, server, client, code, model.OAuthPublicClientID, oauthPKCETestRedirect, oauthPKCETestVerifier)
+	status, _, errorPayload := postOAuthPKCEToken(t, server, client, code, oauthPKCETestClientID, oauthPKCETestRedirect, oauthPKCETestVerifier)
 	require.Equal(t, http.StatusBadRequest, status)
 	assert.Equal(t, "invalid_grant", errorPayload.Error)
 

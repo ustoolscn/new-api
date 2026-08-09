@@ -14,8 +14,8 @@ import (
 )
 
 const (
-	OAuthPublicClientID   = "high-codex"
-	OAuthPublicClientName = "High Codex"
+	OAuthPublicClientID   = "hi-codex"
+	OAuthPublicClientName = "Hi Codex"
 	OAuthPublicScope      = "api"
 	OAuthTokenSource      = "oauth"
 
@@ -275,7 +275,7 @@ func DecideOAuthAuthorizationRequest(requestIDHash string, userID int, browserNo
 }
 
 // RedeemOAuthAuthorizationCode atomically validates and consumes a code,
-// creating the dedicated High Codex API token in the same transaction.
+// creating the dedicated Hi Codex API token in the same transaction.
 func RedeemOAuthAuthorizationCode(code, clientID, redirectURI, codeVerifier string, now int64) (*Token, string, error) {
 	if DB == nil {
 		return nil, "", gorm.ErrInvalidDB
