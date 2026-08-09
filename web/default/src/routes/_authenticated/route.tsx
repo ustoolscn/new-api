@@ -19,6 +19,7 @@ For commercial licensing, please contact support@quantumnous.com
 import { createFileRoute, redirect } from '@tanstack/react-router'
 
 import { AuthenticatedLayout } from '@/components/layout'
+import { getRelativeLocation } from '@/features/auth/lib/redirect'
 import { getSelf } from '@/lib/api'
 import { useAuthStore } from '@/stores/auth-store'
 
@@ -31,9 +32,10 @@ export const Route = createFileRoute('/_authenticated')({
 
     // 如果本地没有用户信息，直接跳转登录页
     if (!auth.user) {
+      const redirectTo = getRelativeLocation(location.href)
       throw redirect({
         to: '/sign-in',
-        search: { redirect: location.href },
+        search: redirectTo ? { redirect: redirectTo } : undefined,
       })
     }
 
@@ -52,9 +54,10 @@ export const Route = createFileRoute('/_authenticated')({
       } else if (res) {
         // 验证失败，清除本地缓存并跳转登录页
         auth.reset()
+        const redirectTo = getRelativeLocation(location.href)
         throw redirect({
           to: '/sign-in',
-          search: { redirect: location.href },
+          search: redirectTo ? { redirect: redirectTo } : undefined,
         })
       }
     }

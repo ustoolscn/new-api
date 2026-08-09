@@ -47,6 +47,9 @@ func SetApiRouter(router *gin.Engine) {
 		apiRouter.POST("/user/reset", middleware.CriticalRateLimit(), anonymousRequestBodyLimit, controller.ResetPassword)
 		// OAuth routes - specific routes must come before :provider wildcard
 		apiRouter.GET("/oauth/state", middleware.CriticalRateLimit(), controller.GenerateOAuthCode)
+		apiRouter.GET("/oauth/authorize", middleware.SessionOnlyAuth(), middleware.CriticalRateLimit(), controller.OAuthAuthorize)
+		apiRouter.POST("/oauth/authorize/decision", middleware.SessionOnlyAuth(), middleware.CriticalRateLimit(), anonymousRequestBodyLimit, controller.OAuthAuthorizeDecision)
+		apiRouter.POST("/oauth/token", middleware.CriticalRateLimit(), anonymousRequestBodyLimit, controller.OAuthToken)
 		apiRouter.POST("/oauth/email/bind", middleware.CriticalRateLimit(), anonymousRequestBodyLimit, controller.EmailBind)
 		// Non-standard OAuth (WeChat, Telegram) - keep original routes
 		apiRouter.GET("/oauth/wechat", middleware.CriticalRateLimit(), controller.WeChatAuth)
@@ -298,9 +301,6 @@ func SetApiRouter(router *gin.Engine) {
 		}
 		logRoute := apiRouter.Group("/log")
 		logRoute.GET("/", middleware.AdminAuth(), controller.GetAllLogs)
-		// Legacy synchronous direct-delete route used only by the classic frontend.
-		// TODO: remove once the classic frontend is removed; the default frontend uses /system-task/log-cleanup.
-		logRoute.DELETE("/", middleware.RootAuth(), controller.DeleteHistoryLogs)
 		logRoute.GET("/stat", middleware.AdminAuth(), controller.GetLogsStat)
 		logRoute.GET("/self/stat", middleware.UserAuth(), controller.GetLogsSelfStat)
 		logRoute.GET("/channel_affinity_usage_cache", middleware.AdminAuth(), controller.GetChannelAffinityUsageCacheStats)

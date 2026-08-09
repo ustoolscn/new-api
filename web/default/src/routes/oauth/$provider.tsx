@@ -29,6 +29,11 @@ import { toast } from 'sonner'
 
 import { OAuthCallbackScreen } from '@/features/auth/components/oauth-callback-screen'
 import { OAUTH_BIND_STORAGE_KEY } from '@/features/auth/constants'
+import {
+  buildSignInPath,
+  consumeOAuthRedirect,
+  sanitizeRedirect,
+} from '@/features/auth/lib/redirect'
 import { api, getSelf } from '@/lib/api'
 import { useAuthStore, type AuthUser } from '@/stores/auth-store'
 
@@ -60,31 +65,35 @@ function OAuthCallback() {
   useEffect(() => {
     ;(async () => {
       const safeNavigate = (target: string) => {
-        navigate({ to: target as never, replace: true })
+        const safeTarget = sanitizeRedirect(target) || '/sign-in'
+        navigate({ to: safeTarget as never, replace: true })
         if (typeof window !== 'undefined') {
           setTimeout(() => {
-            const normalizedTarget = target.startsWith('/')
-              ? target
-              : `/${target}`
+            const normalizedTarget = safeTarget
             const currentPath =
               window.location.pathname + window.location.search
             if (
               currentPath !== normalizedTarget &&
               currentPath !== `${normalizedTarget}/`
             ) {
-              window.location.replace(target)
+              window.location.replace(safeTarget)
             }
           }, 100)
         }
       }
 
-      if (!search?.code) {
-        toast.error(i18next.t('Missing code'))
-        safeNavigate('/sign-in')
-        return
-      }
       const isBindingFlow =
         typeof window !== 'undefined' ? Boolean(window.opener) : mode === 'bind'
+
+      if (!search?.code) {
+        toast.error(i18next.t('Missing code'))
+        safeNavigate(
+          isBindingFlow
+            ? '/sign-in'
+            : buildSignInPath(consumeOAuthRedirect() || search?.redirect)
+        )
+        return
+      }
       if (isBindingFlow && mode !== 'bind') {
         setMode('bind')
       } else if (!isBindingFlow && mode !== 'login') {
@@ -144,7 +153,12 @@ function OAuthCallback() {
       }
 
       const redirectAfterLogin = (target?: string) => {
-        const to = target || search?.redirect || '/dashboard'
+        const storedRedirect = consumeOAuthRedirect()
+        const to =
+          sanitizeRedirect(target) ||
+          sanitizeRedirect(search?.redirect) ||
+          storedRedirect ||
+          '/dashboard'
         safeNavigate(to)
         toast.success(i18next.t('Signed in successfully!'))
       }
@@ -160,7 +174,9 @@ function OAuthCallback() {
           return
         }
         toast.error(message)
-        safeNavigate('/sign-in')
+        safeNavigate(
+          buildSignInPath(consumeOAuthRedirect() || search?.redirect)
+        )
       }
 
       try {
@@ -202,7 +218,9 @@ function OAuthCallback() {
             return
           }
           toast.error(res?.data?.message || i18next.t('OAuth failed'))
-          safeNavigate('/sign-in')
+          safeNavigate(
+            buildSignInPath(consumeOAuthRedirect() || search?.redirect)
+          )
           return
         }
         const message = res?.data?.message || 'OAuth failed'

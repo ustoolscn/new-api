@@ -311,6 +311,8 @@ func migrateDB() error {
 	err := DB.AutoMigrate(
 		&Channel{},
 		&Token{},
+		&OAuthAuthorizationRequest{},
+		&OAuthAuthorizationCode{},
 		&User{},
 		&UserDevice{},
 		&PasskeyCredential{},
@@ -370,6 +372,8 @@ func migrateDBFast() error {
 	}{
 		{&Channel{}, "Channel"},
 		{&Token{}, "Token"},
+		{&OAuthAuthorizationRequest{}, "OAuthAuthorizationRequest"},
+		{&OAuthAuthorizationCode{}, "OAuthAuthorizationCode"},
 		{&User{}, "User"},
 		{&UserDevice{}, "UserDevice"},
 		{&PasskeyCredential{}, "PasskeyCredential"},

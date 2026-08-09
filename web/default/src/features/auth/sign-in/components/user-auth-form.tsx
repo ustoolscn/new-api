@@ -161,14 +161,14 @@ export function UserAuthForm({
 
       if (res.success) {
         if (res.data?.require_2fa) {
-          redirectTo2FA()
+          redirectTo2FA(redirectTo)
           return
         }
 
         await handleLoginSuccess(res.data as { id?: number } | null, redirectTo)
         toast.success(t('Welcome back!'))
       }
-    } catch (_error) {
+    } catch {
       // Errors are handled by global interceptor
     } finally {
       setIsLoading(false)
@@ -208,7 +208,7 @@ export function UserAuthForm({
       } else {
         toast.error(res?.message || loginFailedMessage)
       }
-    } catch (_error) {
+    } catch {
       toast.error(loginFailedMessage)
     } finally {
       setIsWeChatSubmitting(false)
@@ -312,6 +312,7 @@ export function UserAuthForm({
       {/* OAuth Providers */}
       <OAuthProviders
         status={status}
+        redirectTo={redirectTo}
         disabled={isLoading || (requiresLegalConsent && !agreedToLegal)}
         onWeChatLogin={hasWeChatLogin ? handleOpenWeChatDialog : undefined}
         isWeChatLoading={isWeChatSubmitting}

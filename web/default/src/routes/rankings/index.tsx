@@ -19,6 +19,7 @@ For commercial licensing, please contact support@quantumnous.com
 import { createFileRoute, redirect } from '@tanstack/react-router'
 import z from 'zod'
 
+import { getRelativeLocation } from '@/features/auth/lib/redirect'
 import { Rankings } from '@/features/rankings'
 import { getFreshModuleAccess } from '@/lib/nav-modules'
 import { useAuthStore } from '@/stores/auth-store'
@@ -40,9 +41,10 @@ export const Route = createFileRoute('/rankings/')({
     if (access.requireAuth) {
       const { auth } = useAuthStore.getState()
       if (!auth.user) {
+        const redirectTo = getRelativeLocation(location.href)
         throw redirect({
           to: '/sign-in',
-          search: { redirect: location.href },
+          search: redirectTo ? { redirect: redirectTo } : undefined,
         })
       }
     }

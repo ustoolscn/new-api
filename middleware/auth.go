@@ -190,6 +190,108 @@ func TryUserAuth() func(c *gin.Context) {
 	}
 }
 
+// SessionOnlyAuth authenticates dashboard sessions without accepting API
+// access tokens. OAuth browser endpoints use this middleware so a token-only
+// caller cannot approve an authorization request on behalf of a user.
+func SessionOnlyAuth() func(c *gin.Context) {
+	return func(c *gin.Context) {
+		c.Header("Cache-Control", "no-store")
+		c.Header("Pragma", "no-cache")
+		session := sessions.Default(c)
+		userID, ok := sessionIntValue(session.Get("id"))
+		username, usernameOK := session.Get("username").(string)
+		role, roleOK := sessionIntValue(session.Get("role"))
+		status, statusOK := sessionIntValue(session.Get("status"))
+		if !ok || userID <= 0 || !usernameOK || username == "" || !roleOK || !statusOK {
+			c.JSON(http.StatusUnauthorized, gin.H{
+				"success": false,
+				"error":   "login_required",
+				"message": common.TranslateMessage(c, i18n.MsgAuthNotLoggedIn),
+			})
+			c.Abort()
+			return
+		}
+
+		group, _ := session.Get("group").(string)
+		if model.DB != nil {
+			userCache, err := model.GetUserCache(userID)
+			if err != nil {
+				common.SysLog(fmt.Sprintf("SessionOnlyAuth GetUserCache error for user %d: %v", userID, err))
+				c.JSON(http.StatusInternalServerError, gin.H{
+					"success": false,
+					"message": common.TranslateMessage(c, i18n.MsgDatabaseError),
+				})
+				c.Abort()
+				return
+			}
+			status = userCache.Status
+			username = userCache.Username
+			group = userCache.Group
+		}
+		if status != common.UserStatusEnabled {
+			c.JSON(http.StatusForbidden, gin.H{
+				"success": false,
+				"message": common.TranslateMessage(c, i18n.MsgAuthUserBanned),
+			})
+			c.Abort()
+			return
+		}
+		if !validUserInfo(username, role) {
+			c.JSON(http.StatusUnauthorized, gin.H{
+				"success": false,
+				"message": common.TranslateMessage(c, i18n.MsgAuthUserInfoInvalid),
+			})
+			c.Abort()
+			return
+		}
+
+		c.Header("Auth-Version", "864b7076dbcd0a3c01b5520316720ebf")
+		c.Set("username", username)
+		c.Set("role", role)
+		c.Set("id", userID)
+		c.Set("status", status)
+		c.Set("group", group)
+		c.Set("user_group", group)
+		c.Set("use_access_token", false)
+		c.Next()
+	}
+}
+
+// SessionAuth is kept as a concise alias for handlers that need dashboard
+// session authentication and must never accept an API token.
+func SessionAuth() func(c *gin.Context) {
+	return SessionOnlyAuth()
+}
+
+func sessionIntValue(value any) (int, bool) {
+	switch typed := value.(type) {
+	case int:
+		return typed, true
+	case int8:
+		return int(typed), true
+	case int16:
+		return int(typed), true
+	case int32:
+		return int(typed), true
+	case int64:
+		return int(typed), true
+	case uint:
+		return int(typed), uint64(typed) <= uint64(^uint(0)>>1)
+	case uint8:
+		return int(typed), true
+	case uint16:
+		return int(typed), true
+	case uint32:
+		return int(typed), uint64(typed) <= uint64(^uint(0)>>1)
+	case uint64:
+		return int(typed), typed <= uint64(^uint(0)>>1)
+	case float64:
+		return int(typed), typed >= float64(-int(^uint(0)>>1)-1) && typed <= float64(^uint(0)>>1) && typed == float64(int(typed))
+	default:
+		return 0, false
+	}
+}
+
 func UserAuth() func(c *gin.Context) {
 	return func(c *gin.Context) {
 		authHelper(c, common.RoleCommonUser)
@@ -298,7 +400,10 @@ func TokenAuthReadOnly() func(c *gin.Context) {
 
 		// TokenAuthReadOnly must keep allowing other token states to query read-only
 		// data, such as token usage logs; only explicitly disabled tokens are denied.
-		if token.Status == common.TokenStatusDisabled {
+		// OAuth-issued tokens are short-lived credentials, so an expired one must
+		// not retain the historical-query exception granted to manual tokens.
+		if token.Status == common.TokenStatusDisabled ||
+			(token.Source == model.OAuthTokenSource && token.ExpiredTime != -1 && token.ExpiredTime < common.GetTimestamp()) {
 			c.JSON(http.StatusUnauthorized, gin.H{
 				"success": false,
 				"message": common.TranslateMessage(c, i18n.MsgTokenStatusUnavailable),

@@ -28,10 +28,11 @@ import { StrictMode } from 'react'
 import ReactDOM from 'react-dom/client'
 import { toast } from 'sonner'
 
+import { getRelativeLocation } from '@/features/auth/lib/redirect'
 import { getStatus } from '@/lib/api'
 import { installBuildMetadata } from '@/lib/build-metadata'
-import { applyFaviconToDom } from '@/lib/dom-utils'
 import '@/lib/dayjs'
+import { applyFaviconToDom } from '@/lib/dom-utils'
 import { initializeFrontendCache } from '@/lib/frontend-cache'
 import { handleServerError } from '@/lib/handle-server-error'
 import { useAuthStore } from '@/stores/auth-store'
@@ -88,8 +89,11 @@ const queryClient = new QueryClient({
         if (error.response?.status === 401) {
           toast.error(i18next.t('Session expired!'))
           useAuthStore.getState().auth.reset()
-          const redirect = `${router.history.location.href}`
-          router.navigate({ to: '/sign-in', search: { redirect } })
+          const redirect = getRelativeLocation(router.history.location.href)
+          router.navigate({
+            to: '/sign-in',
+            search: redirect ? { redirect } : undefined,
+          })
         }
         if (error.response?.status === 500) {
           toast.error(i18next.t('Internal Server Error!'))
@@ -116,7 +120,10 @@ declare module '@tanstack/react-router' {
 }
 
 // Render the app
-const rootElement = document.getElementById('root')!
+const rootElement = document.getElementById('root')
+if (!rootElement) {
+  throw new Error('Root element not found')
+}
 // Set document.title and favicon from cached status, then refresh from network
 ;(function initSystemBranding() {
   try {

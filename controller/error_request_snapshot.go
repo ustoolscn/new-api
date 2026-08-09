@@ -3,6 +3,7 @@ package controller
 import (
 	"fmt"
 	"net/http"
+	"net/url"
 	"strings"
 
 	"github.com/QuantumNous/new-api/common"
@@ -37,7 +38,7 @@ func buildErrorRequestSnapshot(c *gin.Context) map[string]any {
 	}
 	if req.URL != nil {
 		snapshot.Path = req.URL.Path
-		snapshot.Query = req.URL.RawQuery
+		snapshot.Query = sanitizeFormSnapshot(req.URL.RawQuery)
 	}
 
 	bodyBytes, truncated, err := readRequestSnapshotBody(c)
@@ -46,7 +47,11 @@ func buildErrorRequestSnapshot(c *gin.Context) map[string]any {
 	} else if len(bodyBytes) > 0 {
 		snapshot.BodyTruncated = truncated
 		if truncated {
-			snapshot.BodyPreview = string(bodyBytes)
+			if strings.HasPrefix(strings.ToLower(snapshot.ContentType), "application/x-www-form-urlencoded") {
+				snapshot.BodyPreview = sanitizeFormSnapshot(string(bodyBytes))
+			} else {
+				snapshot.BodyPreview = sanitizeSnapshotString(string(bodyBytes))
+			}
 		} else if isJSONSnapshotContentType(snapshot.ContentType) {
 			var parsed any
 			if err := common.Unmarshal(bodyBytes, &parsed); err == nil {
@@ -56,7 +61,11 @@ func buildErrorRequestSnapshot(c *gin.Context) map[string]any {
 				snapshot.BodyError = fmt.Sprintf("parse json failed: %s", err.Error())
 			}
 		} else if isTextSnapshotContentType(snapshot.ContentType) {
-			snapshot.BodyPreview = string(bodyBytes)
+			if strings.HasPrefix(strings.ToLower(snapshot.ContentType), "application/x-www-form-urlencoded") {
+				snapshot.BodyPreview = sanitizeFormSnapshot(string(bodyBytes))
+			} else {
+				snapshot.BodyPreview = string(bodyBytes)
+			}
 		} else {
 			snapshot.BodyPreview = fmt.Sprintf("<%d bytes omitted: %s>", len(bodyBytes), snapshot.ContentType)
 		}
@@ -80,6 +89,36 @@ func buildErrorRequestSnapshot(c *gin.Context) map[string]any {
 		}
 	}
 	return out
+}
+
+func sanitizeFormSnapshot(raw string) string {
+	values, err := url.ParseQuery(raw)
+	if err != nil {
+		parts := strings.Split(raw, "&")
+		for i, part := range parts {
+			key := part
+			if separator := strings.IndexByte(part, '='); separator >= 0 {
+				key = part[:separator]
+			}
+			decodedKey, decodeErr := url.QueryUnescape(key)
+			if decodeErr == nil && isSensitiveSnapshotKey(decodedKey) {
+				parts[i] = key + "=***"
+			} else {
+				parts[i] = sanitizeSnapshotString(part)
+			}
+		}
+		return strings.Join(parts, "&")
+	}
+	for key, items := range values {
+		if isSensitiveSnapshotKey(key) {
+			values[key] = []string{"***"}
+			continue
+		}
+		for i, item := range items {
+			values[key][i] = sanitizeSnapshotString(item)
+		}
+	}
+	return values.Encode()
 }
 
 func readRequestSnapshotBody(c *gin.Context) ([]byte, bool, error) {
@@ -160,6 +199,14 @@ func isSensitiveSnapshotKey(key string) bool {
 		"apikey",
 		"access_token",
 		"refresh_token",
+		"authorization_code",
+		"code_verifier",
+		"code_challenge",
+		"code",
+		"browser_nonce",
+		"request_id",
+		"oauth_state",
+		"state",
 		"token",
 		"password",
 		"secret",

@@ -18,7 +18,6 @@ For commercial licensing, please contact support@quantumnous.com
 */
 
 const STATUS_RELATED_KEYS = new Set([
-  'theme.frontend',
   'HeaderNavModules',
   'SidebarModulesAdmin',
   'AITranslationEnabled',

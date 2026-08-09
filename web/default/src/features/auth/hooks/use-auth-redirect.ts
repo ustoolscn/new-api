@@ -23,6 +23,7 @@ import type { User } from '@/features/users/types'
 import { getSelf } from '@/lib/api'
 import { useAuthStore } from '@/stores/auth-store'
 
+import { sanitizeRedirect } from '../lib/redirect'
 import { saveUserId } from '../lib/storage'
 
 function getSavedLanguage(user: User): string | undefined {
@@ -88,29 +89,44 @@ export function useAuthRedirect() {
     }
 
     // Navigate to target page
-    const targetPath = redirectTo || '/dashboard'
+    const targetPath = sanitizeRedirect(redirectTo) || '/dashboard'
     navigate({ to: targetPath, replace: true })
   }
 
   /**
    * Redirect to 2FA page
    */
-  const redirectTo2FA = () => {
-    navigate({ to: '/otp', replace: true })
+  const redirectTo2FA = (redirectTo?: string) => {
+    const safeRedirect = sanitizeRedirect(redirectTo)
+    navigate({
+      to: '/otp',
+      search: safeRedirect ? { redirect: safeRedirect } : undefined,
+      replace: true,
+    })
   }
 
   /**
    * Redirect to login page
    */
-  const redirectToLogin = () => {
-    navigate({ to: '/sign-in', replace: true })
+  const redirectToLogin = (redirectTo?: string) => {
+    const safeRedirect = sanitizeRedirect(redirectTo)
+    navigate({
+      to: '/sign-in',
+      search: safeRedirect ? { redirect: safeRedirect } : undefined,
+      replace: true,
+    })
   }
 
   /**
    * Redirect to register page
    */
-  const redirectToRegister = () => {
-    navigate({ to: '/sign-up', replace: true })
+  const redirectToRegister = (redirectTo?: string) => {
+    const safeRedirect = sanitizeRedirect(redirectTo)
+    navigate({
+      to: '/sign-up',
+      search: safeRedirect ? { redirect: safeRedirect } : undefined,
+      replace: true,
+    })
   }
 
   return {

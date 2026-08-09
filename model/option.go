@@ -1,6 +1,7 @@
 package model
 
 import (
+	"errors"
 	"strconv"
 	"strings"
 	"sync"
@@ -14,6 +15,7 @@ import (
 	"github.com/QuantumNous/new-api/setting/ratio_setting"
 	"github.com/QuantumNous/new-api/setting/system_setting"
 	"gorm.io/gorm"
+	"gorm.io/gorm/clause"
 )
 
 type Option struct {
@@ -21,9 +23,25 @@ type Option struct {
 	Value string `json:"value"`
 }
 
+const (
+	legacyFrontendThemeOptionKey = "theme.frontend"
+	defaultFrontendThemeValue    = "default"
+)
+
+func normalizeFrontendThemeOptionValue(key, value string) string {
+	if key == legacyFrontendThemeOptionKey {
+		return defaultFrontendThemeValue
+	}
+	return value
+}
+
 var optionSyncMutex sync.Mutex
+var legacyFrontendThemeOptionOnce sync.Once
 
 func AllOption() ([]*Option, error) {
+	if DB == nil {
+		return nil, errors.New("database is not initialized")
+	}
 	var options []*Option
 	var err error
 	err = DB.Find(&options).Error
@@ -67,6 +85,7 @@ func InitOptionMap(loadFromDatabase ...bool) {
 	common.OptionMap["DrawingEnabled"] = strconv.FormatBool(common.DrawingEnabled)
 	common.OptionMap["TaskEnabled"] = strconv.FormatBool(common.TaskEnabled)
 	common.OptionMap["DataExportEnabled"] = strconv.FormatBool(common.DataExportEnabled)
+	common.OptionMap[legacyFrontendThemeOptionKey] = defaultFrontendThemeValue
 	common.OptionMap["RankingsDisplayMultiplier"] = "1"
 	common.OptionMap["RankingsDisplayJitterRatio"] = "0"
 	common.OptionMap["AITranslationEnabled"] = "false"
@@ -218,15 +237,34 @@ func InitOptionMap(loadFromDatabase ...bool) {
 
 	common.OptionMapRWMutex.Unlock()
 	if len(loadFromDatabase) == 0 || loadFromDatabase[0] {
+		// The legacy theme row is normalized once per process during startup.
+		normalizeLegacyFrontendThemeOptionAtStartup()
 		loadOptionsFromDatabase()
 	}
+}
+
+func normalizeLegacyFrontendThemeOptionAtStartup() {
+	if !common.IsMasterNode {
+		return
+	}
+	legacyFrontendThemeOptionOnce.Do(func() {
+		// Persistence is best effort: read-only replicas and transient database
+		// failures must not prevent the remaining options from loading.
+		if err := normalizeLegacyFrontendThemeOption(); err != nil {
+			common.SysError("failed to normalize legacy frontend theme option: " + err.Error())
+		}
+	})
 }
 
 func loadOptionsFromDatabase() {
 	optionSyncMutex.Lock()
 	defer optionSyncMutex.Unlock()
 
-	options, _ := AllOption()
+	options, err := AllOption()
+	if err != nil {
+		common.SysError("failed to load options from database: " + err.Error())
+		return
+	}
 	for _, option := range options {
 		err := updateOptionMap(option.Key, option.Value)
 		if err != nil {
@@ -238,6 +276,24 @@ func loadOptionsFromDatabase() {
 	}
 }
 
+// normalizeLegacyFrontendThemeOption preserves the legacy option row for
+// rolling upgrades while ensuring every instance uses the default frontend.
+// GORM's OnConflict clause is translated for SQLite, MySQL, and PostgreSQL.
+func normalizeLegacyFrontendThemeOption() error {
+	if DB == nil {
+		return errors.New("database is not initialized")
+	}
+	return DB.Transaction(func(tx *gorm.DB) error {
+		return tx.Clauses(clause.OnConflict{
+			Columns:   []clause.Column{{Name: "key"}},
+			DoUpdates: clause.Assignments(map[string]interface{}{"value": defaultFrontendThemeValue}),
+		}).Create(&Option{
+			Key:   legacyFrontendThemeOptionKey,
+			Value: defaultFrontendThemeValue,
+		}).Error
+	})
+}
+
 func SyncOptions(frequency int) {
 	for {
 		time.Sleep(time.Duration(frequency) * time.Second)
@@ -247,6 +303,7 @@ func SyncOptions(frequency int) {
 }
 
 func UpdateOption(key string, value string) error {
+	value = normalizeFrontendThemeOptionValue(key, value)
 	clientIPSettingChanged := system_setting.IsClientIPSettingKey(key)
 	if clientIPSettingChanged {
 		optionSyncMutex.Lock()
@@ -285,6 +342,11 @@ func UpdateOptionsBulk(values map[string]string) error {
 	if len(values) == 0 {
 		return nil
 	}
+	normalizedValues := make(map[string]string, len(values))
+	for key, value := range values {
+		normalizedValues[key] = normalizeFrontendThemeOptionValue(key, value)
+	}
+	values = normalizedValues
 	optionSyncMutex.Lock()
 	defer optionSyncMutex.Unlock()
 
@@ -320,6 +382,7 @@ func UpdateOptionsBulk(values map[string]string) error {
 }
 
 func updateOptionMap(key string, value string) (err error) {
+	value = normalizeFrontendThemeOptionValue(key, value)
 	common.OptionMapRWMutex.Lock()
 	defer common.OptionMapRWMutex.Unlock()
 	common.OptionMap[key] = value
@@ -723,8 +786,6 @@ func handleConfigUpdate(key, value string) bool {
 	} else if configName == "billing_setting" {
 		InvalidatePricingCache()
 		ratio_setting.InvalidateExposedDataCache()
-	} else if configName == "theme" {
-		system_setting.UpdateAndSyncTheme()
 	}
 
 	return true // 已处理
