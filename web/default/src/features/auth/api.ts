@@ -35,15 +35,24 @@ import type {
 // Login & Logout
 // ----------------------------------------------------------------------------
 
+type AuthRequestOptions = {
+  skipBusinessError?: boolean
+  skipErrorHandler?: boolean
+}
+
 // User login with username and password
-export async function login(payload: LoginPayload) {
+export async function login(
+  payload: LoginPayload,
+  options?: AuthRequestOptions
+) {
   const turnstile = payload.turnstile ?? ''
   const res = await api.post<LoginResponse>(
     `/api/user/login?turnstile=${turnstile}`,
     {
       username: payload.username,
       password: payload.password,
-    }
+    },
+    options
   )
   return res.data
 }
@@ -127,8 +136,12 @@ export async function wechatLoginByCode(code: string): Promise<ApiResponse> {
 // ----------------------------------------------------------------------------
 
 // User registration
-export async function register(payload: RegisterPayload): Promise<ApiResponse> {
+export async function register(
+  payload: RegisterPayload,
+  options?: AuthRequestOptions
+): Promise<ApiResponse> {
   const res = await api.post(`/api/user/register`, payload, {
+    ...options,
     params: { turnstile: payload.turnstile ?? '' },
   })
   return res.data

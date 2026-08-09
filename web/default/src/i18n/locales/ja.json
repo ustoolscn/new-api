@@ -2476,6 +2476,7 @@
     "Invalidated": "無効化済み",
     "Invert match": "一致を反転",
     "Invitation Code": "招待コード",
+    "Invitation Code must be 32 characters or fewer": "招待コードは32文字以内で入力してください",
     "Invitation Quota": "招待クォータ",
     "Invite Info": "招待情報",
     "Invite new users, track their credited top-ups, and claim your commission.": "新しいユーザーを招待し、入金状況を確認して紹介報酬を受け取れます。",

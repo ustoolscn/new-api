@@ -58,14 +58,16 @@ export function useAuthRedirect() {
    */
   const handleLoginSuccess = async (
     userData?: { id?: number } | null,
-    redirectTo?: string
-  ) => {
+    redirectTo?: string,
+    options?: { navigateOnFailure?: boolean }
+  ): Promise<boolean> => {
     // Save user ID if available
     if (userData?.id) {
       saveUserId(userData.id)
     }
 
     // Fetch and set user data
+    let sessionInitialized = false
     try {
       const self = await getSelf()
       if (self?.success && self.data) {
@@ -82,15 +84,22 @@ export function useAuthRedirect() {
         if (savedLang && savedLang !== i18n.language) {
           i18n.changeLanguage(savedLang)
         }
+
+        sessionInitialized = true
       }
     } catch (error) {
       // eslint-disable-next-line no-console
       console.error('Failed to fetch user data:', error)
     }
 
+    if (!sessionInitialized && options?.navigateOnFailure === false) {
+      return false
+    }
+
     // Navigate to target page
     const targetPath = sanitizeRedirect(redirectTo) || '/dashboard'
     navigate({ to: targetPath, replace: true })
+    return sessionInitialized
   }
 
   /**

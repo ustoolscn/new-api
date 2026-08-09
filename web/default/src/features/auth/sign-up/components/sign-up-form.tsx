@@ -38,7 +38,7 @@ import {
 } from '@/components/ui/form'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
-import { register, wechatLoginByCode } from '@/features/auth/api'
+import { login, register, wechatLoginByCode } from '@/features/auth/api'
 import { LegalConsent } from '@/features/auth/components/legal-consent'
 import { OAuthProviders } from '@/features/auth/components/oauth-providers'
 import { registerFormSchema } from '@/features/auth/constants'
@@ -80,7 +80,8 @@ export function SignUpForm({
     setTurnstileToken,
     validateTurnstile,
   } = useTurnstile()
-  const { redirectToLogin, handleLoginSuccess } = useAuthRedirect()
+  const { redirectToLogin, redirectTo2FA, handleLoginSuccess } =
+    useAuthRedirect()
   const {
     isSending: isSendingCode,
     secondsLeft,
@@ -100,12 +101,23 @@ export function SignUpForm({
     validateTurnstile,
   })
 
+  const [initialAffiliateCode] = useState(() => {
+    if (typeof window === 'undefined') return ''
+
+    const urlAffiliateCode = new URLSearchParams(window.location.search)
+      .get('aff')
+      ?.trim()
+
+    return urlAffiliateCode || getAffiliateCode()
+  })
+
   const form = useForm<z.infer<typeof registerFormSchema>>({
     resolver: zodResolver(registerFormSchema),
     defaultValues: {
       username: '',
       email: '',
       phone: '',
+      aff_code: initialAffiliateCode,
       password: '',
       confirmPassword: '',
     },
@@ -206,21 +218,81 @@ export function SignUpForm({
 
     setIsLoading(true)
     try {
-      const res = await register({
-        username: data.username,
-        password: data.password,
-        email: registerMethod === 'email' ? data.email || undefined : undefined,
-        phone: registerMethod === 'phone' ? data.phone || undefined : undefined,
-        verification_code:
-          registerMethod === 'email'
-            ? verificationCode || undefined
-            : undefined,
-        sms_code: registerMethod === 'phone' ? smsCode || undefined : undefined,
-        aff_code: getAffiliateCode(),
-        turnstile: turnstileToken,
-      })
+      const affiliateCode = data.aff_code?.trim() || undefined
+      saveAffiliateCode(affiliateCode ?? '')
+
+      let res
+      try {
+        res = await register(
+          {
+            username: data.username,
+            password: data.password,
+            email:
+              registerMethod === 'email' ? data.email || undefined : undefined,
+            phone:
+              registerMethod === 'phone' ? data.phone || undefined : undefined,
+            verification_code:
+              registerMethod === 'email'
+                ? verificationCode || undefined
+                : undefined,
+            sms_code:
+              registerMethod === 'phone' ? smsCode || undefined : undefined,
+            aff_code: affiliateCode,
+            turnstile: turnstileToken,
+          },
+          {
+            skipBusinessError: true,
+            skipErrorHandler: true,
+          }
+        )
+      } catch {
+        toast.error(t('Failed to create account'))
+        return
+      }
 
       if (res?.success) {
+        let loginRes
+        try {
+          loginRes = await login(
+            {
+              username: data.username,
+              password: data.password,
+              turnstile: turnstileToken,
+            },
+            {
+              skipBusinessError: true,
+              skipErrorHandler: true,
+            }
+          )
+        } catch {
+          // Registration succeeded; fall back to the normal sign-in flow.
+          toast.success(t('Account created! Please sign in'))
+          redirectToLogin(redirectTo)
+          return
+        }
+
+        if (!loginRes?.success) {
+          toast.success(t('Account created! Please sign in'))
+          redirectToLogin(redirectTo)
+          return
+        }
+
+        if (loginRes.data?.require_2fa) {
+          redirectTo2FA(redirectTo)
+          return
+        }
+
+        try {
+          const sessionInitialized = await handleLoginSuccess(
+            loginRes.data as { id?: number } | null,
+            redirectTo,
+            { navigateOnFailure: false }
+          )
+          if (sessionInitialized) return
+        } catch {
+          // Registration succeeded; fall back if session setup fails.
+        }
+
         toast.success(t('Account created! Please sign in'))
         redirectToLogin(redirectTo)
       } else {
@@ -458,6 +530,29 @@ export function SignUpForm({
               <FormLabel>{t('Confirm password')}</FormLabel>
               <FormControl>
                 <PasswordInput placeholder={t('Confirm password')} {...field} />
+              </FormControl>
+              <FormMessage />
+            </FormItem>
+          )}
+        />
+
+        {/* Invitation Code Field */}
+        <FormField
+          control={form.control}
+          name='aff_code'
+          render={({ field }) => (
+            <FormItem>
+              <FormLabel>{t('Invitation Code')}</FormLabel>
+              <FormControl>
+                <Input
+                  placeholder={t('Invitation Code')}
+                  autoComplete='off'
+                  {...field}
+                  onChange={(event) => {
+                    field.onChange(event)
+                    saveAffiliateCode(event.target.value)
+                  }}
+                />
               </FormControl>
               <FormMessage />
             </FormItem>

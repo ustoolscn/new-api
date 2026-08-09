@@ -98,7 +98,12 @@ export function getAffiliateCode(): string {
 export function saveAffiliateCode(code: string): void {
   if (typeof window === 'undefined') return
   try {
-    window.localStorage.setItem(STORAGE_KEYS.AFFILIATE, code)
+    const normalizedCode = code.trim()
+    if (normalizedCode) {
+      window.localStorage.setItem(STORAGE_KEYS.AFFILIATE, normalizedCode)
+    } else {
+      window.localStorage.removeItem(STORAGE_KEYS.AFFILIATE)
+    }
   } catch (error) {
     // eslint-disable-next-line no-console
     console.error('Failed to save affiliate code:', error)

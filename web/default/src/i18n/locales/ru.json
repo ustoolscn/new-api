@@ -2476,6 +2476,7 @@
     "Invalidated": "Аннулирована",
     "Invert match": "Инвертировать совпадение",
     "Invitation Code": "Код приглашения",
+    "Invitation Code must be 32 characters or fewer": "Код приглашения должен содержать не более 32 символов",
     "Invitation Quota": "Квота приглашений",
     "Invite Info": "Информация о приглашении",
     "Invite new users, track their credited top-ups, and claim your commission.": "Приглашайте пользователей, отслеживайте зачисленные пополнения и получайте комиссию.",

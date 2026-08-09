@@ -2476,6 +2476,7 @@
     "Invalidated": "Invalidé",
     "Invert match": "Inverser la correspondance",
     "Invitation Code": "Code d'invitation",
+    "Invitation Code must be 32 characters or fewer": "Le code d’invitation doit comporter au plus 32 caractères",
     "Invitation Quota": "Quota d'invitation",
     "Invite Info": "Informations sur l'invitation",
     "Invite new users, track their credited top-ups, and claim your commission.": "Invitez des utilisateurs, suivez leurs recharges créditées et réclamez votre commission.",

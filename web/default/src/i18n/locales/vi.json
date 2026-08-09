@@ -2476,6 +2476,7 @@
     "Invalidated": "Đã vô hiệu",
     "Invert match": "Đảo điều kiện khớp",
     "Invitation Code": "Mã mời",
+    "Invitation Code must be 32 characters or fewer": "Mã mời không được dài quá 32 ký tự",
     "Invitation Quota": "Hạn mức lời mời",
     "Invite Info": "Thông tin mời",
     "Invite new users, track their credited top-ups, and claim your commission.": "Mời người dùng mới, theo dõi khoản nạp đã cộng và nhận hoa hồng.",

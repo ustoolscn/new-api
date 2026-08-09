@@ -2476,6 +2476,7 @@
     "Invalidated": "已作廢",
     "Invert match": "反向匹配",
     "Invitation Code": "邀請碼",
+    "Invitation Code must be 32 characters or fewer": "邀請碼長度不能超過 32 個字元",
     "Invitation Quota": "邀請額度",
     "Invite Info": "邀請資訊",
     "Invite new users, track their credited top-ups, and claim your commission.": "邀請新用戶，查看其充值到帳記錄並領取返佣。",
