@@ -11,12 +11,11 @@ import (
 	"github.com/QuantumNous/new-api/dto"
 	relaycommon "github.com/QuantumNous/new-api/relay/common"
 	relayconstant "github.com/QuantumNous/new-api/relay/constant"
-	"github.com/QuantumNous/new-api/service"
 	"github.com/gin-gonic/gin"
 	"github.com/stretchr/testify/require"
 )
 
-func TestConvertOpenAIResponsesRequestUsesChatCompletionsCompat(t *testing.T) {
+func TestConvertOpenAIResponsesRequestPassesThroughNative(t *testing.T) {
 	adaptor := &Adaptor{}
 	info := &relaycommon.RelayInfo{
 		RelayMode: relayconstant.RelayModeResponses,
@@ -32,54 +31,53 @@ func TestConvertOpenAIResponsesRequestUsesChatCompletionsCompat(t *testing.T) {
 	})
 
 	require.NoError(t, err)
-	chatReq, ok := converted.(*dto.GeneralOpenAIRequest)
+	req, ok := converted.(dto.OpenAIResponsesRequest)
 	require.True(t, ok)
-	require.Equal(t, "deepseek-chat", chatReq.Model)
-	require.Len(t, chatReq.Messages, 1)
-	require.Equal(t, "user", chatReq.Messages[0].Role)
-	require.Equal(t, "hello", chatReq.Messages[0].Content)
+	require.Equal(t, "deepseek-chat", req.Model)
+	require.Equal(t, `"hello"`, string(req.Input))
 
 	url, err := adaptor.GetRequestURL(info)
 	require.NoError(t, err)
-	require.Equal(t, "https://api.deepseek.com/v1/chat/completions", url)
+	require.Equal(t, "https://api.deepseek.com/responses", url)
 }
 
-func TestConvertOpenAIResponsesRequestFlattensNamespaceTools(t *testing.T) {
-	gin.SetMode(gin.TestMode)
-	recorder := httptest.NewRecorder()
-	c, _ := gin.CreateTestContext(recorder)
+func TestConvertOpenAIResponsesRequestMapsV4ReasoningSuffix(t *testing.T) {
 	adaptor := &Adaptor{}
-	info := &relaycommon.RelayInfo{
-		RelayMode: relayconstant.RelayModeResponses,
-		ChannelMeta: &relaycommon.ChannelMeta{
-			ChannelBaseUrl:    "https://api.deepseek.com",
-			UpstreamModelName: "deepseek-chat",
-		},
+	tests := []struct {
+		name       string
+		model      string
+		wantModel  string
+		wantEffort string
+	}{
+		{name: "max", model: "deepseek-v4-flash-max", wantModel: "deepseek-v4-flash", wantEffort: "max"},
+		{name: "none", model: "deepseek-v4-flash-none", wantModel: "deepseek-v4-flash", wantEffort: "none"},
 	}
 
-	converted, err := adaptor.ConvertOpenAIResponsesRequest(c, info, dto.OpenAIResponsesRequest{
-		Model: "deepseek-chat",
-		Input: common.StringToByteSlice(`"hello"`),
-		Tools: common.StringToByteSlice(`[{
-			"type":"namespace",
-			"name":"mcp__idea__",
-			"tools":[{"type":"function","name":"read_file","parameters":{"type":"object"}}]
-		}]`),
-	})
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			info := &relaycommon.RelayInfo{
+				RelayMode:   relayconstant.RelayModeResponses,
+				ChannelMeta: &relaycommon.ChannelMeta{},
+			}
+			converted, err := adaptor.ConvertOpenAIResponsesRequest(nil, info, dto.OpenAIResponsesRequest{
+				Model: tt.model,
+				Input: common.StringToByteSlice(`"hello"`),
+			})
 
-	require.NoError(t, err)
-	chatReq, ok := converted.(*dto.GeneralOpenAIRequest)
-	require.True(t, ok)
-	require.Len(t, chatReq.Tools, 1)
-	require.Equal(t, "mcp__idea__read_file", chatReq.Tools[0].Function.Name)
-
-	value, exists := c.Get(responsesToolNameMapKey)
-	require.True(t, exists)
-	toolNameMap := value.(map[string]service.ResponsesToolName)
-	require.Equal(t, service.ResponsesToolName{
-		Namespace: "mcp__idea__",
-		Name:      "read_file",
-	}, toolNameMap["mcp__idea__read_file"])
+			require.NoError(t, err)
+			req, ok := converted.(dto.OpenAIResponsesRequest)
+			require.True(t, ok)
+			require.Equal(t, tt.wantModel, req.Model)
+			require.NotNil(t, req.Reasoning)
+			require.Equal(t, tt.wantEffort, req.Reasoning.Effort)
+			require.Equal(t, tt.wantModel, info.UpstreamModelName)
+			if tt.wantEffort == "none" {
+				require.Equal(t, "", info.ReasoningEffort)
+			} else {
+				require.Equal(t, tt.wantEffort, info.ReasoningEffort)
+			}
+		})
+	}
 }
 
 func TestChatCompletionsToResponsesHandlerWrapsChatResponse(t *testing.T) {

@@ -60,6 +60,9 @@ func (a *Adaptor) Init(info *relaycommon.RelayInfo) {
 }
 
 func (a *Adaptor) GetRequestURL(info *relaycommon.RelayInfo) (string, error) {
+	if info.RelayMode == constant.RelayModeResponses {
+		return relaycommon.GetFullRequestURL(strings.TrimRight(info.ChannelBaseUrl, "/"), "/responses", info.ChannelType), nil
+	}
 	fimBaseUrl := info.ChannelBaseUrl
 	switch info.RelayFormat {
 	case types.RelayFormatClaude:
@@ -162,14 +165,38 @@ func (a *Adaptor) ConvertEmbeddingRequest(c *gin.Context, info *relaycommon.Rela
 }
 
 func (a *Adaptor) ConvertOpenAIResponsesRequest(c *gin.Context, info *relaycommon.RelayInfo, request dto.OpenAIResponsesRequest) (any, error) {
-	chatRequest, err := openaicompat.ConvertResponsesRequestToChat(c, request)
-	if err != nil {
+	if err := applyDeepSeekV4ResponsesReasoningSuffix(info, &request); err != nil {
 		return nil, err
 	}
-	if err := applyDeepSeekV4OpenAIThinkingSuffix(info, chatRequest); err != nil {
-		return nil, err
+	return request, nil
+}
+
+func applyDeepSeekV4ResponsesReasoningSuffix(info *relaycommon.RelayInfo, request *dto.OpenAIResponsesRequest) error {
+	modelName := request.Model
+	if info != nil && info.ChannelMeta != nil && info.UpstreamModelName != "" {
+		modelName = info.UpstreamModelName
 	}
-	return chatRequest, nil
+	baseModel, thinkingType, effort, ok := reasoning.ParseDeepSeekV4ThinkingSuffix(modelName)
+	if !ok {
+		return nil
+	}
+	request.Model = baseModel
+	if request.Reasoning == nil {
+		request.Reasoning = &dto.Reasoning{}
+	}
+	switch thinkingType {
+	case "disabled":
+		request.Reasoning.Effort = "none"
+	case "enabled":
+		request.Reasoning.Effort = effort
+	}
+	if info != nil {
+		if info.ChannelMeta != nil {
+			info.UpstreamModelName = baseModel
+		}
+		info.ReasoningEffort = effort
+	}
+	return nil
 }
 
 func (a *Adaptor) DoRequest(c *gin.Context, info *relaycommon.RelayInfo, requestBody io.Reader) (any, error) {
@@ -184,9 +211,9 @@ func (a *Adaptor) DoResponse(c *gin.Context, resp *http.Response, info *relaycom
 	default:
 		if info.RelayMode == constant.RelayModeResponses {
 			if info.IsStream {
-				return openaicompat.ChatCompletionsToResponsesStreamHandler(c, info, resp)
+				return openai.OaiResponsesStreamHandler(c, info, resp)
 			}
-			return openaicompat.ChatCompletionsToResponsesHandler(c, info, resp)
+			return openai.OaiResponsesHandler(c, info, resp)
 		}
 		adaptor := openai.Adaptor{}
 		return adaptor.DoResponse(c, resp, info)
