@@ -19,6 +19,68 @@ type VideoRequest struct {
 	SubjectReference []SubjectReference `json:"subject_reference,omitempty"` // For subject-reference-to-video
 }
 
+type H3VideoContent struct {
+	Type     string      `json:"type"`
+	Text     string      `json:"text,omitempty"`
+	ImageURL *H3MediaURL `json:"image_url,omitempty"`
+	VideoURL *H3MediaURL `json:"video_url,omitempty"`
+	AudioURL *H3MediaURL `json:"audio_url,omitempty"`
+	Role     string      `json:"role,omitempty"`
+}
+
+type H3MediaURL struct {
+	URL string `json:"url"`
+}
+
+type H3VideoRequest struct {
+	Model         string           `json:"model"`
+	Content       []H3VideoContent `json:"content"`
+	Resolution    string           `json:"resolution,omitempty"`
+	Duration      int              `json:"duration,omitempty"`
+	Ratio         string           `json:"ratio,omitempty"`
+	CallbackURL   string           `json:"callback_url,omitempty"`
+	CallbackToken string           `json:"callback_token,omitempty"`
+	UseContextIR  *bool            `json:"use_context_ir,omitempty"`
+	AigcWatermark *bool            `json:"aigc_watermark,omitempty"`
+}
+
+type H3VideoResponse struct {
+	TaskID string `json:"task_id"`
+}
+
+type H3ErrorResponse struct {
+	Type  string `json:"type,omitempty"`
+	Error struct {
+		Type    string `json:"type,omitempty"`
+		Message string `json:"message,omitempty"`
+	} `json:"error,omitempty"`
+}
+
+type H3TaskContent struct {
+	URL    string `json:"url,omitempty"`
+	Prompt string `json:"prompt,omitempty"`
+}
+
+type H3TaskError struct {
+	Code    string `json:"code,omitempty"`
+	Message string `json:"message,omitempty"`
+}
+
+type H3Task struct {
+	ID         string        `json:"id"`
+	Model      string        `json:"model"`
+	Status     string        `json:"status"`
+	Content    H3TaskContent `json:"content"`
+	Error      *H3TaskError  `json:"error,omitempty"`
+	Resolution string        `json:"resolution,omitempty"`
+	Duration   int           `json:"duration,omitempty"`
+	Ratio      string        `json:"ratio,omitempty"`
+}
+
+type H3TaskResponse struct {
+	Task H3Task `json:"task"`
+}
+
 type VideoResponse struct {
 	TaskID   string   `json:"task_id"`
 	BaseResp BaseResp `json:"base_resp"`

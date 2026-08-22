@@ -699,6 +699,7 @@ type TaskSubmitReq struct {
 	InputVideos       []string               `json:"input_videos,omitempty"`
 	InputVideoSeconds *float64               `json:"input_video_seconds,omitempty"`
 	Size              string                 `json:"size,omitempty"`
+	Ratio             string                 `json:"ratio,omitempty"`
 	Width             *int                   `json:"width,omitempty"`
 	Height            *int                   `json:"height,omitempty"`
 	Duration          int                    `json:"duration,omitempty"`
@@ -810,6 +811,7 @@ func (t *TaskSubmitReq) UnmarshalJSON(data []byte) error {
 		InputVideoDuration      json.RawMessage `json:"input_video_duration,omitempty"`
 		Size                    string          `json:"size,omitempty"`
 		Resolution              string          `json:"resolution,omitempty"`
+		Ratio                   string          `json:"ratio,omitempty"`
 		Width                   *int            `json:"width,omitempty"`
 		Height                  *int            `json:"height,omitempty"`
 		Duration                json.RawMessage `json:"duration,omitempty"`
@@ -842,6 +844,7 @@ func (t *TaskSubmitReq) UnmarshalJSON(data []byte) error {
 	if t.Size == "" {
 		t.Size = strings.TrimSpace(aux.Resolution)
 	}
+	t.Ratio = strings.TrimSpace(aux.Ratio)
 	t.Width = aux.Width
 	t.Height = aux.Height
 	if t.Size == "" && t.Width != nil && t.Height != nil && *t.Width > 0 && *t.Height > 0 {

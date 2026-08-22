@@ -50,11 +50,13 @@ POST /v1/video/generations
 | 参数 | 类型 | 必填 | 说明 |
 |---|---|---:|---|
 | `model` | string | 是 | 视频模型名称。必须是当前站点已配置、令牌分组可用并支持视频端点的模型，例如 `sora-2`、`sora-2-pro`、Veo、可灵、豆包、海螺、Vidu 或通义万相相关模型。实际列表以站点 `/v1/models` 和管理员渠道配置为准。 |
+
 | `prompt` | string | 通常是 | 视频生成提示词。xAI 单图生视频允许省略；文生视频、参考图生视频、视频编辑和视频扩展仍需提供。其他渠道按各自校验规则处理。 |
 | `seconds` | number 或 numeric string | 否 | 输出视频时长，单位秒。必须是 `1`–`3600` 的整数；具体模型通常只支持其中少数固定时长。优先使用此字段。 |
 | `duration` | number 或 numeric string | 否 | `seconds` 的兼容别名。若同时提供，以 `seconds` 为准。 |
 | `size` | string | 否 | 输出尺寸或清晰度，例如 `1280x720`、`720x1280`、`720p`、`1080p`。实际允许值由模型决定。 |
 | `resolution` | string | 否 | `size` 的兼容别名。若同时提供，以 `size` 为准。 |
+| `ratio` | string | 否 | 输出画面比例，例如 `16:9`、`9:16`；MiniMax H3 会直接传递给上游。 |
 | `width` | integer | 否 | 正整数。与 `height` 同时提供且未提供 `size`/`resolution` 时，自动组合成 `{width}x{height}`。 |
 | `height` | integer | 否 | 正整数。与 `width` 同时使用。 |
 | `image` | string 或 object | 否 | 单张参考图。通常为 HTTP/HTTPS URL，也可按上游模型能力传 data URL。xAI 还支持 `{ "url": "..." }` 或 `{ "file_id": "..." }`。 |
@@ -74,6 +76,12 @@ POST /v1/video/generations
 | `generate_audio` | boolean | 否 | 是否同时生成音频。显式 `false` 会被保留并发送；仅支持该能力的模型生效。 |
 | `mode` | string | 否 | 提供商模式，例如部分可灵模型使用 `std`；xAI 输入视频设置 `extension` 时调用视频扩展，否则调用视频编辑。 |
 | `metadata` | object | 否 | 提供商特有扩展参数。应传 JSON 对象，不要把通用字段重复放入其中。顶层标准字段优先于 metadata 中同名字段。 |
+
+### MiniMax H3
+
+当 MiniMax 渠道的模型为 `MiniMax-H3` 时，统一视频请求会转换为 MiniMax v2 任务接口：提交到渠道 Base URL 下的 `/minimax/v2/video_generation`，轮询 `/minimax/v2/query/video_generation/{task_id}`。文本提示词和统一接口中的图片/输入视频会转换为 H3 的 `content` 项，并传递 H3 支持的 `resolution`、`duration` 与 `ratio`；`callback_url`、`callback_token`、`use_context_ir` 和 `aigc_watermark` 可通过 `metadata` 传递。成功轮询响应中的 `task.content.url` 会作为任务结果地址。旧版 MiniMax/Hailuo 视频模型仍使用 v1 接口。
+
+CooperAPI 客户端请求示例和完整轮询流程见 [`docs/minimax-h3-new-api.md`](./minimax-h3-new-api.md)。
 
 注意：`model` 在统一校验阶段由渠道选择逻辑使用，因此实际调用必须提供。个别旧渠道虽然能推导默认模型，也不建议省略。
 
