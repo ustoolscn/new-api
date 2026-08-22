@@ -697,6 +697,8 @@ type TaskSubmitReq struct {
 	ImageInputs       []TaskImageInput       `json:"-"`
 	InputVideo        string                 `json:"input_video,omitempty"`
 	InputVideos       []string               `json:"input_videos,omitempty"`
+	InputAudio        string                 `json:"input_audio,omitempty"`
+	InputAudios       []string               `json:"input_audios,omitempty"`
 	InputVideoSeconds *float64               `json:"input_video_seconds,omitempty"`
 	Size              string                 `json:"size,omitempty"`
 	Ratio             string                 `json:"ratio,omitempty"`
@@ -754,12 +756,16 @@ func (t *TaskSubmitReq) HasInputVideo() bool {
 	return strings.TrimSpace(t.InputVideo) != "" || len(t.InputVideos) > 0
 }
 
+func (t *TaskSubmitReq) HasInputAudio() bool {
+	return strings.TrimSpace(t.InputAudio) != "" || len(t.InputAudios) > 0
+}
+
 func (t *TaskSubmitReq) HasAnyInputVideo() bool {
 	return t.HasInputVideo() || metadataHasTaskMedia(t.Metadata, "video")
 }
 
 func (t *TaskSubmitReq) HasAnyInputContent() bool {
-	return t.HasImage() || t.HasAnyInputVideo() || metadataHasTaskMedia(t.Metadata, "")
+	return t.HasImage() || t.HasAnyInputVideo() || t.HasInputAudio() || metadataHasTaskMedia(t.Metadata, "")
 }
 
 func (t *TaskSubmitReq) InputVideoURLs() []string {
@@ -786,6 +792,23 @@ func (t *TaskSubmitReq) InputVideoURLs() []string {
 	return urls
 }
 
+func (t *TaskSubmitReq) InputAudioURLs() []string {
+	urls := make([]string, 0, len(t.InputAudios)+1)
+	add := func(value string) {
+		value = strings.TrimSpace(value)
+		if value != "" {
+			urls = append(urls, value)
+		}
+	}
+	for _, value := range t.InputAudios {
+		add(value)
+	}
+	if len(urls) == 0 {
+		add(t.InputAudio)
+	}
+	return urls
+}
+
 func (t *TaskSubmitReq) OutputSeconds() float64 {
 	seconds, _ := strconv.ParseFloat(strings.TrimSpace(t.Seconds), 64)
 	if seconds > 0 {
@@ -806,6 +829,8 @@ func (t *TaskSubmitReq) UnmarshalJSON(data []byte) error {
 		Images                  json.RawMessage `json:"images,omitempty"`
 		InputVideo              string          `json:"input_video,omitempty"`
 		InputVideos             json.RawMessage `json:"input_videos,omitempty"`
+		InputAudio              string          `json:"input_audio,omitempty"`
+		InputAudios             json.RawMessage `json:"input_audios,omitempty"`
 		Video                   string          `json:"video,omitempty"`
 		InputVideoSeconds       json.RawMessage `json:"input_video_seconds,omitempty"`
 		InputVideoDuration      json.RawMessage `json:"input_video_duration,omitempty"`
@@ -840,6 +865,7 @@ func (t *TaskSubmitReq) UnmarshalJSON(data []byte) error {
 	if t.InputVideo == "" {
 		t.InputVideo = strings.TrimSpace(aux.Video)
 	}
+	t.InputAudio = strings.TrimSpace(aux.InputAudio)
 	t.Size = strings.TrimSpace(aux.Size)
 	if t.Size == "" {
 		t.Size = strings.TrimSpace(aux.Resolution)
@@ -915,6 +941,13 @@ func (t *TaskSubmitReq) UnmarshalJSON(data []byte) error {
 			return fmt.Errorf("invalid input_videos: %w", err)
 		}
 		t.InputVideos = inputVideos
+	}
+	if len(aux.InputAudios) > 0 {
+		inputAudios, err := parseTaskStringList(aux.InputAudios)
+		if err != nil {
+			return fmt.Errorf("invalid input_audios: %w", err)
+		}
+		t.InputAudios = inputAudios
 	}
 
 	if len(aux.Metadata) > 0 {
@@ -1010,6 +1043,13 @@ func (t *TaskSubmitReq) Normalize() {
 	}
 	if t.InputVideo == "" && len(t.InputVideos) > 0 {
 		t.InputVideo = strings.TrimSpace(t.InputVideos[0])
+	}
+	t.InputAudio = strings.TrimSpace(t.InputAudio)
+	if len(t.InputAudios) == 0 && t.InputAudio != "" {
+		t.InputAudios = []string{t.InputAudio}
+	}
+	if t.InputAudio == "" && len(t.InputAudios) > 0 {
+		t.InputAudio = strings.TrimSpace(t.InputAudios[0])
 	}
 	if t.Metadata == nil {
 		t.Metadata = make(map[string]interface{})

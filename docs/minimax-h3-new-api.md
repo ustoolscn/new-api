@@ -55,9 +55,28 @@ curl --request POST \
 | `images` | array | 否 | 图片 URL 数组，或包含 `url` 和 `role` 的对象数组。 |
 | `input_video` | string | 否 | 输入视频 URL。 |
 | `input_videos` | array | 否 | 输入视频 URL 数组。 |
-| `metadata` | object | 否 | 其他模型参数。通常不需要传递。 |
+| `input_audio` | string | 否 | 单个参考音频 URL。 |
+| `input_audios` | array | 否 | 参考音频 URL 数组，最多 3 个。 |
+| `metadata` | object | 否 | 模型扩展参数，例如 `use_context_ir`。 |
 
 纯文生视频必须传入非 `adaptive` 的 `ratio`，例如 `16:9`。
+
+`use_context_ir` 是 MiniMax H3 的提示词优化开关。它属于模型扩展参数，请放在 `metadata` 中传递。默认不启用；如需启用，请传入 `"metadata": {"use_context_ir": true}`。显式传入 `false` 会保持关闭。
+
+示例：
+
+```json
+{
+  "model": "MiniMax-H3",
+  "prompt": "一艘帆船驶过金色海面，镜头缓慢拉远。",
+  "resolution": "768P",
+  "duration": 5,
+  "ratio": "16:9",
+  "metadata": {
+    "use_context_ir": true
+  }
+}
+```
 
 ### 图片首帧和尾帧
 
@@ -106,6 +125,45 @@ curl --request POST \
 ```
 
 输入视频必须是可访问的 HTTP/HTTPS URL，不能传本地文件路径。
+
+### 全能参考模式
+
+通过图片、视频和音频同时提供参考素材时，使用全能参考模式。请求必须包含文本提示词，最多支持：
+
+- 9 张参考图片；
+- 3 个参考视频；
+- 3 个参考音频；
+
+参考图片需要使用 `role: "reference_image"`。首尾帧图片使用 `first_frame` 和 `last_frame`，首尾帧模式不能与参考图片、参考视频或参考音频混用。
+
+```bash
+curl --request POST \
+  --url 'https://cooper-api.com/v1/video/generations' \
+  --header 'Authorization: Bearer YOUR_COOPERAPI_TOKEN' \
+  --header 'Content-Type: application/json' \
+  --data '{
+    "model": "MiniMax-H3",
+    "prompt": "综合参考图片中的人物、视频中的运镜和音频中的节奏，生成一段电影感视频。",
+    "images": [
+      {"url": "https://example.com/reference-01.png", "role": "reference_image"},
+      {"url": "https://example.com/reference-02.png", "role": "reference_image"},
+      {"url": "https://example.com/reference-03.png", "role": "reference_image"}
+    ],
+    "input_videos": [
+      "https://example.com/reference-camera.mp4",
+      "https://example.com/reference-motion.mp4"
+    ],
+    "input_audios": [
+      "https://example.com/reference-music.mp3",
+      "https://example.com/reference-dialogue.wav"
+    ],
+    "resolution": "768P",
+    "duration": 5,
+    "ratio": "16:9"
+  }'
+```
+
+也可以传满配置：`images` 最多 9 个、`input_videos` 最多 3 个、`input_audios` 最多 3 个。所有素材都必须是可访问的 HTTP/HTTPS URL。接口文档只规定各类型上限，没有额外规定三类素材的总数上限。
 
 ## 创建响应
 

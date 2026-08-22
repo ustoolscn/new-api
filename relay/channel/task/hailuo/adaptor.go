@@ -278,6 +278,35 @@ func validateH3Request(c *gin.Context) *dto.TaskError {
 	if req.Ratio != "" && !h3Ratios[req.Ratio] {
 		return service.TaskErrorWrapperLocal(fmt.Errorf("MiniMax-H3 ratio is invalid"), "invalid_ratio", http.StatusBadRequest)
 	}
+	if len(req.ImageInputs) > 9 {
+		return service.TaskErrorWrapperLocal(fmt.Errorf("MiniMax-H3 supports at most 9 reference images"), "invalid_image_count", http.StatusBadRequest)
+	}
+	if len(req.InputVideoURLs()) > 3 {
+		return service.TaskErrorWrapperLocal(fmt.Errorf("MiniMax-H3 supports at most 3 reference videos"), "invalid_input_video", http.StatusBadRequest)
+	}
+	if len(req.InputAudioURLs()) > 3 {
+		return service.TaskErrorWrapperLocal(fmt.Errorf("MiniMax-H3 supports at most 3 reference audios"), "invalid_input_audio", http.StatusBadRequest)
+	}
+	imageMode := ""
+	for _, input := range req.ImageInputs {
+		role := strings.TrimSpace(input.Role)
+		if role == "" {
+			role = "first_frame"
+		}
+		if role == "first_frame" || role == "last_frame" {
+			if imageMode == "reference" {
+				return service.TaskErrorWrapperLocal(fmt.Errorf("MiniMax-H3 frame images cannot mix with reference images"), "invalid_media_mix", http.StatusBadRequest)
+			}
+			imageMode = "frame"
+		} else if role == "reference_image" {
+			if imageMode == "frame" {
+				return service.TaskErrorWrapperLocal(fmt.Errorf("MiniMax-H3 reference images cannot mix with frame images"), "invalid_media_mix", http.StatusBadRequest)
+			}
+			imageMode = "reference"
+		} else {
+			return service.TaskErrorWrapperLocal(fmt.Errorf("MiniMax-H3 image role is invalid"), "invalid_image_role", http.StatusBadRequest)
+		}
+	}
 	return nil
 }
 
@@ -313,6 +342,13 @@ func h3ContentFromRequest(req *relaycommon.TaskSubmitReq) []H3VideoContent {
 			Type:     "video_url",
 			VideoURL: &H3MediaURL{URL: video},
 			Role:     "reference_video",
+		})
+	}
+	for _, audio := range req.InputAudioURLs() {
+		content = append(content, H3VideoContent{
+			Type:     "audio_url",
+			AudioURL: &H3MediaURL{URL: audio},
+			Role:     "reference_audio",
 		})
 	}
 	return content

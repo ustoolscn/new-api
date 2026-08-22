@@ -152,6 +152,7 @@ const MaxTaskDurationSeconds = 3600
 const MaxTaskFPS = 120
 
 const MaxTaskInputVideos = 4
+const MaxTaskInputAudios = 3
 
 // NormalizeVideoResolution converts dimensions such as 1280x720 to the
 // provider-neutral short-side form (720p).
@@ -218,6 +219,23 @@ func validateTaskInputVideoURLs(req TaskSubmitReq) *dto.TaskError {
 		parsed, err := url.Parse(rawURL)
 		if err != nil || parsed.Host == "" || (parsed.Scheme != "http" && parsed.Scheme != "https") {
 			return createTaskError(fmt.Errorf("input video must be an HTTP or HTTPS URL"), "invalid_input_video", http.StatusBadRequest, true)
+		}
+	}
+	return nil
+}
+
+func validateTaskInputAudioURLs(req TaskSubmitReq) *dto.TaskError {
+	urls := req.InputAudioURLs()
+	if len(urls) == 0 {
+		return nil
+	}
+	if len(urls) > MaxTaskInputAudios {
+		return createTaskError(fmt.Errorf("input_audios supports at most %d URLs", MaxTaskInputAudios), "invalid_input_audio", http.StatusBadRequest, true)
+	}
+	for _, rawURL := range urls {
+		parsed, err := url.Parse(rawURL)
+		if err != nil || parsed.Host == "" || (parsed.Scheme != "http" && parsed.Scheme != "https") {
+			return createTaskError(fmt.Errorf("input audio must be an HTTP or HTTPS URL"), "invalid_input_audio", http.StatusBadRequest, true)
 		}
 	}
 	return nil
@@ -408,6 +426,9 @@ func ValidateMultipartDirect(c *gin.Context, info *RelayInfo) *dto.TaskError {
 	if taskErr := validateTaskInputVideoURLs(req); taskErr != nil {
 		return taskErr
 	}
+	if taskErr := validateTaskInputAudioURLs(req); taskErr != nil {
+		return taskErr
+	}
 
 	action := constant.TaskActionTextGenerate
 	if req.HasImage() || req.HasAnyInputVideo() {
@@ -447,6 +468,8 @@ func isKnownTaskField(field string) bool {
 		"images":               true,
 		"input_video":          true,
 		"input_videos":         true,
+		"input_audio":          true,
+		"input_audios":         true,
 		"video":                true,
 		"input_video_seconds":  true,
 		"input_video_duration": true,

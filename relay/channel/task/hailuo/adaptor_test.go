@@ -72,6 +72,29 @@ func TestH3RequestPayloadMapsMediaAndProviderOptions(t *testing.T) {
 	assert.JSONEq(t, `{"model":"MiniMax-H3","content":[{"type":"text","text":"人物走向镜头"},{"type":"image_url","image_url":{"url":"https://example.com/first.png"},"role":"first_frame"},{"type":"image_url","image_url":{"url":"https://example.com/last.png"},"role":"last_frame"}],"resolution":"768P","duration":5,"ratio":"adaptive","callback_url":"https://example.com/callback","callback_token":"callback-secret","use_context_ir":true,"aigc_watermark":false}`, string(data))
 }
 
+func TestH3RequestPayloadMapsUniversalReferenceAudio(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	c, _ := gin.CreateTestContext(httptest.NewRecorder())
+	c.Set("task_request", common.TaskSubmitReq{
+		Prompt:      "根据参考素材生成视频",
+		Duration:    5,
+		InputAudios: []string{"https://example.com/music.mp3", "https://example.com/dialogue.wav"},
+		InputVideos: []string{"https://example.com/motion.mp4"},
+		ImageInputs: []common.TaskImageInput{{URL: "https://example.com/style.png", Role: "reference_image"}},
+	})
+
+	adaptor := &TaskAdaptor{baseURL: "https://cp.compshare.cn"}
+	info := &common.RelayInfo{ChannelMeta: &common.ChannelMeta{UpstreamModelName: "MiniMax-H3"}}
+	body, err := adaptor.BuildRequestBody(c, info)
+	require.NoError(t, err)
+	data, err := io.ReadAll(body)
+	require.NoError(t, err)
+	assert.Contains(t, string(data), `"type":"audio_url"`)
+	assert.Contains(t, string(data), `"role":"reference_audio"`)
+	assert.Contains(t, string(data), `https://example.com/music.mp3`)
+	assert.Contains(t, string(data), `https://example.com/dialogue.wav`)
+}
+
 func TestH3ParseTaskResult(t *testing.T) {
 	adaptor := &TaskAdaptor{}
 	result, err := adaptor.ParseTaskResult([]byte(`{
