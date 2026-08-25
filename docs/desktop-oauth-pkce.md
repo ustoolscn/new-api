@@ -1,12 +1,12 @@
 # Desktop OAuth 2.0 Authorization Code + PKCE
 
-This document describes the public desktop-client integration for Hi Codex and
-other native clients that need read-only access to the currently signed-in
-account.
+This document describes the public desktop-client integration for Hi Codex,
+DreamFactory, and other native clients that need read-only access to the
+currently signed-in account.
 
 The flow is a public OAuth client flow:
 
-- `client_id`: `hi-codex` (fixed; do not register another client ID)
+- `client_id`: `hi-codex` or `dreamfactory` (fixed public clients)
 - canonical `scope`: `api_keys:read account:read` (exactly these two scopes)
 - `response_type`: `code` (fixed)
 - PKCE: S256 is required; `plain` is rejected
@@ -188,7 +188,7 @@ The main error codes are:
 | --- | --- |
 | `invalid_request` | Missing form field, malformed request, or an expired/invalid authorization request. |
 | `unsupported_grant_type` | `grant_type` was not `authorization_code`. |
-| `invalid_client` | `client_id` was not `hi-codex`. |
+| `invalid_client` | `client_id` was not `hi-codex` or `dreamfactory`. |
 | `invalid_grant` | Invalid, expired, already-used, mismatched, or PKCE-invalid code; invalid redirect URI/verifier; or a disabled authorizing user. |
 | `server_error` | The server could not issue the token. |
 
@@ -263,6 +263,7 @@ Successful responses use the normal application envelope:
 {
   "success": true,
   "data": {
+    "userid": 123,
     "username": "example",
     "balance": {
       "quota": 500000,

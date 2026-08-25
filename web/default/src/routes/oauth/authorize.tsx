@@ -171,7 +171,7 @@ function OAuthAuthorize() {
   const search = useSearch({ from: '/oauth/authorize' }) as AuthorizeSearch
   const requestIsValid =
     search.response_type === 'code' &&
-    search.client_id === 'hi-codex' &&
+    (search.client_id === 'hi-codex' || search.client_id === 'dreamfactory') &&
     Boolean(search.redirect_uri) &&
     hasRequiredOAuthScopes(search.scope) &&
     Boolean(search.state) &&

@@ -15,16 +15,35 @@ import (
 )
 
 const (
-	OAuthPublicClientID   = "hi-codex"
-	OAuthPublicClientName = "Hi Codex"
-	OAuthScopeAPIKeysRead = "api_keys:read"
-	OAuthScopeAccountRead = "account:read"
-	OAuthPublicScope      = OAuthScopeAPIKeysRead + " " + OAuthScopeAccountRead
+	OAuthPublicClientID         = "hi-codex"
+	OAuthPublicClientName       = "Hi Codex"
+	OAuthDreamFactoryClientID   = "dreamfactory"
+	OAuthDreamFactoryClientName = "DreamFactory"
+	OAuthScopeAPIKeysRead       = "api_keys:read"
+	OAuthScopeAccountRead       = "account:read"
+	OAuthPublicScope            = OAuthScopeAPIKeysRead + " " + OAuthScopeAccountRead
 
 	OAuthAuthorizationRequestTTL = int64(10 * 60)
 	OAuthAuthorizationCodeTTL    = int64(2 * 60)
 	OAuthTokenTTL                = int64(30 * 24 * 60 * 60)
 )
+
+// OAuthPublicClientNameForID returns the display name for a supported public
+// OAuth client. Empty string means the client ID is not registered.
+func OAuthPublicClientNameForID(clientID string) string {
+	switch clientID {
+	case OAuthPublicClientID:
+		return OAuthPublicClientName
+	case OAuthDreamFactoryClientID:
+		return OAuthDreamFactoryClientName
+	default:
+		return ""
+	}
+}
+
+func IsOAuthPublicClient(clientID string) bool {
+	return OAuthPublicClientNameForID(clientID) != ""
+}
 
 const (
 	OAuthAuthorizationRequestPending = iota

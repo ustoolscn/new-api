@@ -181,6 +181,7 @@ func TestGetOAuthAccountReturnsBalanceAndActiveSubscriptionSnapshots(t *testing.
 
 	recorder, envelope := requestOAuthAccount(t, 101)
 	require.True(t, envelope.Success, envelope.Message)
+	assert.Equal(t, 101, envelope.Data.UserId)
 	var raw map[string]any
 	require.NoError(t, common.Unmarshal(recorder.Body.Bytes(), &raw))
 	rawData, ok := raw["data"].(map[string]any)

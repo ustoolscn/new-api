@@ -43,7 +43,7 @@ func OAuthAccessAuth(requiredScopes ...string) gin.HandlerFunc {
 			return
 		}
 		now := common.GetTimestamp()
-		if token.ClientID != model.OAuthPublicClientID ||
+		if !model.IsOAuthPublicClient(token.ClientID) ||
 			token.RevokedAt != nil || token.ExpiresAt <= now ||
 			model.ValidateOAuthAccessTokenScope(token, requiredScopes...) != nil {
 			oauthAccessUnauthorized(c)

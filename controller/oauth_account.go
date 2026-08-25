@@ -42,6 +42,7 @@ type OAuthAccountSubscription struct {
 }
 
 type OAuthAccountResponse struct {
+	UserId        int                        `json:"userid"`
 	Username      string                     `json:"username"`
 	Balance       OAuthAccountBalance        `json:"balance"`
 	Subscriptions []OAuthAccountSubscription `json:"subscriptions"`
@@ -127,6 +128,7 @@ func GetOAuthAccount(c *gin.Context) {
 	}
 
 	common.ApiSuccess(c, OAuthAccountResponse{
+		UserId:   userID,
 		Username: common.GetContextKeyString(c, constant.ContextKeyUserName),
 		Balance: OAuthAccountBalance{
 			Quota:        quota,

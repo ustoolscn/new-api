@@ -94,7 +94,7 @@ func validateOAuthRedirectURI(rawURI string) error {
 func validateOAuthAuthorizeParams(c *gin.Context) (url.Values, string, string, string, string, string, string, error) {
 	values := c.Request.URL.Query()
 	clientID, err := oauthAuthorizationParam(values, "client_id", true)
-	if err != nil || clientID != model.OAuthPublicClientID {
+	if err != nil || !model.IsOAuthPublicClient(clientID) {
 		return nil, "", "", "", "", "", "", errors.New("client_id is invalid")
 	}
 	responseType, err := oauthAuthorizationParam(values, "response_type", true)
@@ -167,7 +167,7 @@ func OAuthAuthorize(c *gin.Context) {
 	data := gin.H{
 		"request_id":   requestID,
 		"client_id":    clientID,
-		"client_name":  model.OAuthPublicClientName,
+		"client_name":  model.OAuthPublicClientNameForID(clientID),
 		"redirect_uri": redirectURI,
 		"scopes":       []string{model.OAuthScopeAPIKeysRead, model.OAuthScopeAccountRead},
 		"user":         user,
@@ -302,7 +302,7 @@ func OAuthToken(c *gin.Context) {
 		return
 	}
 	clientID := tokenFormValue(c, "client_id")
-	if clientID != model.OAuthPublicClientID {
+	if !model.IsOAuthPublicClient(clientID) {
 		oauthError(c, http.StatusBadRequest, "invalid_client", "client_id is invalid")
 		return
 	}
