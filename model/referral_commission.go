@@ -6,7 +6,6 @@ import (
 	"math"
 	"strconv"
 	"strings"
-	"time"
 
 	"github.com/QuantumNous/new-api/common"
 	"github.com/QuantumNous/new-api/logger"
@@ -465,18 +464,9 @@ func GetInviteeConsumeReport(inviterId int, startTimestamp int64, endTimestamp i
 		pageInfo.PageSize = 100
 	}
 
-	now := time.Now()
-	if endTimestamp <= 0 {
-		endTimestamp = now.Unix()
-	}
-	if startTimestamp <= 0 {
-		startTimestamp = time.Date(now.Year(), now.Month(), 1, 0, 0, 0, 0, now.Location()).Unix()
-	}
-	if endTimestamp <= startTimestamp {
-		return nil, errors.New("end_timestamp must be greater than start_timestamp")
-	}
-	if endTimestamp-startTimestamp > maxReferralInviteeConsumeRangeSeconds {
-		return nil, errors.New("invitee consumption range is too large")
+	startTimestamp, endTimestamp, err := normalizeReferralConsumeRange(startTimestamp, endTimestamp)
+	if err != nil {
+		return nil, err
 	}
 
 	var inviteCount int64

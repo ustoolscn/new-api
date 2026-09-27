@@ -23,11 +23,12 @@ import {
   UserMultiple02Icon,
 } from '@hugeicons/core-free-icons'
 import { HugeiconsIcon } from '@hugeicons/react'
-import { keepPreviousData, useQuery } from '@tanstack/react-query'
+import { useQuery } from '@tanstack/react-query'
 import { useMemo, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { toast } from 'sonner'
 
+import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert'
 import { Button } from '@/components/ui/button'
 import {
   Card,
@@ -52,10 +53,8 @@ import dayjs from '@/lib/dayjs'
 import { formatQuota } from '@/lib/format'
 import { cn } from '@/lib/utils'
 
-import {
-  getAdminInviteeConsumeReport,
-  getInviteeConsumeReport,
-} from '../api'
+import { getAdminInviteeConsumeReport, getInviteeConsumeReport } from '../api'
+import { ModelConsumeDialog } from './model-consume-dialog'
 
 const PAGE_SIZE = 10
 const DATE_FORMAT = 'YYYY-MM-DD'
@@ -126,6 +125,10 @@ export function InviteeConsumeCard(props: InviteeConsumeCardProps) {
   const [appliedStartDate, setAppliedStartDate] = useState(initialRange.start)
   const [appliedEndDate, setAppliedEndDate] = useState(initialRange.end)
   const [page, setPage] = useState(1)
+  const [modelTarget, setModelTarget] = useState<{
+    id?: number
+    name?: string
+  } | null>(null)
 
   const appliedRange = useMemo(
     () => toQueryRange(appliedStartDate, appliedEndDate),
@@ -160,7 +163,17 @@ export function InviteeConsumeCard(props: InviteeConsumeCardProps) {
     },
     enabled:
       appliedRange.valid && (props.inviterId == null || props.inviterId > 0),
-    placeholderData: keepPreviousData,
+    placeholderData: (previousData, previousQuery) => {
+      const previousKey = previousQuery?.queryKey
+      if (
+        previousKey?.[1] === (props.inviterId ?? 'self') &&
+        previousKey?.[2] === appliedRange.startTimestamp &&
+        previousKey?.[3] === appliedRange.endTimestamp
+      ) {
+        return previousData
+      }
+      return undefined
+    },
   })
 
   const applyDraftRange = () => {
@@ -210,6 +223,7 @@ export function InviteeConsumeCard(props: InviteeConsumeCardProps) {
     {
       label: t('Period total consumption'),
       value: formatQuota(reportQuery.data?.range_consume_total ?? 0),
+      onClick: () => setModelTarget({}),
     },
   ]
 
@@ -298,13 +312,38 @@ export function InviteeConsumeCard(props: InviteeConsumeCardProps) {
         <div className='grid gap-3 px-6 sm:grid-cols-2 xl:grid-cols-4'>
           {summaryCards.map((card) => (
             <div key={card.label} className='rounded-xl border px-4 py-3'>
-              <p className='text-muted-foreground text-sm'>{card.label}</p>
-              {reportQuery.isLoading ? (
-                <Skeleton className='mt-2 h-7 w-24' />
+              {card.onClick ? (
+                <button
+                  type='button'
+                  className='text-primary focus-visible:ring-ring block w-full cursor-pointer rounded-sm text-left hover:underline focus-visible:ring-2 focus-visible:outline-none disabled:cursor-default disabled:opacity-50'
+                  onClick={card.onClick}
+                  disabled={reportQuery.isFetching || reportQuery.isError}
+                  aria-haspopup='dialog'
+                  aria-label={`${card.label}: ${t('Consumption by model')}`}
+                >
+                  <span className='flex items-center justify-between gap-2 text-sm'>
+                    {card.label}
+                    <HugeiconsIcon
+                      icon={ArrowRight01Icon}
+                      className='size-4'
+                      aria-hidden='true'
+                    />
+                  </span>
+                  <span className='mt-1 block text-xl font-semibold tabular-nums'>
+                    {card.value}
+                  </span>
+                </button>
               ) : (
-                <p className='mt-1 text-xl font-semibold tabular-nums'>
-                  {card.value}
-                </p>
+                <>
+                  <p className='text-muted-foreground text-sm'>{card.label}</p>
+                  {reportQuery.isLoading ? (
+                    <Skeleton className='mt-2 h-7 w-24' />
+                  ) : (
+                    <p className='mt-1 text-xl font-semibold tabular-nums'>
+                      {card.value}
+                    </p>
+                  )}
+                </>
               )}
             </div>
           ))}
@@ -361,9 +400,26 @@ export function InviteeConsumeCard(props: InviteeConsumeCardProps) {
                   <TableRow key={user.id}>
                     <TableCell className='pl-6'>
                       <div className='min-w-36'>
-                        <p className='font-medium'>
+                        <button
+                          type='button'
+                          className='text-primary focus-visible:ring-ring cursor-pointer rounded-sm text-left font-medium hover:underline focus-visible:ring-2 focus-visible:outline-none disabled:opacity-50'
+                          onClick={() =>
+                            setModelTarget({
+                              id: user.id,
+                              name: user.display_name || user.username,
+                            })
+                          }
+                          disabled={
+                            reportQuery.isFetching || reportQuery.isError
+                          }
+                          aria-haspopup='dialog'
+                          aria-label={t(
+                            'View model consumption for {{username}}',
+                            { username: user.display_name || user.username }
+                          )}
+                        >
                           {user.display_name || user.username}
-                        </p>
+                        </button>
                         <p className='text-muted-foreground text-xs'>
                           @{user.username}
                         </p>
@@ -382,7 +438,24 @@ export function InviteeConsumeCard(props: InviteeConsumeCardProps) {
                       {formatQuota(user.commission_quota_total)}
                     </TableCell>
                     <TableCell className='text-right font-medium tabular-nums'>
-                      {formatQuota(user.range_consume_quota)}
+                      <button
+                        type='button'
+                        className='text-primary focus-visible:ring-ring cursor-pointer rounded-sm hover:underline focus-visible:ring-2 focus-visible:outline-none disabled:opacity-50'
+                        onClick={() =>
+                          setModelTarget({
+                            id: user.id,
+                            name: user.display_name || user.username,
+                          })
+                        }
+                        disabled={reportQuery.isFetching || reportQuery.isError}
+                        aria-haspopup='dialog'
+                        aria-label={t(
+                          'View model consumption for {{username}}',
+                          { username: user.display_name || user.username }
+                        )}
+                      >
+                        {formatQuota(user.range_consume_quota)}
+                      </button>
                     </TableCell>
                     <TableCell className='pr-6 text-right'>
                       {formatTimestamp(
@@ -395,7 +468,25 @@ export function InviteeConsumeCard(props: InviteeConsumeCardProps) {
           </TableBody>
         </Table>
 
-        {!reportQuery.isLoading && items.length === 0 ? (
+        {reportQuery.isError ? (
+          <Alert variant='destructive' className='mx-6 w-auto'>
+            <AlertTitle>{t('Failed to load invitee consumption')}</AlertTitle>
+            <AlertDescription>
+              <p>{reportQuery.error.message}</p>
+              <Button
+                variant='outline'
+                size='sm'
+                onClick={() => void reportQuery.refetch()}
+              >
+                {t('Retry')}
+              </Button>
+            </AlertDescription>
+          </Alert>
+        ) : null}
+
+        {!reportQuery.isLoading &&
+        !reportQuery.isError &&
+        items.length === 0 ? (
           <div className='flex flex-col items-center gap-2 px-6 py-12 text-center'>
             <HugeiconsIcon
               icon={UserMultiple02Icon}
@@ -445,6 +536,17 @@ export function InviteeConsumeCard(props: InviteeConsumeCardProps) {
             </Button>
           </div>
         </CardFooter>
+      ) : null}
+      {modelTarget !== null ? (
+        <ModelConsumeDialog
+          key={`${props.inviterId ?? 'self'}-${modelTarget.id ?? 'all'}-${appliedRange.startTimestamp}-${appliedRange.endTimestamp}`}
+          inviterId={props.inviterId}
+          inviteeId={modelTarget.id}
+          inviteeName={modelTarget.name}
+          startTimestamp={appliedRange.startTimestamp}
+          endTimestamp={appliedRange.endTimestamp}
+          onClose={() => setModelTarget(null)}
+        />
       ) : null}
     </Card>
   )

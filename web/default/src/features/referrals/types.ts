@@ -86,6 +86,27 @@ export type ReferralClaimResult = {
   claimed_quota: number
 }
 
+export type ReferralModelConsumption = {
+  model_name: string
+  consume_quota: number
+  request_count: number
+  token_used: number
+}
+
+export type ReferralModelConsumeReport = {
+  start_timestamp: number
+  end_timestamp: number
+  consume_quota: number
+  request_count: number
+  token_used: number
+  models: {
+    page: number
+    page_size: number
+    total: number
+    items: ReferralModelConsumption[]
+  }
+}
+
 export type ReferralApiResponse<T> = {
   success: boolean
   message?: string

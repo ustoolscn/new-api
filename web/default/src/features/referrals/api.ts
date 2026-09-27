@@ -22,6 +22,7 @@ import type {
   ReferralApiResponse,
   ReferralClaimResult,
   ReferralInviteeConsumeReport,
+  ReferralModelConsumeReport,
   ReferralOverview,
 } from './types'
 
@@ -66,14 +67,17 @@ export async function getAdminInviteeConsumeReport(
     pageSize: number
   }
 ): Promise<ReferralApiResponse<ReferralInviteeConsumeReport>> {
-  const response = await api.get(`/api/user/referrals/admin/${userId}/consume`, {
-    params: {
-      start_timestamp: params.startTimestamp,
-      end_timestamp: params.endTimestamp,
-      p: params.page,
-      page_size: params.pageSize,
-    },
-  })
+  const response = await api.get(
+    `/api/user/referrals/admin/${userId}/consume`,
+    {
+      params: {
+        start_timestamp: params.startTimestamp,
+        end_timestamp: params.endTimestamp,
+        p: params.page,
+        page_size: params.pageSize,
+      },
+    }
+  )
   return response.data
 }
 
@@ -81,6 +85,30 @@ export async function claimReferralCommissions(): Promise<
   ReferralApiResponse<ReferralClaimResult>
 > {
   const response = await api.post('/api/user/referrals/claim')
+  return response.data
+}
+
+export async function getReferralModelConsumeReport(params: {
+  inviterId?: number
+  inviteeId?: number
+  startTimestamp: number
+  endTimestamp: number
+  page: number
+  pageSize: number
+}): Promise<ReferralApiResponse<ReferralModelConsumeReport>> {
+  const path =
+    params.inviterId == null
+      ? '/api/user/referrals/consume/models'
+      : `/api/user/referrals/admin/${params.inviterId}/consume/models`
+  const response = await api.get(path, {
+    params: {
+      invitee_id: params.inviteeId,
+      start_timestamp: params.startTimestamp,
+      end_timestamp: params.endTimestamp,
+      p: params.page,
+      page_size: params.pageSize,
+    },
+  })
   return response.data
 }
 

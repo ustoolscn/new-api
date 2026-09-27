@@ -1,5 +1,4 @@
 import { useQuery } from '@tanstack/react-query'
-import { useState } from 'react'
 import {
   ChartColumn,
   Percent,
@@ -7,6 +6,7 @@ import {
   UsersRound,
   WalletCards,
 } from 'lucide-react'
+import { useState } from 'react'
 import { useTranslation } from 'react-i18next'
 
 import {
@@ -31,12 +31,12 @@ import {
 } from '@/components/ui/sheet'
 import { Skeleton } from '@/components/ui/skeleton'
 import { InviteeConsumeCard } from '@/features/referrals/components/invitee-consume-card'
-import { AddReferralInviteeDialog } from './add-referral-invitee-dialog'
 import { ReferralRewardsCard } from '@/features/referrals/components/referral-rewards-card'
 import { formatQuota } from '@/lib/format'
 
 import { getAdminReferralOverview } from '../api'
 import type { ReferralInviterSummary } from '../types'
+import { AddReferralInviteeDialog } from './add-referral-invitee-dialog'
 
 const DETAIL_PAGE_SIZE = 10
 
@@ -101,10 +101,7 @@ export function UserReferralDrawer(props: UserReferralDrawerProps) {
   ]
 
   return (
-    <Sheet
-      open={props.user !== null}
-      onOpenChange={props.onOpenChange}
-    >
+    <Sheet open={props.user !== null} onOpenChange={props.onOpenChange}>
       <SheetContent className={sideDrawerContentClassName('sm:max-w-5xl')}>
         <SheetHeader className={sideDrawerHeaderClassName()}>
           <div className='flex items-start justify-between gap-3'>
@@ -179,7 +176,7 @@ export function UserReferralDrawer(props: UserReferralDrawerProps) {
                 />
               </div>
               <div className='shrink-0'>
-                <InviteeConsumeCard inviterId={userId} />
+                <InviteeConsumeCard key={userId} inviterId={userId} />
               </div>
             </>
           )}
