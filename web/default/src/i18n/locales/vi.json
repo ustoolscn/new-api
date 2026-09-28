@@ -1219,6 +1219,7 @@
     "Create succeeded": "Tạo thành công",
     "Create Vendor": "Tạo Nhà cung cấp",
     "Create your first group to reuse model, tag, or endpoint selections anywhere in the dashboard.": "Tạo nhóm đầu tiên của bạn để dùng lại các lựa chọn mô hình, thẻ hoặc điểm cuối ở bất cứ đâu trên bảng điều khiển.",
+    "Create, edit, and delete your API keys": "Tạo, chỉnh sửa và xóa khóa API của bạn",
     "Create, revoke, and audit API tokens.": "Tạo, thu hồi và kiểm toán token API.",
     "Created": "Đã tạo",
     "Created {{count}} redemption codes named {{name}} ({{quota}} each)": "Đã tạo {{count}} mã đổi thưởng tên {{name}} (mỗi mã {{quota}})",

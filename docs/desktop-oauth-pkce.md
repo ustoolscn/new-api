@@ -1,13 +1,14 @@
 # Desktop OAuth 2.0 Authorization Code + PKCE
 
 This document describes the public desktop-client integration for Hi Codex,
-DreamFactory, and other native clients that need read-only access to the
-currently signed-in account.
+DreamFactory, and other native clients that need access to the currently
+signed-in account, with optional permission to create, edit, and delete API keys.
 
 The flow is a public OAuth client flow:
 
 - `client_id`: `hi-codex` or `dreamfactory` (fixed public clients)
-- canonical `scope`: `api_keys:read account:read` (exactly these two scopes)
+- required read scopes: `api_keys:read account:read` (canonical order)
+- optional write scope: `api_keys:write` (appended after the read scopes)
 - `response_type`: `code` (fixed)
 - PKCE: S256 is required; `plain` is rejected
 - redirect: an HTTP loopback URL on `127.0.0.1` or `::1`
@@ -16,7 +17,7 @@ The flow is a public OAuth client flow:
 
 The OAuth access token is a dedicated `oa-...` login credential. It is not an
 API key, is not accepted by relay endpoints, and does not create a
-`model.Token` row. Use it only with the OAuth read endpoints documented below.
+`model.Token` row. Use it only with the OAuth endpoints documented below.
 
 No custom URI protocol such as `highcodex://` is required. A conforming client
 uses the loopback callback and does not require a server-side or client-side
@@ -52,9 +53,14 @@ GET BASE_ORIGIN/oauth/authorize
 ```
 
 The URL must be URL-encoded as one query string; the line breaks above are only
-for readability. The server accepts the two required scopes in either order,
-but rejects missing, duplicate, or unknown scopes and normalizes successful
-requests to the canonical order shown above.
+for readability. The server accepts the required read scopes and optional
+`api_keys:write` in any order, but rejects missing required scopes,
+duplicates, and unknown scopes. Successful requests are normalized to
+`api_keys:read account:read`, followed by `api_keys:write` when requested.
+For API-key management, use
+`scope=api_keys%3Aread%20account%3Aread%20api_keys%3Awrite`.
+Existing read-only tokens never gain write permission automatically: the
+client must request the additional scope through a new browser authorization.
 
 The browser must have an active dashboard session. If the user is not signed
 in, the frontend sends them to sign-in and preserves the original
@@ -65,14 +71,14 @@ Authorization query parameters:
 | Parameter | Required | Value or rule |
 | --- | --- | --- |
 | `response_type` | yes | Exactly `code`. |
-| `client_id` | yes | Exactly `hi-codex`. |
+| `client_id` | yes | `hi-codex` or `dreamfactory`. |
 | `redirect_uri` | yes | Valid loopback URI; see [Loopback redirect rules](#loopback-redirect-rules). |
 | `state` | yes | Fresh, non-empty client value, at most 256 bytes, without control characters. |
-| `scope` | yes | Exactly `api_keys:read` and `account:read`, separated by one or more spaces; URL-encode the value. |
+| `scope` | yes | `api_keys:read` and `account:read`, optionally `api_keys:write`, separated by spaces; URL-encode the value. |
 | `code_challenge` | yes | 43-character canonical unpadded base64url S256 challenge. |
 | `code_challenge_method` | yes | Exactly `S256`. |
 
-The consent page displays the signed-in account, the two requested permissions,
+The consent page displays the signed-in account, all requested permissions,
 the loopback callback, and the request expiry. It maps the known scopes to
 human-readable permission labels and displays an unknown scope literally if a
 future server ever returns one.
@@ -166,8 +172,10 @@ Success (`HTTP 200`):
 }
 ```
 
-Send the returned value as `Authorization: Bearer <access_token>` to the two
-OAuth read endpoints below. Store it in the operating system's secure
+The returned `scope` reports the permissions actually granted, including
+`api_keys:write` only when requested and approved. Send the returned value
+as `Authorization: Bearer <access_token>` to the OAuth endpoints below.
+Store it in the operating system's secure
 credential store (for example, Keychain, Windows Credential Manager, or
 Secret Service/libsecret), not in a plain-text config file. Do not treat it as
 an `sk-...` API key or send it to model relay endpoints.
@@ -243,6 +251,95 @@ Successful responses use the normal application envelope:
 The endpoint does not create, rotate, or revoke API keys. API-key values are
 returned only because this scope is explicitly granted; clients should avoid
 displaying them and should never include them in diagnostics.
+
+### Manage API keys through the existing account endpoints
+
+Desktop OAuth clients use the same API-key endpoints as the dashboard. Send
+`Authorization: Bearer oa-<access-token>`; OAuth calls do not require cookies or
+`New-Api-User`. The authenticated OAuth account determines ownership, even if a
+session cookie or a different `New-Api-User` header is also present. An invalid
+OAuth token or insufficient scope never falls back to browser session rights.
+Existing session/account-token authentication still works as before, including
+its `New-Api-User` requirement.
+
+| Operation | Existing endpoint | Required OAuth scope |
+| --- | --- | --- |
+| List keys (paginated) | `GET /api/token/?p=1&size=10` | `api_keys:read` |
+| Search keys | `GET /api/token/search?keyword=desktop` | `api_keys:read` |
+| Read key configuration | `GET /api/token/:id` | `api_keys:read` |
+| Reveal a key | `POST /api/token/:id/key` | `api_keys:read` |
+| Reveal selected keys | `POST /api/token/batch/keys` with `{"ids":[42,43]}` | `api_keys:read` |
+| Get selectable groups | `GET /api/user/self/groups` | `api_keys:read` |
+| Create a key | `POST /api/token/` | `api_keys:write` |
+| Edit a key, including group | `PUT /api/token/` | `api_keys:write` |
+| Enable/disable a key | `PUT /api/token/?status_only=true` | `api_keys:write` |
+| Delete a key | `DELETE /api/token/:id` | `api_keys:write` |
+| Delete selected keys | `POST /api/token/batch` with `{"ids":[42,43]}` | `api_keys:write` |
+
+The optional `api_keys:write` scope must be requested together with the two
+required read scopes. Browser consent explicitly describes creating, editing,
+and deleting API keys. Existing read-only grants continue to work for reads;
+clients need a new authorization before making changes. All key mutations use
+the existing `/api/token/` routes; there are no dedicated OAuth group endpoints.
+
+These routes reuse the existing handlers, ownership checks, validation,
+key-count limits, cache behavior, and response formats. Single-key operations
+are restricted to the authenticated user's non-deleted keys; batch operations
+only affect or reveal owned, non-deleted rows. This grant does not open other
+account-management routes, administrator routes, browser consent, or relay
+endpoints to OAuth credentials. OAuth responses are marked `Cache-Control:
+no-store`.
+
+Normal responses use `{"success":true,"message":"","data":...}`; some
+mutation responses omit `data`. Existing business errors can use HTTP 200 with
+`success:false`, so check both HTTP status and `success`. Authentication failures
+use HTTP 401, including missing write scope; a disabled account uses HTTP 403.
+Read/list/detail responses mask keys. Key-reveal endpoints return the stored key
+value (prepend `sk-` if needed); `/api/oauth/api-keys` remains available for the
+complete inventory with already-prefixed `sk-...` values.
+
+#### Editing configuration and group
+
+`PUT /api/token/` is a full configuration update, not a PATCH. First read
+`GET /api/token/:id`, then submit `id` and the full editable configuration:
+`name`, `expired_time`, `remain_quota`, `unlimited_quota`,
+`model_limits_enabled`, `model_limits`, `allow_ips`, `group`, and
+`cross_group_retry`. Preserve fields the user has not changed. Do not submit
+only `id` and `group`, because omitted fields are reset to their zero values.
+The API-key secret and ownership are not editable.
+
+Example (replace these values with the current configuration before editing):
+
+```http
+PUT /api/token/
+Authorization: Bearer oa-<opaque-token>
+Content-Type: application/json
+
+{
+  "id": 42,
+  "name": "Desktop",
+  "expired_time": -1,
+  "remain_quota": 500000,
+  "unlimited_quota": false,
+  "model_limits_enabled": false,
+  "model_limits": "",
+  "allow_ips": "",
+  "group": "vip",
+  "cross_group_retry": false
+}
+```
+
+For selectable groups, `GET /api/user/self/groups` returns a `data` map keyed
+by group name, each containing `key`, `ratio`, and `desc`. Named-group ratios
+are numbers; `auto` has a display-string ratio. Use the server's current list;
+an empty group string inherits the account group. Relay authorization still
+checks group availability when the key is used.
+
+To change status alone, send `{"id":42,"status":2}` to
+`PUT /api/token/?status_only=true`; `1` enables and `2` disables. Existing expiry
+and quota checks still apply when re-enabling a key. The full-edit endpoint
+does not update status. Creation uses the same editable fields without `id`;
+it returns success without the created key, so refresh the key list afterward.
 
 ### Read account balance and active subscriptions
 
@@ -362,14 +459,15 @@ redeem the code.
 3. Generate a fresh `code_verifier`, S256 `code_challenge`, and random `state`.
 4. URL-encode the authorization parameters and open the browser at
    `BASE_ORIGIN/oauth/authorize?...` with
-   `scope=api_keys%3Aread%20account%3Aread`.
+   `scope=api_keys%3Aread%20account%3Aread` (append
+   `%20api_keys%3Awrite` when API-key management is needed).
 5. Receive one HTTP request on the loopback listener. Parse query parameters,
    verify `state`, and handle `error=access_denied` before looking for `code`.
 6. If a code is present, POST the form fields to `/api/oauth/token`, including
    the exact `redirect_uri` and the original verifier.
 7. Validate `token_type`, canonical `scope`, and `expires_in`; then store the
    `oa-...` access token in the OS credential store and close the listener.
-8. Send read requests with `Authorization: Bearer oa-<opaque-token>`. When the
+8. Send authorized requests with `Authorization: Bearer oa-<opaque-token>`. When the
    token expires, start a new browser authorization; there is currently no
    refresh-token exchange.
 

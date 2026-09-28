@@ -546,3 +546,25 @@ func TestOAuthPKCEAuthorizationCodeConcurrentRedemptionCreatesOneAccessToken(t *
 	require.NoError(t, db.Model(&model.Token{}).Where("user_id = ?", user.Id).Count(&tokenCount).Error)
 	assert.Zero(t, tokenCount)
 }
+
+func TestOAuthPKCEAPIKeysWriteConsentAndToken(t *testing.T) {
+	db := setupOAuthPKCETestDB(t)
+	user := seedOAuthPKCETestUser(t, db)
+	server, client := newOAuthPKCETestServer(t, user.Id)
+	loginOAuthPKCETestClient(t, server, client)
+	values := oauthPKCEAuthorizeValues(oauthPKCETestVerifier, "api-keys-write-state", oauthPKCETestRedirect)
+	values.Set("scope", model.OAuthScopeAPIKeysWrite+" account:read api_keys:read")
+	response, err := client.Get(server.URL + "/oauth/authorize?" + values.Encode())
+	require.NoError(t, err)
+	require.Equal(t, http.StatusOK, response.StatusCode)
+	authorization := readOAuthPKCEAuthorizeResponse(t, response)
+	require.True(t, authorization.Success)
+	assert.Equal(t, []string{model.OAuthScopeAPIKeysRead, model.OAuthScopeAccountRead, model.OAuthScopeAPIKeysWrite}, authorization.Data.Scopes)
+	location := decideOAuthPKCEAuthorization(t, server, client, authorization.Data.RequestID, "approve")
+	status, token, _ := postOAuthPKCEToken(t, server, client, location.Query().Get("code"), oauthPKCETestClientID, oauthPKCETestRedirect, oauthPKCETestVerifier)
+	require.Equal(t, http.StatusOK, status)
+	assert.Equal(t, model.OAuthPublicScope+" "+model.OAuthScopeAPIKeysWrite, token.Scope)
+	persisted, err := model.GetOAuthAccessTokenByValue(token.AccessToken)
+	require.NoError(t, err)
+	assert.NoError(t, model.ValidateOAuthAccessTokenScope(persisted, model.OAuthScopeAPIKeysWrite))
+}

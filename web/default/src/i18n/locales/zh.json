@@ -1219,6 +1219,7 @@
     "Create succeeded": "创建成功",
     "Create Vendor": "创建供应商",
     "Create your first group to reuse model, tag, or endpoint selections anywhere in the dashboard.": "创建您的第一个分组，以便在仪表板的任何位置重用模型、标签或端点选择。",
+    "Create, edit, and delete your API keys": "创建、编辑和删除你的 API 密钥",
     "Create, revoke, and audit API tokens.": "创建、撤销和审计 API 令牌。",
     "Created": "创建时间",
     "Created {{count}} redemption codes named {{name}} ({{quota}} each)": "创建 {{count}} 个兑换码 {{name}}（每个 {{quota}}）",

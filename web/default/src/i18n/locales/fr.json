@@ -1219,6 +1219,7 @@
     "Create succeeded": "Création réussie",
     "Create Vendor": "Créer un fournisseur",
     "Create your first group to reuse model, tag, or endpoint selections anywhere in the dashboard.": "Créez votre premier groupe pour réutiliser les sélections de modèles, de balises ou de points de terminaison n'importe où dans le tableau de bord.",
+    "Create, edit, and delete your API keys": "Créer, modifier et supprimer vos clés API",
     "Create, revoke, and audit API tokens.": "Créer, révoquer et auditer les jetons API.",
     "Created": "Créé",
     "Created {{count}} redemption codes named {{name}} ({{quota}} each)": "{{count}} codes de réduction nommés {{name}} créés ({{quota}} chacun)",

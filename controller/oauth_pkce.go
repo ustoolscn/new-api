@@ -169,7 +169,7 @@ func OAuthAuthorize(c *gin.Context) {
 		"client_id":    clientID,
 		"client_name":  model.OAuthPublicClientNameForID(clientID),
 		"redirect_uri": redirectURI,
-		"scopes":       []string{model.OAuthScopeAPIKeysRead, model.OAuthScopeAccountRead},
+		"scopes":       strings.Fields(scope),
 		"user":         user,
 		"expires_at":   now + model.OAuthAuthorizationRequestTTL,
 	}
@@ -321,7 +321,7 @@ func OAuthToken(c *gin.Context) {
 		oauthError(c, http.StatusBadRequest, "invalid_grant", "code_verifier is invalid")
 		return
 	}
-	_, accessToken, err := model.RedeemOAuthAuthorizationCode(code, clientID, redirectURI, codeVerifier, common.GetTimestamp())
+	token, accessToken, err := model.RedeemOAuthAuthorizationCode(code, clientID, redirectURI, codeVerifier, common.GetTimestamp())
 	if err != nil {
 		switch {
 		case errors.Is(err, model.ErrOAuthAuthorizationCodeInvalid),
@@ -341,6 +341,6 @@ func OAuthToken(c *gin.Context) {
 		"access_token": accessToken,
 		"token_type":   "Bearer",
 		"expires_in":   model.OAuthTokenTTL,
-		"scope":        model.OAuthPublicScope,
+		"scope":        token.Scope,
 	})
 }

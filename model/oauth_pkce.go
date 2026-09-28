@@ -21,6 +21,7 @@ const (
 	OAuthDreamFactoryClientName = "DreamFactory"
 	OAuthScopeAPIKeysRead       = "api_keys:read"
 	OAuthScopeAccountRead       = "account:read"
+	OAuthScopeAPIKeysWrite      = "api_keys:write"
 	OAuthPublicScope            = OAuthScopeAPIKeysRead + " " + OAuthScopeAccountRead
 
 	OAuthAuthorizationRequestTTL = int64(10 * 60)
@@ -169,16 +170,16 @@ func VerifyOAuthCodeChallenge(verifier string, challenge string) bool {
 
 // NormalizeOAuthScope validates the public OAuth scope contract and returns
 // its canonical representation. Scope values are whitespace-separated and
-// may be supplied in either order, but both permissions must appear exactly
-// once and no unknown permissions are accepted.
+// may be supplied in any order. Both read permissions are required; changing
+// API keys is an optional, separately consented permission.
 func NormalizeOAuthScope(scope string) (string, error) {
 	parts := strings.Fields(scope)
-	if len(parts) != 2 {
-		return "", errors.New("scope must contain api_keys:read and account:read exactly once")
+	if len(parts) < 2 || len(parts) > 3 {
+		return "", errors.New("scope requires api_keys:read and account:read with optional api_keys:write")
 	}
 	seen := make(map[string]struct{}, len(parts))
 	for _, part := range parts {
-		if part != OAuthScopeAPIKeysRead && part != OAuthScopeAccountRead {
+		if part != OAuthScopeAPIKeysRead && part != OAuthScopeAccountRead && part != OAuthScopeAPIKeysWrite {
 			return "", errors.New("scope contains an unknown permission")
 		}
 		if _, exists := seen[part]; exists {
@@ -186,8 +187,13 @@ func NormalizeOAuthScope(scope string) (string, error) {
 		}
 		seen[part] = struct{}{}
 	}
-	if len(seen) != 2 {
+	_, hasKeysRead := seen[OAuthScopeAPIKeysRead]
+	_, hasAccountRead := seen[OAuthScopeAccountRead]
+	if !hasKeysRead || !hasAccountRead {
 		return "", errors.New("scope must contain api_keys:read and account:read")
+	}
+	if _, hasWrite := seen[OAuthScopeAPIKeysWrite]; hasWrite {
+		return OAuthPublicScope + " " + OAuthScopeAPIKeysWrite, nil
 	}
 	return OAuthPublicScope, nil
 }

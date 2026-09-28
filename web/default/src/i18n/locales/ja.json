@@ -1219,6 +1219,7 @@
     "Create succeeded": "作成に成功しました",
     "Create Vendor": "ベンダーを作成",
     "Create your first group to reuse model, tag, or endpoint selections anywhere in the dashboard.": "ダッシュボードのどこでもモデル、タグ、またはエンドポイントの選択を再利用するために、最初のグループを作成します。",
+    "Create, edit, and delete your API keys": "APIキーを作成・編集・削除する",
     "Create, revoke, and audit API tokens.": "APIトークンを作成、取り消し、監査。",
     "Created": "作成済み",
     "Created {{count}} redemption codes named {{name}} ({{quota}} each)": "{{count}} 件の引換コード {{name}} を作成しました（各 {{quota}}）",

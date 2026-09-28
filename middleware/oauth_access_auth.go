@@ -13,6 +13,21 @@ import (
 	"gorm.io/gorm"
 )
 
+// UserOrOAuthAuth opts a specific account route into scoped OAuth access.
+// An explicit OAuth credential takes precedence over cookies and never falls
+// back to session authentication after failure or insufficient permission.
+func UserOrOAuthAuth(requiredScope string) gin.HandlerFunc {
+	oauthAuth := OAuthAccessAuth(requiredScope)
+	userAuth := UserAuth()
+	return func(c *gin.Context) {
+		if isOAuthAccessTokenHeader(c.GetHeader("Authorization")) {
+			oauthAuth(c)
+			return
+		}
+		userAuth(c)
+	}
+}
+
 // OAuthAccessAuth authenticates only dedicated oa- bearer tokens issued by
 // the Hi Codex PKCE flow. It intentionally does not fall back to TokenAuth or
 // UserAuth, so these credentials can never reach relay quota/token handling.

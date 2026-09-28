@@ -83,10 +83,10 @@ type AuthorizationResponse = {
 }
 
 const REQUIRED_OAUTH_SCOPES = new Set(['api_keys:read', 'account:read'])
-const REQUIRED_OAUTH_SCOPE_COUNT = 2
 const SCOPE_LABEL_KEYS = new Map([
   ['api_keys:read', 'Read your API keys'],
   ['account:read', 'Read your account information'],
+  ['api_keys:write', 'Create, edit, and delete your API keys'],
 ])
 
 function splitScopes(value: string): string[] {
@@ -106,11 +106,14 @@ function hasRequiredOAuthScopes(scope?: string): boolean {
   if (!scope) return false
 
   const requestedScopes = splitScopes(scope)
+  const uniqueScopes = new Set(requestedScopes)
   return (
-    requestedScopes.length === REQUIRED_OAUTH_SCOPE_COUNT &&
-    new Set(requestedScopes).size === REQUIRED_OAUTH_SCOPE_COUNT &&
+    uniqueScopes.size === requestedScopes.length &&
+    [...REQUIRED_OAUTH_SCOPES].every((required) =>
+      uniqueScopes.has(required)
+    ) &&
     requestedScopes.every((requestedScope) =>
-      REQUIRED_OAUTH_SCOPES.has(requestedScope)
+      SCOPE_LABEL_KEYS.has(requestedScope)
     )
   )
 }
@@ -292,10 +295,7 @@ function OAuthAuthorize() {
                 {scopes.map((scope) => {
                   const labelKey = SCOPE_LABEL_KEYS.get(scope)
                   return (
-                    <li
-                      key={scope}
-                      className='flex items-center gap-2 text-sm'
-                    >
+                    <li key={scope} className='flex items-center gap-2 text-sm'>
                       <Check
                         className='text-primary size-4'
                         aria-hidden='true'

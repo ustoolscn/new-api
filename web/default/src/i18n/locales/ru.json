@@ -1219,6 +1219,7 @@
     "Create succeeded": "Успешно создано",
     "Create Vendor": "Создать поставщика",
     "Create your first group to reuse model, tag, or endpoint selections anywhere in the dashboard.": "Создайте свою первую группу для повторного использования выбранных моделей, тегов или конечных точек в любом месте панели управления.",
+    "Create, edit, and delete your API keys": "Создавать, изменять и удалять ваши API-ключи",
     "Create, revoke, and audit API tokens.": "Создать, отозвать и аудитировать токены API.",
     "Created": "Создано",
     "Created {{count}} redemption codes named {{name}} ({{quota}} each)": "Создано кодов погашения: {{count}} с именем {{name}} (по {{quota}} каждый)",
