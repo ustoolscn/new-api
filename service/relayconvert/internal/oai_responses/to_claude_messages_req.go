@@ -61,13 +61,7 @@ func OpenAIResponsesRequestToClaudeMessages(c *gin.Context, req *dto.OpenAIRespo
 	if toolChoice != nil || RawJSONPresent(req.ParallelToolCalls) {
 		claudeRequest.ToolChoice = sharedclaude.MapOpenAIToolChoice(toolChoice, ParallelToolCalls(req.ParallelToolCalls))
 	}
-	handled, err := sharedclaude.ApplyClaude55Reasoning(claudeRequest, ReasoningEffort(req))
-	if err != nil {
-		return nil, err
-	}
-	if !handled {
-		applyResponsesReasoningToClaude(req, claudeRequest)
-	}
+	applyResponsesReasoningToClaude(req, claudeRequest)
 
 	systemMessages := make([]dto.ClaudeMediaMessage, 0)
 	if RawJSONPresent(req.Instructions) {

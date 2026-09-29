@@ -127,11 +127,7 @@ func OpenAIChatRequestToClaudeMessages(c *gin.Context, textRequest dto.GeneralOp
 		claudeRequest.MaxTokens = &defaultMaxTokens
 	}
 
-	handled, err := sharedclaude.ApplyClaude55Reasoning(&claudeRequest, textRequest.ReasoningEffort)
-	if err != nil {
-		return nil, err
-	}
-	if baseModel, effortLevel, ok := reasoning.TrimEffortSuffix(textRequest.Model); !handled && ok && effortLevel != "" &&
+	if baseModel, effortLevel, ok := reasoning.TrimEffortSuffix(textRequest.Model); ok && effortLevel != "" &&
 		(strings.HasPrefix(textRequest.Model, "claude-opus-4-6") ||
 			strings.HasPrefix(textRequest.Model, "claude-opus-4-7") ||
 			strings.HasPrefix(textRequest.Model, "claude-opus-4-8")) {
@@ -150,7 +146,7 @@ func OpenAIChatRequestToClaudeMessages(c *gin.Context, textRequest dto.GeneralOp
 			claudeRequest.TopP = nil
 			claudeRequest.Temperature = common.GetPointer[float64](1.0)
 		}
-	} else if !handled && model_setting.GetClaudeSettings().ThinkingAdapterEnabled &&
+	} else if model_setting.GetClaudeSettings().ThinkingAdapterEnabled &&
 		strings.HasSuffix(textRequest.Model, "-thinking") {
 
 		trimmedModel := strings.TrimSuffix(textRequest.Model, "-thinking")
@@ -178,7 +174,7 @@ func OpenAIChatRequestToClaudeMessages(c *gin.Context, textRequest dto.GeneralOp
 		}
 	}
 
-	if !handled && textRequest.ReasoningEffort != "" {
+	if textRequest.ReasoningEffort != "" {
 		switch textRequest.ReasoningEffort {
 		case "low":
 			claudeRequest.Thinking = &dto.Thinking{
@@ -198,7 +194,7 @@ func OpenAIChatRequestToClaudeMessages(c *gin.Context, textRequest dto.GeneralOp
 		}
 	}
 
-	if !handled && textRequest.Reasoning != nil {
+	if textRequest.Reasoning != nil {
 		var reasoningConfig openRouterRequestReasoning
 		if err := common.Unmarshal(textRequest.Reasoning, &reasoningConfig); err != nil {
 			return nil, err
