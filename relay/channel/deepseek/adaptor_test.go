@@ -11,10 +11,82 @@ import (
 	"github.com/QuantumNous/new-api/dto"
 	relaycommon "github.com/QuantumNous/new-api/relay/common"
 	relayconstant "github.com/QuantumNous/new-api/relay/constant"
+	"github.com/QuantumNous/new-api/types"
 	"github.com/gin-gonic/gin"
+	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
 
+func TestMessagesRequestURL(t *testing.T) {
+	tests := []struct {
+		name    string
+		baseURL string
+		want    string
+	}{
+		{"official", "https://api.deepseek.com", "https://api.deepseek.com/anthropic/v1/messages"},
+		{"official trailing slash", "https://api.deepseek.com/", "https://api.deepseek.com/anthropic/v1/messages"},
+		{"official version prefix", "https://api.deepseek.com/v1", "https://api.deepseek.com/anthropic/v1/messages"},
+		{"official host case and port", "https://API.DEEPSEEK.COM:443", "https://API.DEEPSEEK.COM:443/anthropic/v1/messages"},
+		{"third party", "https://proxy.example.com", "https://proxy.example.com/v1/messages"},
+		{"third party version prefix", "https://proxy.example.com/v1/", "https://proxy.example.com/v1/messages"},
+		{"third party path prefix", "https://proxy.example.com/deepseek/", "https://proxy.example.com/deepseek/v1/messages"},
+		{"query preserved", "https://proxy.example.com/v1?region=test", "https://proxy.example.com/v1/messages?region=test"},
+		{"official hostname in third party path", "https://proxy.example.com/api.deepseek.com", "https://proxy.example.com/api.deepseek.com/v1/messages"},
+		{"official hostname suffix is third party", "https://api.deepseek.com.example.com", "https://api.deepseek.com.example.com/v1/messages"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			info := &relaycommon.RelayInfo{
+				RelayFormat: types.RelayFormatClaude,
+				ChannelMeta: &relaycommon.ChannelMeta{ChannelBaseUrl: tt.baseURL},
+			}
+			got, err := (&Adaptor{}).GetRequestURL(info)
+			require.NoError(t, err)
+			assert.Equal(t, tt.want, got)
+		})
+	}
+}
+
+func TestSharedBaseURLRoutesEachProtocolIndependently(t *testing.T) {
+	for _, tt := range []struct {
+		name            string
+		baseURL         string
+		root            string
+		messagesPath    string
+		chatPath        string
+		responsesPath   string
+		completionsPath string
+	}{
+		{"official", "https://api.deepseek.com", "https://api.deepseek.com", "/anthropic/v1/messages", "/chat/completions", "/responses", "/beta/completions"},
+		{"official version prefix", "https://api.deepseek.com/v1/", "https://api.deepseek.com", "/anthropic/v1/messages", "/chat/completions", "/responses", "/beta/completions"},
+		{"third party", "https://proxy.example.com", "https://proxy.example.com", "/v1/messages", "/v1/chat/completions", "/v1/responses", "/v1/completions"},
+		{"third party version prefix", "https://proxy.example.com/v1/", "https://proxy.example.com", "/v1/messages", "/v1/chat/completions", "/v1/responses", "/v1/completions"},
+		{"third party gateway prefix", "https://proxy.example.com/deepseek/v1/", "https://proxy.example.com/deepseek", "/v1/messages", "/v1/chat/completions", "/v1/responses", "/v1/completions"},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			meta := &relaycommon.ChannelMeta{ChannelBaseUrl: tt.baseURL}
+			for _, request := range []struct {
+				format types.RelayFormat
+				mode   int
+				path   string
+			}{
+				{types.RelayFormatClaude, relayconstant.RelayModeChatCompletions, tt.messagesPath},
+				{types.RelayFormatOpenAI, relayconstant.RelayModeChatCompletions, tt.chatPath},
+				{types.RelayFormatOpenAI, relayconstant.RelayModeResponses, tt.responsesPath},
+				{types.RelayFormatOpenAI, relayconstant.RelayModeCompletions, tt.completionsPath},
+			} {
+				got, err := (&Adaptor{}).GetRequestURL(&relaycommon.RelayInfo{
+					RelayFormat: request.format,
+					RelayMode:   request.mode,
+					ChannelMeta: meta,
+				})
+				require.NoError(t, err)
+				assert.Equal(t, tt.root+request.path, got)
+				assert.Equal(t, tt.baseURL, meta.ChannelBaseUrl, "routing must not mutate the shared channel base URL")
+			}
+		})
+	}
+}
 func TestConvertOpenAIResponsesRequestPassesThroughNative(t *testing.T) {
 	adaptor := &Adaptor{}
 	info := &relaycommon.RelayInfo{

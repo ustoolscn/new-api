@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"net/url"
 	"strings"
 
 	"github.com/QuantumNous/new-api/common"
@@ -60,26 +61,35 @@ func (a *Adaptor) Init(info *relaycommon.RelayInfo) {
 }
 
 func (a *Adaptor) GetRequestURL(info *relaycommon.RelayInfo) (string, error) {
-	if info.RelayMode == constant.RelayModeResponses {
-		return relaycommon.GetFullRequestURL(strings.TrimRight(info.ChannelBaseUrl, "/"), "/responses", info.ChannelType), nil
+	baseURL, err := url.Parse(info.ChannelBaseUrl)
+	if err != nil {
+		return "", fmt.Errorf("invalid DeepSeek base URL: %w", err)
 	}
-	fimBaseUrl := info.ChannelBaseUrl
-	switch info.RelayFormat {
-	case types.RelayFormatClaude:
-		return fmt.Sprintf("%s/anthropic/v1/messages", info.ChannelBaseUrl), nil
-	default:
-		if !strings.HasSuffix(info.ChannelBaseUrl, "/beta") {
-			fimBaseUrl += "/beta"
+	basePath := strings.TrimSuffix(strings.TrimRight(baseURL.Path, "/"), "/v1")
+	isOfficial := strings.EqualFold(baseURL.Hostname(), "api.deepseek.com")
+	endpoint := "/chat/completions"
+	switch {
+	case info.RelayMode == constant.RelayModeResponses:
+		endpoint = "/responses"
+	case info.RelayFormat == types.RelayFormatClaude:
+		endpoint = "/messages"
+		if isOfficial {
+			endpoint = "/anthropic/v1/messages"
 		}
-		switch info.RelayMode {
-		case constant.RelayModeCompletions:
-			return fmt.Sprintf("%s/completions", fimBaseUrl), nil
-		default:
-			return fmt.Sprintf("%s/v1/chat/completions", info.ChannelBaseUrl), nil
+	case info.RelayMode == constant.RelayModeCompletions:
+		endpoint = "/completions"
+		if isOfficial {
+			basePath = strings.TrimSuffix(basePath, "/beta")
+			endpoint = "/beta/completions"
 		}
 	}
+	if !isOfficial {
+		endpoint = "/v1" + endpoint
+	}
+	baseURL.Path = basePath + endpoint
+	baseURL.RawPath = ""
+	return baseURL.String(), nil
 }
-
 func (a *Adaptor) SetupRequestHeader(c *gin.Context, req *http.Header, info *relaycommon.RelayInfo) error {
 	channel.SetupApiRequestHeader(info, c, req)
 	req.Set("Authorization", "Bearer "+info.ApiKey)

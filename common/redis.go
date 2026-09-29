@@ -188,6 +188,11 @@ func RedisHGetObj(key string, obj interface{}) error {
 	for i := 0; i < v.NumField(); i++ {
 		field := t.Field(i)
 		fieldName := field.Name
+		// RedisHSetObj deliberately omits DeletedAt; every other field must
+		// exist so partial hashes cannot masquerade as valid cached objects.
+		if _, ok := result[fieldName]; !ok && field.Type != reflect.TypeOf(gorm.DeletedAt{}) {
+			return fmt.Errorf("incomplete Redis hash: missing field %s", fieldName)
+		}
 		if value, ok := result[fieldName]; ok {
 			fieldValue := v.Field(i)
 
@@ -272,56 +277,33 @@ func RedisIncr(key string, delta int64) error {
 	return nil
 }
 
+// Check expiry and mutate in one operation. A separate TTL lookup allows an
+// expired or invalidated cache to be recreated with only the updated field.
+// HINCRBY/HSET preserve the existing expiry, including sub-second precision.
+var redisHIncrByCached = redis.NewScript(`
+if redis.call('PTTL', KEYS[1]) > 0 and redis.call('HEXISTS', KEYS[1], ARGV[1]) == 1 then
+    return redis.call('HINCRBY', KEYS[1], ARGV[1], ARGV[2])
+end
+return 0
+`)
+
+var redisHSetCached = redis.NewScript(`
+if redis.call('PTTL', KEYS[1]) > 0 and redis.call('HEXISTS', KEYS[1], ARGV[1]) == 1 then
+    return redis.call('HSET', KEYS[1], ARGV[1], ARGV[2])
+end
+return 0
+`)
+
 func RedisHIncrBy(key, field string, delta int64) error {
 	if DebugEnabled {
 		SysLog(fmt.Sprintf("Redis HINCRBY: key=%s, field=%s, delta=%d", key, field, delta))
 	}
-	ttlCmd := RDB.TTL(context.Background(), key)
-	ttl, err := ttlCmd.Result()
-	if err != nil && !errors.Is(err, redis.Nil) {
-		return fmt.Errorf("failed to get TTL: %w", err)
-	}
-
-	if ttl > 0 {
-		ctx := context.Background()
-		txn := RDB.TxPipeline()
-
-		incrCmd := txn.HIncrBy(ctx, key, field, delta)
-		if err := incrCmd.Err(); err != nil {
-			return err
-		}
-
-		txn.Expire(ctx, key, ttl)
-
-		_, err = txn.Exec(ctx)
-		return err
-	}
-	return nil
+	return redisHIncrByCached.Run(context.Background(), RDB, []string{key}, field, delta).Err()
 }
 
 func RedisHSetField(key, field string, value interface{}) error {
 	if DebugEnabled {
 		SysLog(fmt.Sprintf("Redis HSET field: key=%s, field=%s, value=%v", key, field, value))
 	}
-	ttlCmd := RDB.TTL(context.Background(), key)
-	ttl, err := ttlCmd.Result()
-	if err != nil && !errors.Is(err, redis.Nil) {
-		return fmt.Errorf("failed to get TTL: %w", err)
-	}
-
-	if ttl > 0 {
-		ctx := context.Background()
-		txn := RDB.TxPipeline()
-
-		hsetCmd := txn.HSet(ctx, key, field, value)
-		if err := hsetCmd.Err(); err != nil {
-			return err
-		}
-
-		txn.Expire(ctx, key, ttl)
-
-		_, err = txn.Exec(ctx)
-		return err
-	}
-	return nil
+	return redisHSetCached.Run(context.Background(), RDB, []string{key}, field, value).Err()
 }
