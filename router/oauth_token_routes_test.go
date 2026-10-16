@@ -240,3 +240,27 @@ func TestOAuthTokenRoutesPreserveSessionsAndDoNotFallBack(t *testing.T) {
 	require.NoError(t, db.Model(&model.Token{}).Where("name = ?", "blocked").Count(&count).Error)
 	assert.Zero(t, count)
 }
+
+func TestOAuthReadsOwnQuotaData(t *testing.T) {
+	router, db := setupOAuthTokenRoutes(t)
+	require.NoError(t, db.AutoMigrate(&model.QuotaData{}))
+	require.NoError(t, db.Create(&[]model.QuotaData{
+		{UserID: 1, Username: "oauth-owner", ModelName: "gpt-test", CreatedAt: 3600, TokenUsed: 120, Count: 2, Quota: 900},
+		{UserID: 2, Username: "session-owner", ModelName: "gpt-test", CreatedAt: 3600, TokenUsed: 999, Count: 9, Quota: 9999},
+	}).Error)
+
+	status, payload := callOAuthTokenRoute(t, router, http.MethodGet, "/api/data/self?start_timestamp=0&end_timestamp=7200", "", "oa-reader")
+	require.Equal(t, http.StatusOK, status)
+	require.Equal(t, true, payload["success"], payload)
+	rows, ok := payload["data"].([]any)
+	require.True(t, ok, payload)
+	require.Len(t, rows, 1, "only the OAuth owner's usage")
+	row := rows[0].(map[string]any)
+	assert.Equal(t, float64(1), row["user_id"])
+	assert.Equal(t, float64(120), row["token_used"])
+	assert.Equal(t, float64(900), row["quota"])
+
+	status, payload = callOAuthTokenRoute(t, router, http.MethodGet, "/api/data/self?start_timestamp=0&end_timestamp=7200", "", "oa-invalid")
+	assert.Equal(t, http.StatusUnauthorized, status)
+	assert.Equal(t, false, payload["success"])
+}
