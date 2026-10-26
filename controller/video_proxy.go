@@ -1,6 +1,7 @@
 package controller
 
 import (
+	"bufio"
 	"context"
 	"encoding/base64"
 	"fmt"
@@ -14,6 +15,7 @@ import (
 	"github.com/QuantumNous/new-api/constant"
 	"github.com/QuantumNous/new-api/logger"
 	"github.com/QuantumNous/new-api/model"
+	"github.com/QuantumNous/new-api/relay/channel/task/sd99"
 	"github.com/QuantumNous/new-api/service"
 	"github.com/QuantumNous/new-api/setting/system_setting"
 
@@ -90,6 +92,42 @@ func VideoProxy(c *gin.Context) {
 	}
 
 	switch channel.Type {
+	case constant.ChannelTypeSD99:
+		var needsAuth bool
+		videoURL, needsAuth, err = sd99.DownloadURL(baseURL, task.GetUpstreamTaskID(), task.Data)
+		if err != nil {
+			videoProxyError(c, http.StatusBadGateway, "server_error", "Failed to resolve SD99 video URL")
+			return
+		}
+		if needsAuth {
+			if task.PrivateData.Key == "" {
+				videoProxyError(c, http.StatusInternalServerError, "server_error", "API key not stored for task")
+				return
+			}
+			req.Header.Set("Authorization", "Bearer "+task.PrivateData.Key)
+		}
+		// Keep the shared client's SSRF transport and redirect checks. Strip
+		// credentials even on subdomain redirects, which Go otherwise permits.
+		downloadClient := *client
+		previousRedirect := client.CheckRedirect
+		downloadClient.CheckRedirect = func(next *http.Request, via []*http.Request) error {
+			if len(via) > 0 && (next.URL.Scheme != via[0].URL.Scheme || !strings.EqualFold(next.URL.Host, via[0].URL.Host)) {
+				next.Header.Del("Authorization")
+			}
+			if proxy != "" {
+				if err := service.ValidateSSRFProtectedFetchURL(next.URL.String()); err != nil {
+					return err
+				}
+			}
+			if previousRedirect != nil {
+				return previousRedirect(next, via)
+			}
+			if len(via) >= 10 {
+				return fmt.Errorf("too many SD99 download redirects")
+			}
+			return nil
+		}
+		client = &downloadClient
 	case constant.ChannelTypeGemini:
 		apiKey := task.PrivateData.Key
 		if apiKey == "" {
@@ -169,6 +207,23 @@ func VideoProxy(c *gin.Context) {
 		return
 	}
 
+	var videoBody io.Reader = resp.Body
+	if channel.Type == constant.ChannelTypeSD99 {
+		reader := bufio.NewReader(resp.Body)
+		prefix, peekErr := reader.Peek(512)
+		contentType := strings.ToLower(resp.Header.Get("Content-Type"))
+		sniffed := http.DetectContentType(prefix)
+		// Go's sniffer only recognizes some MP4 brands. ISO BMFF / MOV files
+		// can have a valid ftyp box without an mp4-branded compatible entry.
+		isVideo := strings.HasPrefix(sniffed, "video/") || (len(prefix) >= 12 && string(prefix[4:8]) == "ftyp")
+		if (peekErr != nil && peekErr != io.EOF && peekErr != bufio.ErrBufferFull) || len(prefix) == 0 ||
+			strings.Contains(contentType, "json") || strings.Contains(contentType, "html") ||
+			!isVideo {
+			videoProxyError(c, http.StatusBadGateway, "server_error", "SD99 returned invalid or empty video content")
+			return
+		}
+		videoBody = reader
+	}
 	for key, values := range resp.Header {
 		for _, value := range values {
 			c.Writer.Header().Add(key, value)
@@ -177,7 +232,7 @@ func VideoProxy(c *gin.Context) {
 
 	c.Writer.Header().Set("Cache-Control", "public, max-age=86400")
 	c.Writer.WriteHeader(resp.StatusCode)
-	if _, err = io.Copy(c.Writer, resp.Body); err != nil {
+	if _, err = io.Copy(c.Writer, videoBody); err != nil {
 		logger.LogError(c.Request.Context(), fmt.Sprintf("Failed to stream video content: %s", err.Error()))
 	}
 }

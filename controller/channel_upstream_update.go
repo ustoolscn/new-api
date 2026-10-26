@@ -372,6 +372,12 @@ func fetchChannelUpstreamModelIDs(channel *model.Channel) ([]string, error) {
 
 	var url string
 	switch channel.Type {
+	case constant.ChannelTypeSD99:
+		url = strings.TrimRight(baseURL, "/")
+		if !strings.HasSuffix(url, "/v1") {
+			url += "/v1"
+		}
+		url += "/models"
 	case constant.ChannelTypeAli:
 		url = fmt.Sprintf("%s/compatible-mode/v1/models", baseURL)
 	case constant.ChannelTypeZhipu_v4:

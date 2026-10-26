@@ -513,6 +513,12 @@ func ValidateBasicTaskRequest(c *gin.Context, info *RelayInfo, action string) *d
 		return createTaskError(err, "invalid_request", http.StatusBadRequest, true)
 	}
 
+	return ValidateParsedTaskRequest(c, info, action, req)
+}
+
+// ValidateParsedTaskRequest validates a provider-normalized request before billing.
+// Providers can resolve special duration modes into positive billing seconds first.
+func ValidateParsedTaskRequest(c *gin.Context, info *RelayInfo, action string, req TaskSubmitReq) *dto.TaskError {
 	if taskErr := validatePrompt(req.Prompt); taskErr != nil {
 		return taskErr
 	}

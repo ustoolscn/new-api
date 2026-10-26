@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"database/sql/driver"
 	"encoding/json"
+	"strconv"
 	"time"
 
 	"github.com/QuantumNous/new-api/common"
@@ -178,6 +179,7 @@ func InitTask(platform constant.TaskPlatform, relayInfo *commonRelay.RelayInfo) 
 		if relayInfo.ChannelMeta.ChannelType == constant.ChannelTypeGemini ||
 			relayInfo.ChannelMeta.ChannelType == constant.ChannelTypeVertexAi ||
 			relayInfo.ChannelMeta.ChannelType == constant.ChannelTypeXai ||
+			relayInfo.ChannelMeta.ChannelType == constant.ChannelTypeSD99 ||
 			relayInfo.ChannelMeta.ChannelType == constant.ChannelTypeAdvancedCustom {
 			privateData.Key = relayInfo.ChannelMeta.ApiKey
 		}
@@ -296,6 +298,8 @@ func TaskGetAllTasks(startIdx int, num int, queryParams SyncTaskQueryParams) []*
 func GetTimedOutUnfinishedTasks(cutoffUnix int64, limit int) []*Task {
 	var tasks []*Task
 	err := DB.Where("progress != ?", "100%").
+		// SD99 timeouts do not prove upstream failure or permit a refund.
+		Where("platform <> ?", strconv.Itoa(constant.ChannelTypeSD99)).
 		Where("status NOT IN ?", []string{TaskStatusFailure, TaskStatusSuccess}).
 		Where("submit_time < ?", cutoffUnix).
 		Order("submit_time").

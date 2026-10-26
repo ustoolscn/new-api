@@ -46,6 +46,13 @@ export interface ChannelTypeConfig {
  * Configuration for each channel type
  */
 export const CHANNEL_TYPE_CONFIGS: Record<number, ChannelTypeConfig> = {
+  59: {
+    id: 59,
+    name: CHANNEL_TYPES[59],
+    icon: 'newapi',
+    defaultBaseUrl: 'https://api.sd99.vip',
+    supportedModels: ['video-sd-2.0(TC)'],
+  },
   1: {
     id: 1,
     name: CHANNEL_TYPES[1],

@@ -702,6 +702,8 @@ FAILURE
 
 ## 12. 推荐调用流程
 
+SD99 独立视频渠道（类型 `59`）的配置、TC 2.0 多素材请求和 `duration=-1` 编辑模式见 [SD99 视频通道](sd99-video.md)。
+
 1. 调用 `POST /v1/video/generations`，保存响应中的 `id`。
 2. 每 3–10 秒调用 `GET /v1/video/generations/{id}`。
 3. 状态为 `SUCCESS` 后，优先使用 `result_url`；也可调用 `GET /v1/video/generations/{id}/content`。
