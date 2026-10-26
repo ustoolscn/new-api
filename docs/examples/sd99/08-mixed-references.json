@@ -1,0 +1,33 @@
+{
+  "model": "video-sd-2.0(TC)",
+  "prompt": "参考图片中的小屋外观、视频中的推进运镜与音频氛围，生成黄昏海边的电影感短片。",
+  "duration": 10,
+  "metadata": {
+    "ratio": "16:9",
+    "resolution": "720p",
+    "generate_audio": true,
+    "content": [
+      {
+        "type": "image_url",
+        "role": "reference_image",
+        "image_url": {
+          "url": "https://media.example.com/house.jpg"
+        }
+      },
+      {
+        "type": "video_url",
+        "role": "reference_video",
+        "video_url": {
+          "url": "https://media.example.com/camera-motion.mp4"
+        }
+      },
+      {
+        "type": "audio_url",
+        "role": "reference_audio",
+        "audio_url": {
+          "url": "https://media.example.com/ambience.mp3"
+        }
+      }
+    ]
+  }
+}

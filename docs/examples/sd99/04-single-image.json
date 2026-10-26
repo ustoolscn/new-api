@@ -1,0 +1,18 @@
+{
+  "model": "video-sd-2.0(TC)",
+  "prompt": "以参考图片中的小屋为主体，保持建筑外观一致，海风吹动窗帘，镜头缓慢推进。",
+  "duration": 5,
+  "metadata": {
+    "ratio": "16:9",
+    "resolution": "720p",
+    "content": [
+      {
+        "type": "image_url",
+        "role": "reference_image",
+        "image_url": {
+          "url": "https://media.example.com/house.jpg"
+        }
+      }
+    ]
+  }
+}

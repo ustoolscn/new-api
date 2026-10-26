@@ -1,0 +1,10 @@
+{
+  "model": "video-sd-2.0(TC)",
+  "prompt": "城市夜景中的咖啡杯产品特写，镜头缓慢环绕，霓虹光线映照杯身。",
+  "duration": 5,
+  "metadata": {
+    "ratio": "9:16",
+    "resolution": "1080p",
+    "generate_audio": false
+  }
+}

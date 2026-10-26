@@ -1,0 +1,19 @@
+{
+  "model": "video-sd-2.0(TC)",
+  "prompt": "参考图片中的小屋外观和视频运镜，结合参考音频，生成宁静海边场景。",
+  "seconds": "5",
+  "size": "1280x720",
+  "images": [
+    "https://media.example.com/house.jpg"
+  ],
+  "input_videos": [
+    "https://media.example.com/camera-motion.mp4"
+  ],
+  "input_audios": [
+    "https://media.example.com/ambience.mp3"
+  ],
+  "generate_audio": false,
+  "metadata": {
+    "ratio": "16:9"
+  }
+}

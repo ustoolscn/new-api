@@ -2,6 +2,8 @@
 
 SD99 使用独立渠道类型 `59`，适配器位于 `relay/channel/task/sd99/`。协议依据本地交付的《SD99 · video-sd-2.0(TC) 接口接入文档》（2026-10-25）；不复用火山原生视频或 Sora 的请求转换。
 
+面向调用方的详细字段说明、十种请求案例及 PowerShell、cURL、Python 示例见 [New API 调用 SD99 TC 2.0 视频模型接口文档](sd99-video-api.md)，独立请求文件位于 `docs/examples/sd99/`。
+
 ## 管理后台配置
 
 1. 新建渠道，类型选择 **SD99**。

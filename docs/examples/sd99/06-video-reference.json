@@ -1,0 +1,18 @@
+{
+  "model": "video-sd-2.0(TC)",
+  "prompt": "借鉴参考视频的缓慢推进运镜，生成全新的黄昏海岸场景。",
+  "duration": 6,
+  "metadata": {
+    "ratio": "16:9",
+    "resolution": "720p",
+    "content": [
+      {
+        "type": "video_url",
+        "role": "reference_video",
+        "video_url": {
+          "url": "https://media.example.com/camera-motion.mp4"
+        }
+      }
+    ]
+  }
+}

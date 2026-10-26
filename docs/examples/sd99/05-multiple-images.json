@@ -1,0 +1,32 @@
+{
+  "model": "video-sd-2.0(TC)",
+  "prompt": "参考第一张图片中的人物外观、第二张图片中的服装和第三张图片中的场景，人物沿街缓慢行走，保持身份一致。",
+  "duration": 8,
+  "metadata": {
+    "ratio": "16:9",
+    "resolution": "720p",
+    "content": [
+      {
+        "type": "image_url",
+        "role": "reference_image",
+        "image_url": {
+          "url": "https://media.example.com/person.jpg"
+        }
+      },
+      {
+        "type": "image_url",
+        "role": "reference_image",
+        "image_url": {
+          "url": "https://media.example.com/clothing.jpg"
+        }
+      },
+      {
+        "type": "image_url",
+        "role": "reference_image",
+        "image_url": {
+          "url": "https://media.example.com/street.jpg"
+        }
+      }
+    ]
+  }
+}

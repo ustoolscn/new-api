@@ -1,0 +1,10 @@
+{
+  "model": "video-sd-2.0(TC)",
+  "prompt": "清晨森林中鸟儿掠过溪流，镜头平稳跟随，伴随自然鸟鸣和流水声。",
+  "duration": 10,
+  "metadata": {
+    "ratio": "16:9",
+    "resolution": "720p",
+    "generate_audio": true
+  }
+}

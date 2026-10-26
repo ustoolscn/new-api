@@ -1,0 +1,26 @@
+{
+  "model": "video-sd-2.0(TC)",
+  "prompt": "以参考图片中的海边小屋为场景，让灯光渐亮，参考音频的宁静氛围，生成相应环境声。",
+  "duration": 5,
+  "metadata": {
+    "ratio": "16:9",
+    "resolution": "720p",
+    "generate_audio": true,
+    "content": [
+      {
+        "type": "image_url",
+        "role": "reference_image",
+        "image_url": {
+          "url": "https://media.example.com/house.jpg"
+        }
+      },
+      {
+        "type": "audio_url",
+        "role": "reference_audio",
+        "audio_url": {
+          "url": "https://media.example.com/ambience.mp3"
+        }
+      }
+    ]
+  }
+}

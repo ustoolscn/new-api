@@ -1,0 +1,18 @@
+{
+  "model": "video-sd-2.0(TC)",
+  "prompt": "编辑参考视频：将背景替换为黄昏海边，保持人物、动作、镜头节奏与原片时长。",
+  "duration": -1,
+  "metadata": {
+    "ratio": "adaptive",
+    "resolution": "720p",
+    "content": [
+      {
+        "type": "video_url",
+        "role": "reference_video",
+        "video_url": {
+          "url": "https://media.example.com/source-4-to-15-seconds.mp4"
+        }
+      }
+    ]
+  }
+}
