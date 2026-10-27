@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io"
 	"math"
+	"net"
 	"net/http"
 	"net/url"
 	"regexp"
@@ -484,6 +485,13 @@ func DownloadURL(baseURL, taskID string, body []byte) (string, bool, error) {
 		}
 		candidate, _ := url.Parse(resolved)
 		content, _ := url.Parse(contentURL)
+		// Some responses advertise the provider's internal localhost URL.
+		// Only recover this task's content endpoint, using the configured origin.
+		host := candidate.Hostname()
+		ip := net.ParseIP(host)
+		if candidate.Path == content.Path && (strings.EqualFold(host, "localhost") || (ip != nil && ip.IsLoopback())) {
+			return contentURL, true, nil
+		}
 		auth := candidate.Scheme == content.Scheme && strings.EqualFold(candidate.Host, content.Host) && candidate.Path == content.Path
 		return resolved, auth, nil
 	}

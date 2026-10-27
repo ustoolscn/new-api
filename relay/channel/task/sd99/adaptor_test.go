@@ -202,6 +202,12 @@ func TestSD99DownloadSelectsOutputsAndScopesCredentials(t *testing.T) {
 		auth           bool
 	}{
 		{`{}`, "https://api.sd99.vip/v1/videos/id/content", true},
+		{`{"content_url":"http://localhost:3000/v1/videos/id/content"}`, "https://api.sd99.vip/v1/videos/id/content", true},
+		{`{"video_url":"http://127.0.0.1:3000/v1/videos/id/content"}`, "https://api.sd99.vip/v1/videos/id/content", true},
+		{`{"video_url":"http://[::1]:3000/v1/videos/id/content"}`, "https://api.sd99.vip/v1/videos/id/content", true},
+		{`{"video_url":"http://localhost:3000/v1/videos/other/content"}`, "http://localhost:3000/v1/videos/other/content", false},
+		{`{"video_url":"http://localhost:3000/out.mp4"}`, "http://localhost:3000/out.mp4", false},
+		{`{"video_url":"http://localhost.example.com:3000/v1/videos/id/content"}`, "http://localhost.example.com:3000/v1/videos/id/content", false},
 		{`{"content_url":"/v1/videos/id/content?sig=a%2Bb"}`, "https://api.sd99.vip/v1/videos/id/content?sig=a%2Bb", true},
 		{`{"video_url":"/generated/a.mp4?sig=a%2Bb"}`, "https://api.sd99.vip/generated/a.mp4?sig=a%2Bb", false},
 		{`{"video_url":"https://cdn.example.com/out.mp4"}`, "https://cdn.example.com/out.mp4", false},
