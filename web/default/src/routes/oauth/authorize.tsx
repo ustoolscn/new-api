@@ -174,7 +174,9 @@ function OAuthAuthorize() {
   const search = useSearch({ from: '/oauth/authorize' }) as AuthorizeSearch
   const requestIsValid =
     search.response_type === 'code' &&
-    (search.client_id === 'hi-codex' || search.client_id === 'dreamfactory') &&
+    (search.client_id === 'hi-ai' ||
+      search.client_id === 'hi-codex' ||
+      search.client_id === 'dreamfactory') &&
     Boolean(search.redirect_uri) &&
     hasRequiredOAuthScopes(search.scope) &&
     Boolean(search.state) &&
@@ -271,7 +273,7 @@ function OAuthAuthorize() {
             </div>
             <div className='space-y-1'>
               <CardTitle className='text-xl'>
-                {request.client_name || t('Hi Codex')}
+                {request.client_name || 'Hi AI'}
               </CardTitle>
               <CardDescription>
                 {t('wants to access your account')}

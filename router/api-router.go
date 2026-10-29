@@ -331,7 +331,7 @@ func SetApiRouter(router *gin.Engine) {
 		dataRoute := apiRouter.Group("/data")
 		dataRoute.GET("/", middleware.AdminAuth(), controller.GetAllQuotaDates)
 		dataRoute.GET("/users", middleware.AdminAuth(), controller.GetQuotaDatesByUser)
-		// Hi Codex reads its own usage chart with account:read OAuth tokens.
+		// Hi AI and legacy Hi Codex clients read their usage chart with account:read tokens.
 		dataRoute.GET("/self", middleware.UserOrOAuthAuth(model.OAuthScopeAccountRead), controller.GetUserQuotaDates)
 		dataRoute.GET("/flow", middleware.AdminAuth(), controller.GetAllFlowQuotaDates)
 		dataRoute.GET("/flow/self", middleware.UserAuth(), controller.GetUserFlowQuotaDates)

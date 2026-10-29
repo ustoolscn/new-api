@@ -7,7 +7,7 @@ import (
 	"gorm.io/gorm"
 )
 
-// OAuthAccessToken stores the metadata for a dedicated Hi Codex bearer token.
+// OAuthAccessToken stores the metadata for a dedicated desktop OAuth bearer token.
 // The plaintext token is deliberately never persisted; TokenHash is the
 // SHA-256 digest of the complete oa- prefixed token returned to the client.
 type OAuthAccessToken struct {

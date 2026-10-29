@@ -215,7 +215,7 @@ func beginOAuthPKCEAuthorization(t *testing.T, server *httptest.Server, client *
 	require.True(t, payload.Success, payload.Message)
 	require.NotEmpty(t, payload.Data.RequestID)
 	require.Equal(t, oauthPKCETestClientID, payload.Data.ClientID)
-	require.Equal(t, "Hi Codex", payload.Data.ClientName)
+	require.Equal(t, "Hi AI", payload.Data.ClientName)
 	require.Equal(t, []string{model.OAuthScopeAPIKeysRead, model.OAuthScopeAccountRead}, payload.Data.Scopes)
 	return payload.Data.RequestID
 }
@@ -300,6 +300,40 @@ func TestOAuthPKCEAuthorizeRequiresLogin(t *testing.T) {
 	payload := readOAuthPKCEErrorResponse(t, response)
 	assert.False(t, payload.Success)
 	assert.Equal(t, "login_required", payload.Error)
+}
+
+func TestOAuthPKCEHiAIRenamePreservesClientBinding(t *testing.T) {
+	for _, clientID := range []string{"hi-ai", "hi-codex"} {
+		t.Run(clientID, func(t *testing.T) {
+			db := setupOAuthPKCETestDB(t)
+			user := seedOAuthPKCETestUser(t, db)
+			server, client := newOAuthPKCETestServer(t, user.Id)
+			loginOAuthPKCETestClient(t, server, client)
+			values := oauthPKCEAuthorizeValues(oauthPKCETestVerifier, "rename-state", oauthPKCETestRedirect)
+			values.Set("client_id", clientID)
+			response, err := client.Get(server.URL + "/oauth/authorize?" + values.Encode())
+			require.NoError(t, err)
+			require.Equal(t, http.StatusOK, response.StatusCode)
+			authorization := readOAuthPKCEAuthorizeResponse(t, response)
+			require.True(t, authorization.Success)
+			assert.Equal(t, clientID, authorization.Data.ClientID)
+			assert.Equal(t, "Hi AI", authorization.Data.ClientName)
+			location := decideOAuthPKCEAuthorization(t, server, client, authorization.Data.RequestID, "approve")
+			code := location.Query().Get("code")
+			require.NotEmpty(t, code)
+			otherClientID := "hi-codex"
+			if clientID == otherClientID {
+				otherClientID = "hi-ai"
+			}
+			status, _, _ := postOAuthPKCEToken(t, server, client, code, otherClientID, oauthPKCETestRedirect, oauthPKCETestVerifier)
+			assert.Equal(t, http.StatusBadRequest, status)
+			status, token, _ := postOAuthPKCEToken(t, server, client, code, clientID, oauthPKCETestRedirect, oauthPKCETestVerifier)
+			require.Equal(t, http.StatusOK, status)
+			var stored model.OAuthAccessToken
+			require.NoError(t, db.Where("token_hash = ?", model.HashOAuthValue(token.AccessToken)).First(&stored).Error)
+			assert.Equal(t, clientID, stored.ClientID)
+		})
+	}
 }
 
 func TestOAuthPKCEAuthorizeRejectsInvalidParameters(t *testing.T) {

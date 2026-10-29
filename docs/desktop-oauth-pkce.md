@@ -1,12 +1,12 @@
 # Desktop OAuth 2.0 Authorization Code + PKCE
 
-This document describes the public desktop-client integration for Hi Codex,
+This document describes the public desktop-client integration for Hi AI,
 DreamFactory, and other native clients that need access to the currently
 signed-in account, with optional permission to create, edit, and delete API keys.
 
 The flow is a public OAuth client flow:
 
-- `client_id`: `hi-codex` or `dreamfactory` (fixed public clients)
+- `client_id`: `hi-ai`, legacy `hi-codex`, or `dreamfactory` (fixed public clients)
 - required read scopes: `api_keys:read account:read` (canonical order)
 - optional write scope: `api_keys:write` (appended after the read scopes)
 - `response_type`: `code` (fixed)
@@ -44,7 +44,7 @@ the canonical string (`%20` represents the separating space):
 ```text
 GET BASE_ORIGIN/oauth/authorize
     ?response_type=code
-    &client_id=hi-codex
+    &client_id=hi-ai
     &redirect_uri=http%3A%2F%2F127.0.0.1%3A45678%2Foauth%2Fcallback
     &state=<url-encoded-state>
     &scope=api_keys%3Aread%20account%3Aread
@@ -71,7 +71,7 @@ Authorization query parameters:
 | Parameter | Required | Value or rule |
 | --- | --- | --- |
 | `response_type` | yes | Exactly `code`. |
-| `client_id` | yes | `hi-codex` or `dreamfactory`. |
+| `client_id` | yes | `hi-ai`, legacy `hi-codex`, or `dreamfactory`. |
 | `redirect_uri` | yes | Valid loopback URI; see [Loopback redirect rules](#loopback-redirect-rules). |
 | `state` | yes | Fresh, non-empty client value, at most 256 bytes, without control characters. |
 | `scope` | yes | `api_keys:read` and `account:read`, optionally `api_keys:write`, separated by spaces; URL-encode the value. |
@@ -98,8 +98,8 @@ response uses the application's normal envelope:
   "success": true,
   "data": {
     "request_id": "<opaque-request-id>",
-    "client_id": "hi-codex",
-    "client_name": "Hi Codex",
+    "client_id": "hi-ai",
+    "client_name": "Hi AI",
     "redirect_uri": "http://127.0.0.1:45678/oauth/callback",
     "scopes": ["api_keys:read", "account:read"],
     "user": {"id": 123, "username": "example"},
@@ -152,7 +152,7 @@ Required form fields:
 | Field | Value |
 | --- | --- |
 | `grant_type` | `authorization_code` |
-| `client_id` | `hi-codex` |
+| `client_id` | `hi-ai` |
 | `code` | The code received at the loopback callback. |
 | `redirect_uri` | The exact same loopback URI sent in the authorization request. |
 | `code_verifier` | The original PKCE verifier; never substitute the challenge. |
@@ -196,7 +196,7 @@ The main error codes are:
 | --- | --- |
 | `invalid_request` | Missing form field, malformed request, or an expired/invalid authorization request. |
 | `unsupported_grant_type` | `grant_type` was not `authorization_code`. |
-| `invalid_client` | `client_id` was not `hi-codex` or `dreamfactory`. |
+| `invalid_client` | `client_id` was not `hi-ai`, legacy `hi-codex`, or `dreamfactory`. |
 | `invalid_grant` | Invalid, expired, already-used, mismatched, or PKCE-invalid code; invalid redirect URI/verifier; or a disabled authorizing user. |
 | `server_error` | The server could not issue the token. |
 
@@ -484,7 +484,7 @@ state = base64url_nopad(random_bytes(32))
 
 open_browser(BASE_ORIGIN + "/oauth/authorize?" + url_encode({
   response_type: "code",
-  client_id: "hi-codex",
+  client_id: "hi-ai",
   redirect_uri: redirect_uri,
   state: state,
   scope: "api_keys:read account:read",
@@ -501,7 +501,7 @@ code = callback.query.code
 
 token = POST_FORM(BASE_ORIGIN + "/api/oauth/token", {
   grant_type: "authorization_code",
-  client_id: "hi-codex",
+  client_id: "hi-ai",
   code: code,
   redirect_uri: redirect_uri,
   code_verifier: verifier
@@ -542,3 +542,13 @@ ID, and `scope=api`), disable only the matching tokens, and clear their token
 cache entries. Existing user-created API keys are left untouched. The cleanup
 is safe to repeat and is skipped on fresh databases that do not have the
 legacy marker columns.
+
+## Hi AI rename compatibility
+
+New Hi AI clients should send `client_id=hi-ai`. Existing clients may continue
+sending `client_id=hi-codex`; both show `Hi AI` on the consent page.
+Existing `hi-codex` access tokens and pending authorizations remain valid until
+their normal expiry or revocation. No token or database migration is required.
+Use the exact same `client_id` for authorization and token exchange: do not
+switch from `hi-codex` to `hi-ai` in the middle of an authorization attempt.
+DreamFactory remains supported with `client_id=dreamfactory`.

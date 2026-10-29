@@ -15,8 +15,9 @@ import (
 )
 
 const (
-	OAuthPublicClientID         = "hi-codex"
-	OAuthPublicClientName       = "Hi Codex"
+	OAuthPublicClientID         = "hi-ai"
+	OAuthLegacyPublicClientID   = "hi-codex"
+	OAuthPublicClientName       = "Hi AI"
 	OAuthDreamFactoryClientID   = "dreamfactory"
 	OAuthDreamFactoryClientName = "DreamFactory"
 	OAuthScopeAPIKeysRead       = "api_keys:read"
@@ -33,7 +34,7 @@ const (
 // OAuth client. Empty string means the client ID is not registered.
 func OAuthPublicClientNameForID(clientID string) string {
 	switch clientID {
-	case OAuthPublicClientID:
+	case OAuthPublicClientID, OAuthLegacyPublicClientID:
 		return OAuthPublicClientName
 	case OAuthDreamFactoryClientID:
 		return OAuthDreamFactoryClientName

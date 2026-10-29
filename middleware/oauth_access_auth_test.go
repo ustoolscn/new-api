@@ -105,6 +105,24 @@ func TestOAuthAccessAuthAcceptsValidTokenAndSetsContext(t *testing.T) {
 	assert.Equal(t, "no-store", recorder.Header().Get("Cache-Control"))
 }
 
+func TestOAuthAccessAuthAcceptsExistingHiCodexToken(t *testing.T) {
+	db := setupOAuthAccessAuthTestDB(t)
+	user := seedOAuthAccessAuthUser(t, db, common.UserStatusEnabled)
+	value := "oa-legacy-hi-codex-token"
+	createOAuthAccessAuthToken(t, db, user.Id, value, "hi-codex", model.OAuthPublicScope, common.GetTimestamp()+60, nil)
+	router := gin.New()
+	router.GET("/protected", OAuthAccessAuth(model.OAuthScopeAccountRead), func(c *gin.Context) {
+		assert.Equal(t, user.Id, c.GetInt("id"))
+		assert.Equal(t, "hi-codex", c.GetString("oauth_client_id"))
+		c.Status(http.StatusNoContent)
+	})
+	request := httptest.NewRequest(http.MethodGet, "/protected", nil)
+	request.Header.Set("Authorization", "Bearer "+value)
+	recorder := httptest.NewRecorder()
+	router.ServeHTTP(recorder, request)
+	assert.Equal(t, http.StatusNoContent, recorder.Code)
+}
+
 func TestOAuthAccessAuthRejectsNonOAuthAndInvalidTokens(t *testing.T) {
 	db := setupOAuthAccessAuthTestDB(t)
 	user := seedOAuthAccessAuthUser(t, db, common.UserStatusEnabled)
