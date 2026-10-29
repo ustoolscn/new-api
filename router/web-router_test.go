@@ -37,5 +37,7 @@ func TestSetWebRouterAlwaysServesDefaultFrontend(t *testing.T) {
 	engine.ServeHTTP(recorder, request)
 
 	require.Equal(t, http.StatusOK, recorder.Code)
-	assert.Equal(t, "default-asset\n", recorder.Body.String())
+	asset, err := defaultFrontendTestFS.ReadFile("testdata/default-dist/asset.txt")
+	require.NoError(t, err)
+	assert.Equal(t, asset, recorder.Body.Bytes())
 }
