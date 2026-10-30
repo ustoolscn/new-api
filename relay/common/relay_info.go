@@ -87,6 +87,7 @@ type TokenCountMeta struct {
 }
 
 type RelayInfo struct {
+	UsageAdjustment   *dto.UsageAdjustmentAudit
 	TokenId           int
 	TokenKey          string
 	TokenGroup        string

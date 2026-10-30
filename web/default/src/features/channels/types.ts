@@ -80,6 +80,13 @@ export type Channel = z.infer<typeof channelSchema>
 // ============================================================================
 
 export interface ChannelSettings {
+  usage_adjustment?: {
+    enabled: boolean
+    cache_min: number
+    cache_max: number
+    output_min: number
+    output_max: number
+  }
   force_format?: boolean
   thinking_to_content?: boolean
   proxy?: string

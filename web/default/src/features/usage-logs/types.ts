@@ -108,6 +108,36 @@ export type UsageBillingPath =
 
 export interface LogOtherData {
   admin_info?: {
+    usage_adjustment?: {
+      status: string
+      cache_percent: number
+      output_percent: number
+      rule: {
+        cache_min: number
+        cache_max: number
+        output_min: number
+        output_max: number
+      }
+      records: Record<
+        string,
+        {
+          original: {
+            input: number
+            uncached: number
+            cache_read: number
+            cache_write: number
+            output: number
+          }
+          adjusted: {
+            input: number
+            uncached: number
+            cache_read: number
+            cache_write: number
+            output: number
+          }
+        }
+      >
+    }
     is_multi_key?: boolean
     multi_key_index?: number
     use_channel?: number[]

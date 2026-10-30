@@ -964,6 +964,9 @@ func (channel *Channel) ValidateSettings() error {
 		}
 	}
 	channelOtherSettings := &dto.ChannelOtherSettings{}
+	if err := channelParams.UsageAdjustment.Validate(); err != nil {
+		return err
+	}
 	if channel.OtherSettings != "" {
 		err := common.UnmarshalJsonStr(channel.OtherSettings, channelOtherSettings)
 		if err != nil {

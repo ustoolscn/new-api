@@ -257,7 +257,7 @@ func finalizeClaudeResponsesUsage(c *gin.Context, info *relaycommon.RelayInfo, c
 	if claudeInfo.Usage == nil {
 		claudeInfo.Usage = &dto.Usage{}
 	}
-	if claudeInfo.Usage.CompletionTokens == 0 || !claudeInfo.Done {
+	if (claudeInfo.Usage.CompletionTokens == 0 || !claudeInfo.Done) && !service.HasAdjustedUsage(info) {
 		fallback := service.ResponseText2Usage(c, claudeInfo.ResponseText.String(), info.UpstreamModelName, info.GetEstimatePromptTokens())
 		if claudeInfo.Usage.CompletionTokens == 0 ||
 			(!claudeInfo.Done && fallback.CompletionTokens > claudeInfo.Usage.CompletionTokens) {

@@ -132,7 +132,7 @@ func OaiResponsesStreamHandler(c *gin.Context, info *relaycommon.RelayInfo, resp
 		}
 	})
 
-	if usage.CompletionTokens == 0 {
+	if usage.CompletionTokens == 0 && !service.HasAdjustedUsage(info) {
 		// 计算输出文本的 token 数量
 		tempStr := responseTextBuilder.String()
 		if len(tempStr) > 0 {
@@ -142,7 +142,7 @@ func OaiResponsesStreamHandler(c *gin.Context, info *relaycommon.RelayInfo, resp
 		}
 	}
 
-	if usage.PromptTokens == 0 && usage.CompletionTokens != 0 {
+	if usage.PromptTokens == 0 && usage.CompletionTokens != 0 && !service.HasAdjustedUsage(info) {
 		usage.PromptTokens = info.GetEstimatePromptTokens()
 	}
 

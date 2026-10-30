@@ -12,12 +12,13 @@ import (
 )
 
 type ChannelSettings struct {
-	ForceFormat            bool   `json:"force_format,omitempty"`
-	ThinkingToContent      bool   `json:"thinking_to_content,omitempty"`
-	Proxy                  string `json:"proxy"`
-	PassThroughBodyEnabled bool   `json:"pass_through_body_enabled,omitempty"`
-	SystemPrompt           string `json:"system_prompt,omitempty"`
-	SystemPromptOverride   bool   `json:"system_prompt_override,omitempty"`
+	UsageAdjustment        *UsageAdjustment `json:"usage_adjustment,omitempty"`
+	ForceFormat            bool             `json:"force_format,omitempty"`
+	ThinkingToContent      bool             `json:"thinking_to_content,omitempty"`
+	Proxy                  string           `json:"proxy"`
+	PassThroughBodyEnabled bool             `json:"pass_through_body_enabled,omitempty"`
+	SystemPrompt           string           `json:"system_prompt,omitempty"`
+	SystemPromptOverride   bool             `json:"system_prompt_override,omitempty"`
 }
 
 type VertexKeyType string

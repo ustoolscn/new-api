@@ -189,6 +189,7 @@ import {
   ChannelEditorLoadingState,
   ChannelModelsSection,
 } from './sections'
+import { UsageAdjustmentFields } from './sections/usage-adjustment-fields'
 
 type ChannelMutateDrawerProps = {
   open: boolean
@@ -280,6 +281,7 @@ const SENSITIVE_FORM_FIELDS = [
   'vertex_key_type',
   'aws_key_type',
   'azure_responses_version',
+  'usage_adjustment',
   'force_format',
   'thinking_to_content',
   'proxy',
@@ -334,6 +336,7 @@ function hasAdvancedSettingsValues(values: ChannelFormValues): boolean {
     values.weight ||
     values.proxy?.trim() ||
     values.system_prompt?.trim() ||
+    values.usage_adjustment?.enabled ||
     values.force_format ||
     values.thinking_to_content ||
     values.pass_through_body_enabled ||
@@ -4121,6 +4124,8 @@ export function ChannelMutateDrawer({
                                   </FormItem>
                                 )}
                               />
+
+                              <UsageAdjustmentFields />
 
                               <FormField
                                 control={form.control}

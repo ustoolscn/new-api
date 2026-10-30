@@ -101,6 +101,18 @@ func ModelPriceHelper(c *gin.Context, info *relaycommon.RelayInfo, promptTokens 
 		if meta.MaxTokens != 0 {
 			preConsumedTokens += meta.MaxTokens
 		}
+		if info.ChannelMeta != nil && info.ChannelSetting.UsageAdjustment != nil && info.ChannelSetting.UsageAdjustment.Enabled {
+			rule := info.ChannelSetting.UsageAdjustment
+			if err := rule.Validate(); err != nil {
+				return types.PriceData{}, err
+			}
+			// Reserve conservatively; settlement uses the one sampled percentage.
+			adjusted, err := common.QuotaFromFloatStrict(float64(preConsumedTokens) * (1 + math.Max(0, rule.OutputMax)/100))
+			if err != nil {
+				return types.PriceData{}, err
+			}
+			preConsumedTokens = adjusted
+		}
 		var success bool
 		var matchName string
 		modelRatio, success, matchName = ratio_setting.GetModelRatio(info.OriginModelName)
@@ -482,6 +494,17 @@ func modelPriceHelperTiered(c *gin.Context, info *relaycommon.RelayInfo, promptT
 	estimatedCompletionTokens := meta.MaxTokens
 	if estimatedCompletionTokens == 0 && groupRatioInfo.GroupRatio != 0 {
 		estimatedCompletionTokens = defaultTieredPreConsumeMaxTokens
+	}
+	if info.ChannelMeta != nil && info.ChannelSetting.UsageAdjustment != nil && info.ChannelSetting.UsageAdjustment.Enabled {
+		rule := info.ChannelSetting.UsageAdjustment
+		if err := rule.Validate(); err != nil {
+			return types.PriceData{}, err
+		}
+		adjusted, err := common.QuotaFromFloatStrict(float64(estimatedCompletionTokens) * (1 + math.Max(0, rule.OutputMax)/100))
+		if err != nil {
+			return types.PriceData{}, err
+		}
+		estimatedCompletionTokens = adjusted
 	}
 
 	requestInput, err := ResolveIncomingBillingExprRequestInput(c, info)

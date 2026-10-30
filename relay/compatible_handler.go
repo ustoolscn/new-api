@@ -204,6 +204,13 @@ func TextHelper(c *gin.Context, info *relaycommon.RelayInfo) (newAPIError *types
 		}
 	}
 
+	if err := service.PrepareUsageAdjustment(httpResp, info); err != nil {
+		if httpResp != nil && httpResp.Body != nil {
+			httpResp.Body.Close()
+		}
+		return types.NewError(err, types.ErrorCodeBadResponseBody, types.ErrOptionWithSkipRetry())
+	}
+
 	usage, newApiErr := adaptor.DoResponse(c, httpResp, info)
 	if newApiErr != nil {
 		// reset status code 重置状态码

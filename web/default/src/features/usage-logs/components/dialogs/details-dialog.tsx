@@ -1032,6 +1032,48 @@ export function DetailsDialog(props: DetailsDialogProps) {
         )}
 
         {/* Quota saturation marker (admin only) */}
+        {props.isAdmin && adminInfo?.usage_adjustment && (
+          <DetailSection label={t('Usage adjustment audit')}>
+            <DetailRow
+              label={t('Status')}
+              value={adminInfo.usage_adjustment.status}
+            />
+            <DetailRow
+              label={t('Cache adjustment (%)')}
+              value={`${adminInfo.usage_adjustment.cache_percent.toFixed(4)}% [${adminInfo.usage_adjustment.rule.cache_min}, ${adminInfo.usage_adjustment.rule.cache_max}]`}
+              mono
+            />
+            <DetailRow
+              label={t('Output adjustment (%)')}
+              value={`${adminInfo.usage_adjustment.output_percent.toFixed(4)}% [${adminInfo.usage_adjustment.rule.output_min}, ${adminInfo.usage_adjustment.rule.output_max}]`}
+              mono
+            />
+            <p className='text-muted-foreground text-xs'>
+              {t('Upstream usage → Billed usage')}
+            </p>
+            {Object.entries(adminInfo.usage_adjustment.records).map(
+              ([protocol, record]) => (
+                <div key={protocol} className='space-y-1'>
+                  <p className='text-xs font-medium'>{protocol}</p>
+                  {[
+                    { key: 'input', label: t('Total Input Tokens') },
+                    { key: 'uncached', label: t('Input Tokens') },
+                    { key: 'cache_read', label: t('Cache Read') },
+                    { key: 'cache_write', label: t('Cache Write') },
+                    { key: 'output', label: t('Output Tokens') },
+                  ].map((row) => (
+                    <DetailRow
+                      key={row.key}
+                      label={row.label}
+                      value={`${record.original[row.key as keyof typeof record.original].toLocaleString()} → ${record.adjusted[row.key as keyof typeof record.adjusted].toLocaleString()}`}
+                      mono
+                    />
+                  ))}
+                </div>
+              )
+            )}
+          </DetailSection>
+        )}
         {props.isAdmin && other?.admin_info?.quota_saturation && (
           <DetailSection
             icon={<AlertTriangle className='size-3.5' aria-hidden='true' />}

@@ -218,6 +218,13 @@ func ClaudeHelper(c *gin.Context, info *relaycommon.RelayInfo) (newAPIError *typ
 		}
 	}
 
+	if err := service.PrepareUsageAdjustment(httpResp, info); err != nil {
+		if httpResp != nil && httpResp.Body != nil {
+			httpResp.Body.Close()
+		}
+		return types.NewError(err, types.ErrorCodeBadResponseBody, types.ErrOptionWithSkipRetry())
+	}
+
 	usage, newAPIError := adaptor.DoResponse(c, httpResp, info)
 	if newAPIError != nil {
 		// reset status code 重置状态码

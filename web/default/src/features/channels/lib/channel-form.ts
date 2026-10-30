@@ -186,6 +186,21 @@ export const channelFormSchema = z
     batch_add_set_key_prefix_2_name: z.boolean().optional(),
     key_mode: z.enum(['append', 'replace']).optional(), // For editing multi-key channels
     // Channel extra settings (stored in setting JSON, not sent directly)
+    usage_adjustment: z
+      .object({
+        enabled: z.boolean(),
+        cache_min: z.number().min(-100).max(100),
+        cache_max: z.number().min(-100).max(100),
+        output_min: z.number().min(-100).max(100),
+        output_max: z.number().min(-100).max(100),
+      })
+      .refine(
+        (v) => v.cache_min <= v.cache_max && v.output_min <= v.output_max,
+        {
+          message: 'Minimum must not exceed maximum',
+        }
+      )
+      .optional(),
     force_format: z.boolean().optional(),
     thinking_to_content: z.boolean().optional(),
     proxy: z.string().optional(),
@@ -336,6 +351,13 @@ export const CHANNEL_FORM_DEFAULT_VALUES: ChannelFormValues = {
   batch_add_set_key_prefix_2_name: false,
   key_mode: 'append',
   // Channel extra settings
+  usage_adjustment: {
+    enabled: false,
+    cache_min: 0,
+    cache_max: 0,
+    output_min: 0,
+    output_max: 0,
+  },
   force_format: false,
   thinking_to_content: false,
   proxy: '',
@@ -374,6 +396,13 @@ export function transformChannelToFormDefaults(
 ): ChannelFormValues {
   // Parse channel extra settings from setting field
   let extraSettings = {
+    usage_adjustment: {
+      enabled: false,
+      cache_min: 0,
+      cache_max: 0,
+      output_min: 0,
+      output_max: 0,
+    },
     force_format: false,
     thinking_to_content: false,
     proxy: '',
@@ -386,6 +415,10 @@ export function transformChannelToFormDefaults(
     try {
       const parsed = JSON.parse(channel.setting)
       extraSettings = {
+        usage_adjustment: {
+          ...extraSettings.usage_adjustment,
+          ...parsed.usage_adjustment,
+        },
         force_format: parsed.force_format || false,
         thinking_to_content: parsed.thinking_to_content || false,
         proxy: parsed.proxy || '',
@@ -503,6 +536,7 @@ export function transformChannelToFormDefaults(
  */
 function buildSettingJSON(formData: ChannelFormValues): string {
   const settingObj = {
+    usage_adjustment: formData.usage_adjustment,
     force_format: formData.force_format || false,
     thinking_to_content: formData.thinking_to_content || false,
     proxy: formData.proxy || '',

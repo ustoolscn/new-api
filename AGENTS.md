@@ -91,6 +91,8 @@ Keep this index current. Whenever directories, major modules, routing boundaries
 
 ### Operational Index
 
+- Per-channel opt-in text usage adjustment is stored at `channels.setting.usage_adjustment`. `service/usage_adjustment.go` samples cache/output percentage ranges once per upstream response and rewrites recognized JSON/SSE usage before parsing, preserving total input while transferring cache-read differences to ordinary input. Client usage and settlement share the adjusted counts; original/adjusted counts and rules are admin-only under `other.admin_info.usage_adjustment`. Configuration, protocol scope, limits and rollback are documented in `docs/usage-adjustment.md`; dedicated audio/image/task/realtime routes are outside this feature.
+
 - Environment variables are loaded from `.env` via `godotenv.Overload(".env")` in `main.go`; application code reads them primarily through `common.InitEnv()`, `common.GetEnvOrDefault*`, direct `os.Getenv`, and frontend `VITE_` variables.
 - Playground image attachments upload through `/pg/upload-image`, which forwards multipart files to the configured image host using `IMAGE_HOST_UPLOAD_URL`, `IMAGE_HOST_AUTH_HEADER`, `IMAGE_HOST_AUTH_VALUE`, `IMAGE_HOST_FIELD_NAME`, and `IMAGE_HOST_RESPONSE_URL_PATH`; defaults mirror the sibling `imageweb` gallery upload.
 - Global client IP blocking is controlled by `client_ip_setting.blacklist_enabled`, `client_ip_setting.blacklist`, and `client_ip_setting.trusted_proxies`. It blocks web, login, admin, and relay requests before authentication, with only `/api/status` exempt. Trusted proxies must be explicitly configured before forwarded IP headers are used. This is separate from per-token IP whitelists and SSRF outbound target filtering; see `docs/client-ip-blacklist.md`.
