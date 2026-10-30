@@ -1035,6 +1035,22 @@ export function DetailsDialog(props: DetailsDialogProps) {
         {props.isAdmin && adminInfo?.usage_adjustment && (
           <DetailSection label={t('Usage adjustment audit')}>
             <DetailRow
+              label={t('Cost before usage adjustment')}
+              value={
+                adminInfo.usage_adjustment.original_quota == null
+                  ? '—'
+                  : formatLogQuota(adminInfo.usage_adjustment.original_quota)
+              }
+              mono
+            />
+            <DetailRow
+              label={t('Cost after usage adjustment')}
+              value={formatLogQuota(
+                adminInfo.usage_adjustment.adjusted_quota ?? props.log.quota
+              )}
+              mono
+            />
+            <DetailRow
               label={t('Status')}
               value={adminInfo.usage_adjustment.status}
             />

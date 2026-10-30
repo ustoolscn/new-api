@@ -1181,6 +1181,8 @@
     "Cost = 10 × 0.8 = 8": "費用 = 10 × 0.8 = 8",
     "Cost = 10 × 1.0 = 10": "費用 = 10 × 1.0 = 10",
     "Cost = model price × that one ratio. Nothing else from the group settings enters the formula.": "費用 = モデル価格 × この1つの倍率。グループ設定の他の項目は計算式に入りません。",
+    "Cost after usage adjustment": "使用量調整後の金額",
+    "Cost before usage adjustment": "使用量調整前の金額",
     "Cost in USD per request, regardless of tokens used.": "使用されたトークンに関係なく、リクエストあたりのUSDでのコスト。",
     "Cost Tracking": "コスト追跡",
     "Count must be between {{min}} and {{max}}": "カウントは{{min}}から{{max}}の間である必要があります",

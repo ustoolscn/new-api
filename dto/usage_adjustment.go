@@ -40,11 +40,14 @@ type MeteredTokens struct {
 }
 
 type UsageAdjustmentRecord struct {
-	Original MeteredTokens `json:"original"`
-	Adjusted MeteredTokens `json:"adjusted"`
+	Original              MeteredTokens       `json:"original"`
+	Adjusted              MeteredTokens       `json:"adjusted"`
+	OriginalOutputDetails *OutputTokenDetails `json:"-"`
 }
 
 type UsageAdjustmentAudit struct {
+	OriginalQuota *int                             `json:"original_quota,omitempty"`
+	AdjustedQuota *int                             `json:"adjusted_quota,omitempty"`
 	Rule          UsageAdjustment                  `json:"rule"`
 	CachePercent  float64                          `json:"cache_percent"`
 	OutputPercent float64                          `json:"output_percent"`

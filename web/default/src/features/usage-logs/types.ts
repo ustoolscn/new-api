@@ -109,6 +109,8 @@ export type UsageBillingPath =
 export interface LogOtherData {
   admin_info?: {
     usage_adjustment?: {
+      original_quota?: number
+      adjusted_quota?: number
       status: string
       cache_percent: number
       output_percent: number

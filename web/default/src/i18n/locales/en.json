@@ -1181,6 +1181,8 @@
     "Cost = 10 × 0.8 = 8": "Cost = 10 × 0.8 = 8",
     "Cost = 10 × 1.0 = 10": "Cost = 10 × 1.0 = 10",
     "Cost = model price × that one ratio. Nothing else from the group settings enters the formula.": "Cost = model price × that one ratio. Nothing else from the group settings enters the formula.",
+    "Cost after usage adjustment": "Cost after usage adjustment",
+    "Cost before usage adjustment": "Cost before usage adjustment",
     "Cost in USD per request, regardless of tokens used.": "Cost in USD per request, regardless of tokens used.",
     "Cost Tracking": "Cost Tracking",
     "Count must be between {{min}} and {{max}}": "Count must be between {{min}} and {{max}}",

@@ -1181,6 +1181,8 @@
     "Cost = 10 × 0.8 = 8": "Coût = 10 × 0,8 = 8",
     "Cost = 10 × 1.0 = 10": "Coût = 10 × 1,0 = 10",
     "Cost = model price × that one ratio. Nothing else from the group settings enters the formula.": "Coût = prix du modèle × ce seul taux. Rien d’autre dans les réglages de groupes n’entre dans la formule.",
+    "Cost after usage adjustment": "Montant après ajustement",
+    "Cost before usage adjustment": "Montant avant ajustement",
     "Cost in USD per request, regardless of tokens used.": "Coût en USD par requête, quel que soit le nombre de jetons utilisés.",
     "Cost Tracking": "Suivi des coûts",
     "Count must be between {{min}} and {{max}}": "Le nombre doit être compris entre {{min}} et {{max}}",

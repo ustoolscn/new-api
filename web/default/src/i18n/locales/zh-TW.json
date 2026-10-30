@@ -1181,6 +1181,8 @@
     "Cost = 10 × 0.8 = 8": "費用 = 10 × 0.8 = 8",
     "Cost = 10 × 1.0 = 10": "費用 = 10 × 1.0 = 10",
     "Cost = model price × that one ratio. Nothing else from the group settings enters the formula.": "費用 = 模型價格 × 這一個倍率。分組設定裡的其他項都不參與該公式。",
+    "Cost after usage adjustment": "調整後金額",
+    "Cost before usage adjustment": "調整前金額",
     "Cost in USD per request, regardless of tokens used.": "每請求的美元費用，不考慮使用的令牌數。",
     "Cost Tracking": "成本追蹤",
     "Count must be between {{min}} and {{max}}": "計數必須介於{{min}}和{{max}}之間",

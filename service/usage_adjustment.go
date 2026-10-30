@@ -11,13 +11,76 @@ import (
 	"strings"
 
 	"github.com/QuantumNous/new-api/common"
+	"github.com/QuantumNous/new-api/constant"
 	"github.com/QuantumNous/new-api/dto"
+	"github.com/QuantumNous/new-api/pkg/billingexpr"
 	relaycommon "github.com/QuantumNous/new-api/relay/common"
+	"github.com/gin-gonic/gin"
 	"github.com/tidwall/gjson"
 	"github.com/tidwall/sjson"
 )
 
 const maxMeteringFrameBytes = 64 << 20
+
+// AuditUsageAdjustmentCost only evaluates prices. It never settles a balance,
+// updates counters, or replaces the actual request's quota-clamp marker.
+func AuditUsageAdjustmentCost(ctx *gin.Context, info *relaycommon.RelayInfo, billed *dto.Usage, chargedQuota int) {
+	if !HasAdjustedUsage(info) || billed == nil {
+		return
+	}
+	audit := info.UsageAdjustment
+	audit.OriginalQuota = nil
+	audit.AdjustedQuota = &chargedQuota
+	protocol := map[string]string{
+		dto.BillingUsageSourceClaudeMessages: "anthropic",
+		dto.BillingUsageSourceOAIChat:        "openai_chat",
+		dto.BillingUsageSourceOAIResponses:   "openai_responses",
+		dto.BillingUsageSourceGeminiChat:     "gemini",
+	}[billed.UsageSource]
+	record, ok := audit.Records[protocol]
+	if !ok && len(audit.Records) == 1 {
+		for _, candidate := range audit.Records {
+			record, ok = candidate, true
+		}
+	}
+	if !ok || int64(billed.CompletionTokens) != record.Adjusted.Output || int64(billed.PromptTokensDetails.CachedTokens) != record.Adjusted.CacheRead {
+		return // Do not fabricate a price when adapter billing cannot be matched.
+	}
+	original := *billed
+	original.BillingUsage = nil // Already normalized, just like the actual summary.
+	exclusive := usageSemanticFromUsage(info, billed) == dto.BillingUsageSemanticAnthropic
+	if info.ChannelMeta != nil && info.ChannelType == constant.ChannelTypeOpenRouter {
+		exclusive = false
+	}
+	expectedPrompt, originalPrompt := record.Adjusted.Input, record.Original.Input
+	if exclusive {
+		expectedPrompt, originalPrompt = record.Adjusted.Uncached, record.Original.Uncached
+	}
+	if int64(billed.PromptTokens) != expectedPrompt {
+		return
+	}
+	original.PromptTokens = int(originalPrompt)
+	original.InputTokens = int(record.Original.Input)
+	original.CompletionTokens = int(record.Original.Output)
+	original.OutputTokens = original.CompletionTokens
+	original.TotalTokens = original.PromptTokens + original.CompletionTokens
+	original.PromptTokensDetails.CachedTokens = int(record.Original.CacheRead)
+	if record.OriginalOutputDetails != nil {
+		original.CompletionTokenDetails = *record.OriginalOutputDetails
+	}
+	shadow := *info
+	shadow.QuotaClamp = nil
+	summary := calculateTextQuotaSummary(ctx, &shadow, &original)
+	if snap := shadow.TieredBillingSnapshot; snap != nil && snap.BillingMode == "tiered_expr" {
+		used := billingexpr.UsedVars(snap.ExprString)
+		applied, quota, result := TryTieredSettle(&shadow, BuildTieredTokenParams(&original, summary.IsClaudeUsageSemantic, used))
+		if !applied || result == nil {
+			return // An expression failure is not an original-cost calculation.
+		}
+		summary.Quota = composeTieredTextQuota(&shadow, summary, quota, result)
+	}
+	audit.OriginalQuota = &summary.Quota
+}
 
 func HasAdjustedUsage(info *relaycommon.RelayInfo) bool {
 	return info != nil && info.UsageAdjustment != nil && info.UsageAdjustment.Status == "applied"
@@ -337,6 +400,16 @@ func (r *meteringReader) adjustUsage(body []byte, gemini bool, depth int) ([]byt
 		adjusted.Reasoning = min(adjusted.Output, int64(common.QuotaRound(float64(raw.Reasoning)*(1+r.audit.OutputPercent/100))))
 	}
 	updates := map[string]int64{}
+	originalOutputDetails := r.audit.Records[protocol].OriginalOutputDetails
+	for _, path := range []string{"completion_tokens_details", "output_tokens_details"} {
+		if detail := gjson.GetBytes(body, path); detail.IsObject() {
+			var parsed dto.OutputTokenDetails
+			if err := common.Unmarshal([]byte(detail.Raw), &parsed); err != nil {
+				return nil, err
+			}
+			originalOutputDetails = &parsed
+		}
+	}
 	if gjson.GetBytes(body, input).Exists() || (!inclusive && gjson.GetBytes(body, cache).Exists()) {
 		updates[input] = adjusted.Input
 		if gemini {
@@ -417,7 +490,7 @@ func (r *meteringReader) adjustUsage(body []byte, gemini bool, depth int) ([]byt
 			return nil, err
 		}
 	}
-	r.audit.Records[protocol] = dto.UsageAdjustmentRecord{Original: raw, Adjusted: adjusted}
+	r.audit.Records[protocol] = dto.UsageAdjustmentRecord{Original: raw, Adjusted: adjusted, OriginalOutputDetails: originalOutputDetails}
 	r.audit.Status = "applied"
 	return body, nil
 }

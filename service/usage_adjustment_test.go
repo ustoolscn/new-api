@@ -10,6 +10,7 @@ import (
 
 	"github.com/QuantumNous/new-api/common"
 	"github.com/QuantumNous/new-api/dto"
+	"github.com/QuantumNous/new-api/pkg/billingexpr"
 	relaycommon "github.com/QuantumNous/new-api/relay/common"
 	"github.com/QuantumNous/new-api/types"
 	"github.com/gin-gonic/gin"
@@ -71,6 +72,18 @@ func TestUsageAdjustmentClaudeStreamUsesOneSampleAndPreservesEvents(t *testing.T
 	assert.EqualValues(t, common.QuotaRound(100*(1+outputPercent/100)), record.Adjusted.Output)
 	assert.EqualValues(t, 150, record.Adjusted.Input)
 	assert.Equal(t, cachePercent, info.UsageAdjustment.CachePercent)
+	info.PriceData = types.PriceData{ModelRatio: 1, CompletionRatio: 2, CacheRatio: 0.1, GroupRatioInfo: types.GroupRatioInfo{GroupRatio: 1}}
+	ctx, _ := gin.CreateTestContext(httptest.NewRecorder())
+	usage := &dto.Usage{PromptTokens: int(record.Adjusted.Uncached), CompletionTokens: int(record.Adjusted.Output), UsageSemantic: dto.BillingUsageSemanticAnthropic}
+	usage.PromptTokensDetails.CachedTokens = int(record.Adjusted.CacheRead)
+	AuditUsageAdjustmentCost(ctx, info, usage, 300)
+	require.NotNil(t, info.UsageAdjustment.OriginalQuota)
+	assert.Equal(t, 233, *info.UsageAdjustment.OriginalQuota)
+	other := GenerateTextOtherInfo(ctx, info, 1, 1, 2, usage.PromptTokensDetails.CachedTokens, 0.1, 0, 0)
+	encoded, err := common.Marshal(other)
+	require.NoError(t, err)
+	assert.EqualValues(t, 233, gjson.GetBytes(encoded, "admin_info.usage_adjustment.original_quota").Int())
+	assert.False(t, gjson.GetBytes(encoded, "original_quota").Exists())
 }
 
 func TestUsageAdjustmentCacheCapZeroOutputAndBilling(t *testing.T) {
@@ -172,4 +185,67 @@ func TestUsageAdjustmentPreservesCacheCreationDetails(t *testing.T) {
 	assert.EqualValues(t, 30, gjson.GetBytes(body, "usage.cache_creation.ephemeral_1h_input_tokens").Int())
 	assert.EqualValues(t, 190, info.UsageAdjustment.Records["anthropic"].Adjusted.Input)
 	assert.EqualValues(t, 40, info.UsageAdjustment.Records["anthropic"].Adjusted.CacheWrite)
+}
+
+func TestUsageAdjustmentCostAuditUsesOriginalCountsAndSamePricing(t *testing.T) {
+	for _, mode := range []string{"ratios", "tiered", "per_call", "free", "invalid_expr"} {
+		t.Run(mode, func(t *testing.T) {
+			resp, info := meteringResponse(t, `{"usage":{"input_tokens":20000,"cache_read_input_tokens":130000,"output_tokens":1000}}`, "application/json", dto.UsageAdjustment{Enabled: true, CacheMin: -30, CacheMax: -30, OutputMin: -100, OutputMax: -100})
+			body, err := io.ReadAll(resp.Body)
+			require.NoError(t, err)
+			var response dto.ClaudeResponse
+			require.NoError(t, common.Unmarshal(body, &response))
+			usage := effectiveBillingUsage(&dto.Usage{BillingUsage: dto.NewClaudeMessagesBillingUsage(response.Usage)})
+			info.PriceData = types.PriceData{ModelRatio: 1, CompletionRatio: 2, CacheRatio: 0.1, GroupRatioInfo: types.GroupRatioInfo{GroupRatio: 1}}
+			want := 35000
+			switch mode {
+			case "tiered", "invalid_expr":
+				expr := "p * 2 + cr * 0.2 + c * 4"
+				if mode == "invalid_expr" {
+					expr = "invalid("
+				}
+				info.TieredBillingSnapshot = &billingexpr.BillingSnapshot{BillingMode: "tiered_expr", ExprString: expr, ExprHash: billingexpr.ExprHashString(expr), GroupRatio: 1, QuotaPerUnit: 500000}
+			case "per_call":
+				info.PriceData.UsePrice = true
+				info.PriceData.ModelPrice = 0.01
+				want = common.QuotaFromFloat(0.01 * common.QuotaPerUnit)
+			case "free":
+				info.PriceData.GroupRatioInfo.GroupRatio = 0
+				want = 0
+			}
+			ctx, _ := gin.CreateTestContext(httptest.NewRecorder())
+			before := *usage
+			AuditUsageAdjustmentCost(ctx, info, usage, 68100)
+			require.NotNil(t, info.UsageAdjustment.AdjustedQuota)
+			assert.Equal(t, 68100, *info.UsageAdjustment.AdjustedQuota)
+			if mode == "invalid_expr" {
+				assert.Nil(t, info.UsageAdjustment.OriginalQuota)
+			} else {
+				require.NotNil(t, info.UsageAdjustment.OriginalQuota)
+				assert.Equal(t, want, *info.UsageAdjustment.OriginalQuota)
+			}
+			assert.Equal(t, before, *usage)
+			assert.Nil(t, info.QuotaClamp)
+		})
+	}
+}
+
+func TestUsageAdjustmentCostRestoresOutputDetailsWithoutDividingByZero(t *testing.T) {
+	resp, info := meteringResponse(t, `{"usage":{"prompt_tokens":100,"completion_tokens":100,"completion_tokens_details":{"audio_tokens":40,"image_tokens":20},"total_tokens":200}}`, "application/json", dto.UsageAdjustment{Enabled: true, OutputMin: -100, OutputMax: -100})
+	body, err := io.ReadAll(resp.Body)
+	require.NoError(t, err)
+	var response struct {
+		Usage dto.Usage `json:"usage"`
+	}
+	require.NoError(t, common.Unmarshal(body, &response))
+	info.TieredBillingSnapshot = &billingexpr.BillingSnapshot{BillingMode: "tiered_expr", ExprString: "p * 2 + c * 4 + ao * 8 + img_o * 10", GroupRatio: 1, QuotaPerUnit: 500000}
+	info.TieredBillingSnapshot.ExprHash = billingexpr.ExprHashString(info.TieredBillingSnapshot.ExprString)
+	ctx, _ := gin.CreateTestContext(httptest.NewRecorder())
+	AuditUsageAdjustmentCost(ctx, info, &response.Usage, 100)
+	require.NotNil(t, info.UsageAdjustment.OriginalQuota)
+	assert.Equal(t, 440, *info.UsageAdjustment.OriginalQuota)
+	assert.Zero(t, response.Usage.CompletionTokenDetails.AudioTokens)
+	encoded, err := common.Marshal(info.UsageAdjustment)
+	require.NoError(t, err)
+	assert.NotContains(t, string(encoded), "OriginalOutputDetails")
 }
