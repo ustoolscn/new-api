@@ -16,6 +16,7 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 
 For commercial licensing, please contact support@quantumnous.com
 */
+import type { TFunction } from 'i18next'
 import {
   Copy,
   Check,
@@ -31,7 +32,6 @@ import {
   Info,
   LogIn,
 } from 'lucide-react'
-import type { TFunction } from 'i18next'
 import { useTranslation } from 'react-i18next'
 
 import { Dialog } from '@/components/dialog'
@@ -58,6 +58,7 @@ import {
   getResponseTimeColor,
   renderAuditContent,
 } from '../../lib/format'
+import { getUncachedInputTokens } from '../../lib/tokens'
 import {
   getLogTypeConfig,
   isPerCallBilling,
@@ -172,14 +173,7 @@ function billingTokensForField(
 ): number {
   switch (field) {
     case 'inputPrice':
-      return Math.max(
-        0,
-        (log.prompt_tokens || 0) -
-          (other.cache_tokens || 0) -
-          (other.cache_creation_tokens || 0) -
-          (other.cache_creation_tokens_5m || 0) -
-          (other.cache_creation_tokens_1h || 0)
-      )
+      return getUncachedInputTokens(log.prompt_tokens || 0, other)
     case 'outputPrice':
       return log.completion_tokens || 0
     case 'cacheReadPrice':
@@ -395,7 +389,9 @@ function getUsageBillingPathLabel(
   }
 }
 
-function isUsageBillingPathLocal(adminInfo: LogOtherData['admin_info']): boolean {
+function isUsageBillingPathLocal(
+  adminInfo: LogOtherData['admin_info']
+): boolean {
   if (adminInfo?.usage_billing_path) {
     return adminInfo.usage_billing_path === USAGE_BILLING_PATH.LOCAL
   }
@@ -450,7 +446,11 @@ function BillingBreakdown(props: {
       const terms = tieredSummary.priceEntries
         .map((entry) => {
           const tokens = billingTokensForField(entry.field, log, other)
-          return formatBillingFormulaPart(tokens, entry.price, t(entry.shortLabel))
+          return formatBillingFormulaPart(
+            tokens,
+            entry.price,
+            t(entry.shortLabel)
+          )
         })
         .filter(Boolean)
       const groupRatio = effectiveRatio(other)
@@ -639,7 +639,10 @@ function TokenBreakdown(props: { log: UsageLog; other: LogOtherData }) {
 
   const rows: Array<{ label: string; value: string }> = []
 
-  rows.push({ label: t('Input Tokens'), value: promptTokens.toLocaleString() })
+  rows.push({
+    label: t('Input Tokens'),
+    value: getUncachedInputTokens(promptTokens, other).toLocaleString(),
+  })
   rows.push({
     label: t('Output Tokens'),
     value: completionTokens.toLocaleString(),

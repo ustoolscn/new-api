@@ -51,6 +51,7 @@ import {
   isViolationFeeLog,
   renderAuditContent,
 } from '../../lib/format'
+import { getUncachedInputTokens } from '../../lib/tokens'
 import {
   isDisplayableLogType,
   isTimingLogType,
@@ -726,7 +727,7 @@ export function useCommonLogsColumns(isAdmin: boolean): ColumnDef<UsageLog>[] {
         const cacheWriteTokens = hasSplitCache
           ? cacheWrite5m + cacheWrite1h
           : other?.cache_creation_tokens || 0
-        const displayPromptTokens = Math.max(promptTokens - cacheReadTokens, 0)
+        const displayPromptTokens = getUncachedInputTokens(promptTokens, other)
 
         return (
           <div className='flex flex-col gap-0.5'>

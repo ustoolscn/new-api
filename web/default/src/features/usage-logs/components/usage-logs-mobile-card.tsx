@@ -41,6 +41,7 @@ import { cn } from '@/lib/utils'
 import { LOG_TYPE_ENUM } from '../constants'
 import type { UsageLog } from '../data/schema'
 import { parseLogOther } from '../lib/format'
+import { getUncachedInputTokens } from '../lib/tokens'
 import {
   getLogTypeConfig,
   isDisplayableLogType,
@@ -217,7 +218,8 @@ function MobileTokensField({ log }: { log: UsageLog }) {
     <div className='bg-muted/20 min-w-0 rounded-md px-2 py-1.5'>
       <div className='flex flex-col gap-0.5'>
         <span className='font-mono text-xs font-medium tabular-nums'>
-          {promptTokens.toLocaleString()} / {completionTokens.toLocaleString()}
+          {getUncachedInputTokens(promptTokens, other).toLocaleString()} /{' '}
+          {completionTokens.toLocaleString()}
         </span>
         {showCache ? (
           <div className='text-muted-foreground flex flex-wrap items-center gap-x-1.5 gap-y-0.5 text-[11px] leading-none'>
