@@ -117,6 +117,14 @@ func RelayErrorHandler(ctx context.Context, resp *http.Response, showBodyWhenFai
 		oaiError := errResponse.TryToOpenAIError()
 		if oaiError != nil {
 			newApiErr = types.WithOpenAIError(*oaiError, resp.StatusCode)
+			// Google-style errors use a symbolic status alongside a numeric code.
+			// Retain it for metrics without changing the client error envelope.
+			var providerStatus struct {
+				Status string `json:"status"`
+			}
+			if common.Unmarshal(errResponse.Error, &providerStatus) == nil {
+				newApiErr.UpstreamErrorType = providerStatus.Status
+			}
 			if showBodyWhenFail {
 				newApiErr.Err = buildErrWithBody(newApiErr.Error())
 			}
@@ -150,6 +158,9 @@ func ResetStatusCode(newApiErr *types.NewAPIError, statusCodeMappingStr string) 
 		intCode, ok := parseStatusCodeMappingValue(value)
 		if !ok {
 			return
+		}
+		if newApiErr.OriginalStatusCode == 0 {
+			newApiErr.OriginalStatusCode = newApiErr.StatusCode
 		}
 		newApiErr.StatusCode = intCode
 	}

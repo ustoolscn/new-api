@@ -89,19 +89,26 @@ const (
 
 type NewAPIError struct {
 	Err            error
+	cause          error // original local/transport error, retained when display text is masked
 	RelayError     any
 	skipRetry      bool
 	recordErrorLog *bool
 	errorType      ErrorType
 	errorCode      ErrorCode
 	StatusCode     int
-	Metadata       json.RawMessage
+	// OriginalStatusCode preserves classification when a channel remaps the client response.
+	OriginalStatusCode int
+	UpstreamErrorType  string `json:"-"` // provider-specific status, used only for availability
+	Metadata           json.RawMessage
 }
 
 // Unwrap enables errors.Is / errors.As to work with NewAPIError by exposing the underlying error.
 func (e *NewAPIError) Unwrap() error {
 	if e == nil {
 		return nil
+	}
+	if e.cause != nil {
+		return e.cause
 	}
 	return e.Err
 }
@@ -252,6 +259,7 @@ func NewError(err error, errorCode ErrorCode, ops ...NewAPIErrorOptions) *NewAPI
 	}
 	e := &NewAPIError{
 		Err:        err,
+		cause:      err,
 		RelayError: nil,
 		errorType:  ErrorTypeNewAPIError,
 		StatusCode: http.StatusInternalServerError,
@@ -285,7 +293,14 @@ func NewOpenAIError(err error, errorCode ErrorCode, statusCode int, ops ...NewAP
 		Type:    string(errorCode),
 		Code:    errorCode,
 	}
-	return WithOpenAIError(openaiError, statusCode, ops...)
+	e := WithOpenAIError(openaiError, statusCode)
+	// Keep transport/SDK causes available to errors.Is and errors.As.
+	e.Err = err
+	e.cause = err
+	for _, op := range ops {
+		op(e)
+	}
+	return e
 }
 
 func InitOpenAIError(errorCode ErrorCode, statusCode int, ops ...NewAPIErrorOptions) *NewAPIError {
@@ -298,7 +313,8 @@ func InitOpenAIError(errorCode ErrorCode, statusCode int, ops ...NewAPIErrorOpti
 
 func NewErrorWithStatusCode(err error, errorCode ErrorCode, statusCode int, ops ...NewAPIErrorOptions) *NewAPIError {
 	e := &NewAPIError{
-		Err: err,
+		Err:   err,
+		cause: err,
 		RelayError: OpenAIError{
 			Message: err.Error(),
 			Type:    string(errorCode),
