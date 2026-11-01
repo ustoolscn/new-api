@@ -1095,19 +1095,25 @@ func UpdateSelf(c *gin.Context) {
 		common.ApiErrorI18n(c, i18n.MsgInvalidParams)
 		return
 	}
-	user.Username = strings.TrimSpace(user.Username)
-	if user.Username == "" {
-		common.ApiErrorI18n(c, i18n.MsgInvalidParams)
-		return
-	}
-	if rejectReservedUsername(c, user.Username) {
-		return
+	// Profile and password forms submit only the fields they change. An omitted
+	// username must remain untouched, while an explicitly empty one is invalid.
+	if _, supplied := requestData["username"]; supplied {
+		user.Username = strings.TrimSpace(user.Username)
+		if user.Username == "" {
+			common.ApiErrorI18n(c, i18n.MsgInvalidParams)
+			return
+		}
+		if rejectReservedUsername(c, user.Username) {
+			return
+		}
 	}
 
 	if user.Password == "" {
-		user.Password = "$I_LOVE_U" // make Validator happy :)
+		err = common.Validate.StructExcept(&user, "Password")
+	} else {
+		err = common.Validate.Struct(&user)
 	}
-	if err := common.Validate.Struct(&user); err != nil {
+	if err != nil {
 		common.ApiErrorI18n(c, i18n.MsgInvalidInput)
 		return
 	}
@@ -1117,10 +1123,6 @@ func UpdateSelf(c *gin.Context) {
 		Username:    user.Username,
 		Password:    user.Password,
 		DisplayName: user.DisplayName,
-	}
-	if user.Password == "$I_LOVE_U" {
-		user.Password = "" // rollback to what it should be
-		cleanUser.Password = ""
 	}
 	updatePassword, err := checkUpdatePassword(user.OriginalPassword, user.Password, cleanUser.Id)
 	if err != nil {
