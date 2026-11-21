@@ -1,6 +1,14 @@
 package model
 
-import "testing"
+import (
+	"net/http/httptest"
+	"testing"
+	"time"
+
+	"github.com/QuantumNous/new-api/common"
+	"github.com/gin-gonic/gin"
+	"github.com/stretchr/testify/require"
+)
 
 func TestCacheTokensFromLogOther(t *testing.T) {
 	tests := []struct {
@@ -40,10 +48,112 @@ func TestCacheTokensFromLogOther(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			if got := cacheTokensFromLogOther(tt.other); got != tt.want {
-				t.Fatalf("cacheTokensFromLogOther() = %d, want %d", got, tt.want)
+			if got := cacheTokenStatsFromLogOther(tt.other).Total; got != tt.want {
+				t.Fatalf("cache token total = %d, want %d", got, tt.want)
 			}
 		})
+	}
+}
+
+func TestSumUsedQuotaPreservesAnthropicInputWhenModelUsesMixedFormats(t *testing.T) {
+	truncateTables(t)
+	now := time.Now().Unix()
+	logs := []Log{
+		{
+			Username: "alice", Type: LogTypeConsume, ModelName: "shared-model", CreatedAt: now,
+			PromptTokens: 50, CompletionTokens: 100, Quota: 10,
+			Other: `{"usage_semantic":"anthropic","cache_tokens":10000,"cache_write_tokens":2000,"cache_creation_tokens":2000,"cache_creation_tokens_5m":500}`,
+		},
+		{
+			Username: "alice", Type: LogTypeConsume, ModelName: "shared-model", CreatedAt: now - 120,
+			PromptTokens: 10, CompletionTokens: 20, Quota: 10,
+			Other: `{"claude":true,"cache_tokens":1000}`,
+		},
+		{
+			Username: "alice", Type: LogTypeConsume, ModelName: "shared-model", CreatedAt: now,
+			PromptTokens: 400, CompletionTokens: 10, Quota: 10,
+			Other: `{"usage_semantic":"openai","claude":true,"cache_tokens":300}`,
+		},
+		{
+			Username: "alice", Type: LogTypeConsume, ModelName: "other-model", CreatedAt: now,
+			PromptTokens: 25, CompletionTokens: 5, Quota: 1,
+			Other: `{"cache_tokens":5}`,
+		},
+	}
+	require.NoError(t, LOG_DB.Create(&logs).Error)
+
+	stat, err := SumUsedQuota(LogTypeConsume, 0, 0, "", "alice", "", 0, "", "", "")
+	require.NoError(t, err)
+	require.Equal(t, 31, stat.Quota)
+	require.Equal(t, 485, stat.PromptTokens)
+	require.Equal(t, 180, stat.InputTokens)
+	require.Equal(t, 13305, stat.CacheTokens)
+	require.Equal(t, 135, stat.CompletionTokens)
+	require.Equal(t, 3, stat.Rpm)
+	require.Equal(t, 12590, stat.Tpm)
+	require.Equal(t, []ModelTokenStat{
+		{ModelName: "shared-model", Quota: 30, PromptTokens: 460, InputTokens: 160, CacheTokens: 13300, CompletionTokens: 130},
+		{ModelName: "other-model", Quota: 1, PromptTokens: 25, InputTokens: 20, CacheTokens: 5, CompletionTokens: 5},
+	}, stat.ModelStats)
+}
+
+func TestRecordConsumeLogExportsFullAnthropicTokensToRankings(t *testing.T) {
+	truncateTables(t)
+	oldDataExportEnabled := common.DataExportEnabled
+	common.DataExportEnabled = true
+	CacheQuotaDataLock.Lock()
+	oldQuotaDataCache := CacheQuotaData
+	CacheQuotaData = make(map[string]*QuotaData)
+	CacheQuotaDataLock.Unlock()
+	t.Cleanup(func() {
+		common.DataExportEnabled = oldDataExportEnabled
+		CacheQuotaDataLock.Lock()
+		CacheQuotaData = oldQuotaDataCache
+		CacheQuotaDataLock.Unlock()
+	})
+
+	ctx, _ := gin.CreateTestContext(httptest.NewRecorder())
+	ctx.Request = httptest.NewRequest("POST", "/v1/messages", nil)
+	ctx.Set("username", "alice")
+
+	RecordConsumeLog(ctx, 1, RecordConsumeLogParams{
+		ModelName: "messages-model", PromptTokens: 50, CompletionTokens: 100,
+		Other: map[string]interface{}{
+			"usage_semantic": "anthropic", "cache_tokens": 10000,
+			"cache_write_tokens": 2000, "cache_creation_tokens": 2000, "cache_creation_tokens_5m": 500,
+		},
+	})
+	RecordConsumeLog(ctx, 1, RecordConsumeLogParams{
+		ModelName: "chat-model", PromptTokens: 400, CompletionTokens: 10,
+		Other: map[string]interface{}{"usage_semantic": "openai", "claude": true, "cache_tokens": 300},
+	})
+	RecordConsumeLog(ctx, 1, RecordConsumeLogParams{
+		ModelName: "cache-only-model",
+		Other:     map[string]interface{}{"claude": true, "cache_tokens": 8, "cache_creation_tokens_5m": 2},
+	})
+	SaveQuotaDataCache()
+
+	// Aggregated rows written before the fix still contribute their stored counts.
+	require.NoError(t, DB.Create(&QuotaData{ModelName: "old-model", CreatedAt: 3600, TokenUsed: 20}).Error)
+
+	totals, err := GetRankingQuotaTotals(0, 0)
+	require.NoError(t, err)
+	require.Equal(t, []RankingQuotaTotal{
+		{ModelName: "messages-model", TotalTokens: 12150},
+		{ModelName: "chat-model", TotalTokens: 410},
+		{ModelName: "old-model", TotalTokens: 20},
+		{ModelName: "cache-only-model", TotalTokens: 10},
+	}, totals)
+
+	buckets, err := GetRankingQuotaBuckets(0, 0, 3600)
+	require.NoError(t, err)
+	require.Len(t, buckets, len(totals))
+	byModel := make(map[string]int64, len(buckets))
+	for _, bucket := range buckets {
+		byModel[bucket.ModelName] = bucket.Tokens
+	}
+	for _, total := range totals {
+		require.Equal(t, total.TotalTokens, byModel[total.ModelName], total.ModelName)
 	}
 }
 

@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/QuantumNous/new-api/common"
+	"github.com/QuantumNous/new-api/dto"
 	"github.com/QuantumNous/new-api/logger"
 	"github.com/QuantumNous/new-api/types"
 
@@ -365,13 +366,20 @@ func RecordConsumeLog(c *gin.Context, userId int, params RecordConsumeLogParams)
 		logger.LogError(c, "failed to record log: "+err.Error())
 	}
 	if common.DataExportEnabled {
+		tokenUsed := params.PromptTokens + params.CompletionTokens
+		semantic, _ := params.Other["usage_semantic"].(string)
+		legacyClaude, _ := params.Other["claude"].(bool)
+		if usesAnthropicPromptTokens(semantic, legacyClaude) {
+			// Anthropic prompt counts exclude both cache reads and writes.
+			tokenUsed += cacheTokenStatsFromLogOther(otherStr).Total
+		}
 		LogQuotaData(QuotaDataLogParams{
 			UserID:    userId,
 			Username:  username,
 			ModelName: params.ModelName,
 			Quota:     params.Quota,
 			CreatedAt: createdAt,
-			TokenUsed: params.PromptTokens + params.CompletionTokens,
+			TokenUsed: tokenUsed,
 			UseGroup:  params.Group,
 			TokenID:   params.TokenId,
 			ChannelID: params.ChannelId,
@@ -604,19 +612,29 @@ type ModelTokenStat struct {
 	PromptTokens     int    `json:"prompt_tokens"`
 	CacheTokens      int    `json:"cache_tokens"`
 	CompletionTokens int    `json:"completion_tokens"`
-	cacheReadTokens  int    `gorm:"-"`
 }
 
 type logOtherTokenUsage struct {
-	CacheTokens           int `json:"cache_tokens"`
-	CacheCreationTokens   int `json:"cache_creation_tokens"`
-	CacheCreationTokens5m int `json:"cache_creation_tokens_5m"`
-	CacheCreationTokens1h int `json:"cache_creation_tokens_1h"`
+	UsageSemantic         string `json:"usage_semantic"`
+	Claude                bool   `json:"claude"`
+	CacheTokens           int    `json:"cache_tokens"`
+	CacheWriteTokens      int    `json:"cache_write_tokens"`
+	CacheCreationTokens   int    `json:"cache_creation_tokens"`
+	CacheCreationTokens5m int    `json:"cache_creation_tokens_5m"`
+	CacheCreationTokens1h int    `json:"cache_creation_tokens_1h"`
 }
 
 type cacheTokenStats struct {
-	Read  int
-	Total int
+	Read                int
+	Total               int
+	PromptExcludesCache bool
+}
+
+func usesAnthropicPromptTokens(semantic string, legacyClaude bool) bool {
+	if semantic != "" {
+		return semantic == dto.BillingUsageSemanticAnthropic
+	}
+	return legacyClaude
 }
 
 func cacheTokenStatsFromLogOther(other string) cacheTokenStats {
@@ -627,26 +645,18 @@ func cacheTokenStatsFromLogOther(other string) cacheTokenStats {
 	if err := common.UnmarshalJsonStr(other, &usage); err != nil {
 		return cacheTokenStats{}
 	}
-	cacheWriteTokens := usage.CacheCreationTokens
-	if usage.CacheCreationTokens5m > 0 || usage.CacheCreationTokens1h > 0 {
-		cacheWriteTokens = usage.CacheCreationTokens5m + usage.CacheCreationTokens1h
+	cacheWriteTokens := usage.CacheWriteTokens
+	if cacheWriteTokens == 0 {
+		cacheWriteTokens = usage.CacheCreationTokens
+		if usage.CacheCreationTokens5m > 0 || usage.CacheCreationTokens1h > 0 {
+			cacheWriteTokens = usage.CacheCreationTokens5m + usage.CacheCreationTokens1h
+		}
 	}
 	return cacheTokenStats{
-		Read:  usage.CacheTokens,
-		Total: usage.CacheTokens + cacheWriteTokens,
+		Read:                usage.CacheTokens,
+		Total:               usage.CacheTokens + cacheWriteTokens,
+		PromptExcludesCache: usesAnthropicPromptTokens(usage.UsageSemantic, usage.Claude),
 	}
-}
-
-func cacheTokensFromLogOther(other string) int {
-	return cacheTokenStatsFromLogOther(other).Total
-}
-
-func visibleInputTokens(promptTokens int, cacheReadTokens int) int {
-	inputTokens := promptTokens - cacheReadTokens
-	if inputTokens < 0 {
-		return 0
-	}
-	return inputTokens
 }
 
 func applyLogStatFilters(tx *gorm.DB, startTimestamp int64, endTimestamp int64, modelName string, username string, tokenName string, channel int, group string, requestId string, upstreamRequestId string) (*gorm.DB, error) {
@@ -681,40 +691,45 @@ func applyLogStatFilters(tx *gorm.DB, startTimestamp int64, endTimestamp int64, 
 	return tx.Where("type = ?", LogTypeConsume), nil
 }
 
-func applyCacheTokenCandidateFilter(tx *gorm.DB) *gorm.DB {
-	return tx.Where(
-		"(other LIKE ? OR other LIKE ? OR other LIKE ? OR other LIKE ?)",
-		`%"cache_tokens"%`,
-		`%"cache_creation_tokens"%`,
-		`%"cache_creation_tokens_5m"%`,
-		`%"cache_creation_tokens_1h"%`,
-	)
-}
+func applyLogCacheTokenStats(tx *gorm.DB, recentSince int64, stat *Stat, modelStats map[string]*ModelTokenStat) error {
+	// ClickHouse log IDs are not unique, so stream the rows instead of paging by ID.
+	rows, err := tx.
+		Where("(other LIKE ? OR other LIKE ? OR other LIKE ? OR other LIKE ? OR other LIKE ?)",
+			`%"cache_tokens"%`,
+			`%"cache_write_tokens"%`,
+			`%"cache_creation_tokens"%`,
+			`%"cache_creation_tokens_5m"%`,
+			`%"cache_creation_tokens_1h"%`,
+		).
+		Select("COALESCE(model_name, ''), COALESCE(created_at, 0), other").
+		Rows()
+	if err != nil {
+		return err
+	}
+	defer rows.Close()
 
-func sumCacheTokenStatsFromLogQuery(tx *gorm.DB, modelStats map[string]*ModelTokenStat) (cacheTokenStats, error) {
-	var stats cacheTokenStats
-	var logs []Log
-	err := applyCacheTokenCandidateFilter(tx).
-		Select("id", "model_name", "other").
-		FindInBatches(&logs, 1000, func(_ *gorm.DB, _ int) error {
-			for _, log := range logs {
-				logCacheStats := cacheTokenStatsFromLogOther(log.Other)
-				stats.Read += logCacheStats.Read
-				stats.Total += logCacheStats.Total
-				if modelStats == nil {
-					continue
-				}
-				modelStat, ok := modelStats[log.ModelName]
-				if !ok {
-					modelStat = &ModelTokenStat{ModelName: log.ModelName}
-					modelStats[log.ModelName] = modelStat
-				}
-				modelStat.CacheTokens += logCacheStats.Total
-				modelStat.cacheReadTokens += logCacheStats.Read
+	for rows.Next() {
+		var modelName, other string
+		var createdAt int64
+		if err := rows.Scan(&modelName, &createdAt, &other); err != nil {
+			return err
+		}
+		cache := cacheTokenStatsFromLogOther(other)
+		readInPrompt := cache.Read
+		if cache.PromptExcludesCache {
+			readInPrompt = 0
+			if createdAt >= recentSince {
+				stat.Tpm += cache.Total
 			}
-			return nil
-		}).Error
-	return stats, err
+		}
+		stat.CacheTokens += cache.Total
+		stat.InputTokens -= readInPrompt
+		if modelStat := modelStats[modelName]; modelStat != nil {
+			modelStat.CacheTokens += cache.Total
+			modelStat.InputTokens -= readInPrompt
+		}
+	}
+	return rows.Err()
 }
 
 func collectModelTokenStatsFromLogQuery(tx *gorm.DB) (map[string]*ModelTokenStat, error) {
@@ -728,7 +743,7 @@ func collectModelTokenStatsFromLogQuery(tx *gorm.DB) (map[string]*ModelTokenStat
 
 	modelStats := make(map[string]*ModelTokenStat, len(rows))
 	for i := range rows {
-		rows[i].InputTokens = visibleInputTokens(rows[i].PromptTokens, 0)
+		rows[i].InputTokens = rows[i].PromptTokens
 		modelStats[rows[i].ModelName] = &rows[i]
 	}
 	return modelStats, nil
@@ -737,8 +752,7 @@ func collectModelTokenStatsFromLogQuery(tx *gorm.DB) (map[string]*ModelTokenStat
 func modelTokenStatsMapToSortedSlice(modelStats map[string]*ModelTokenStat) []ModelTokenStat {
 	items := make([]ModelTokenStat, 0, len(modelStats))
 	for _, item := range modelStats {
-		item.InputTokens = visibleInputTokens(item.PromptTokens, item.cacheReadTokens)
-		item.cacheReadTokens = 0
+		item.InputTokens = max(item.InputTokens, 0)
 		items = append(items, *item)
 	}
 	sort.Slice(items, func(i, j int) bool {
@@ -787,14 +801,14 @@ func SumUsedQuota(logType int, startTimestamp int64, endTimestamp int64, modelNa
 	}
 
 	// 只统计最近60秒的rpm和tpm
-	rpmTpmQuery = rpmTpmQuery.Where("created_at >= ?", time.Now().Add(-60*time.Second).Unix())
+	recentSince := time.Now().Add(-60 * time.Second).Unix()
+	rpmTpmQuery = rpmTpmQuery.Where("created_at >= ?", recentSince)
 
 	// 执行查询
 	if err := tx.Scan(&stat).Error; err != nil {
 		common.SysError("failed to query log stat: " + err.Error())
 		return stat, errors.New("查询统计数据失败")
 	}
-	stat.InputTokens = visibleInputTokens(stat.PromptTokens, 0)
 	if err := rpmTpmQuery.Scan(&stat).Error; err != nil {
 		common.SysError("failed to query rpm/tpm stat: " + err.Error())
 		return stat, errors.New("查询统计数据失败")
@@ -836,13 +850,12 @@ func SumUsedQuota(logType int, startTimestamp int64, endTimestamp int64, modelNa
 	if err != nil {
 		return stat, err
 	}
-	cacheStats, err := sumCacheTokenStatsFromLogQuery(cacheQuery, modelStats)
-	if err != nil {
+	stat.InputTokens = stat.PromptTokens
+	if err := applyLogCacheTokenStats(cacheQuery, recentSince, &stat, modelStats); err != nil {
 		common.SysError("failed to query log cache token stat: " + err.Error())
 		return stat, errors.New("查询统计数据失败")
 	}
-	stat.CacheTokens = cacheStats.Total
-	stat.InputTokens = visibleInputTokens(stat.PromptTokens, cacheStats.Read)
+	stat.InputTokens = max(stat.InputTokens, 0)
 	stat.ModelStats = modelTokenStatsMapToSortedSlice(modelStats)
 
 	return stat, nil
