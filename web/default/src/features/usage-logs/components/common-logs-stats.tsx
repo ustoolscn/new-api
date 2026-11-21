@@ -55,11 +55,13 @@ function ModelStatBadge(props: {
   modelName: string
   quotaValue: string
   inputTokens: number
-  cacheTokens: number
+  cacheReadTokens: number
+  cacheWriteTokens: number
   completionTokens: number
   usageLabel: string
   inputLabel: string
-  cacheLabel: string
+  cacheReadLabel: string
+  cacheWriteLabel: string
   outputLabel: string
 }) {
   const modelName = props.modelName || '-'
@@ -82,9 +84,15 @@ function ModelStatBadge(props: {
         </span>
       </span>
       <span className='text-muted-foreground inline-flex items-center gap-1'>
-        <span>{props.cacheLabel}</span>
+        <span>{props.cacheReadLabel}</span>
         <span className='text-foreground/85 font-mono font-semibold tabular-nums'>
-          {formatTokenStat(props.cacheTokens)}
+          {formatTokenStat(props.cacheReadTokens)}
+        </span>
+      </span>
+      <span className='text-muted-foreground inline-flex items-center gap-1'>
+        <span>{props.cacheWriteLabel}</span>
+        <span className='text-foreground/85 font-mono font-semibold tabular-nums'>
+          {formatTokenStat(props.cacheWriteTokens)}
         </span>
       </span>
       <span className='text-muted-foreground inline-flex items-center gap-1'>
@@ -127,11 +135,12 @@ export function CommonLogsStats() {
 
   if (isLoading) {
     return (
-      <div className='flex items-center gap-2'>
+      <div className='flex flex-wrap items-center gap-2'>
         <Skeleton className='h-7 w-[150px] rounded-md' />
         <Skeleton className='h-7 w-[100px] rounded-md' />
         <Skeleton className='h-7 w-[120px] rounded-md' />
         <Skeleton className='h-7 w-[130px] rounded-md' />
+        <Skeleton className='h-7 w-[110px] rounded-md' />
         <Skeleton className='h-7 w-[110px] rounded-md' />
         <Skeleton className='h-7 w-[130px] rounded-md' />
       </div>
@@ -141,7 +150,8 @@ export function CommonLogsStats() {
   const modelStats = stats?.model_stats || []
   const usageLabel = t('Usage')
   const inputLabel = t('Input Tokens')
-  const cacheLabel = t('Cache')
+  const cacheReadLabel = t('Cache Read')
+  const cacheWriteLabel = t('Cache Write')
   const outputLabel = t('Output Tokens')
 
   return (
@@ -168,9 +178,14 @@ export function CommonLogsStats() {
           accent='bg-emerald-500/70'
         />
         <StatBadge
-          label={cacheLabel}
-          value={formatTokenStat(stats?.cache_tokens)}
+          label={cacheReadLabel}
+          value={formatTokenStat(stats?.cache_read_tokens)}
           accent='bg-amber-500/70'
+        />
+        <StatBadge
+          label={cacheWriteLabel}
+          value={formatTokenStat(stats?.cache_write_tokens)}
+          accent='bg-orange-500/70'
         />
         <StatBadge
           label={outputLabel}
@@ -188,11 +203,13 @@ export function CommonLogsStats() {
                 sensitiveVisible ? formatLogQuota(item.quota || 0) : '••••'
               }
               inputTokens={item.input_tokens}
-              cacheTokens={item.cache_tokens}
+              cacheReadTokens={item.cache_read_tokens}
+              cacheWriteTokens={item.cache_write_tokens}
               completionTokens={item.completion_tokens}
               usageLabel={usageLabel}
               inputLabel={inputLabel}
-              cacheLabel={cacheLabel}
+              cacheReadLabel={cacheReadLabel}
+              cacheWriteLabel={cacheWriteLabel}
               outputLabel={outputLabel}
             />
           ))}

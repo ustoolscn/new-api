@@ -371,7 +371,7 @@ func RecordConsumeLog(c *gin.Context, userId int, params RecordConsumeLogParams)
 		legacyClaude, _ := params.Other["claude"].(bool)
 		if usesAnthropicPromptTokens(semantic, legacyClaude) {
 			// Anthropic prompt counts exclude both cache reads and writes.
-			tokenUsed += cacheTokenStatsFromLogOther(otherStr).Total
+			tokenUsed += cacheTokenStatsFromLogOther(otherStr).total()
 		}
 		LogQuotaData(QuotaDataLogParams{
 			UserID:    userId,
@@ -601,6 +601,8 @@ type Stat struct {
 	InputTokens      int              `json:"input_tokens"`
 	PromptTokens     int              `json:"prompt_tokens"`
 	CacheTokens      int              `json:"cache_tokens"`
+	CacheReadTokens  int              `json:"cache_read_tokens"`
+	CacheWriteTokens int              `json:"cache_write_tokens"`
 	CompletionTokens int              `json:"completion_tokens"`
 	ModelStats       []ModelTokenStat `json:"model_stats" gorm:"-"`
 }
@@ -611,6 +613,8 @@ type ModelTokenStat struct {
 	InputTokens      int    `json:"input_tokens"`
 	PromptTokens     int    `json:"prompt_tokens"`
 	CacheTokens      int    `json:"cache_tokens"`
+	CacheReadTokens  int    `json:"cache_read_tokens"`
+	CacheWriteTokens int    `json:"cache_write_tokens"`
 	CompletionTokens int    `json:"completion_tokens"`
 }
 
@@ -626,8 +630,12 @@ type logOtherTokenUsage struct {
 
 type cacheTokenStats struct {
 	Read                int
-	Total               int
+	Write               int
 	PromptExcludesCache bool
+}
+
+func (s cacheTokenStats) total() int {
+	return s.Read + s.Write
 }
 
 func usesAnthropicPromptTokens(semantic string, legacyClaude bool) bool {
@@ -654,7 +662,7 @@ func cacheTokenStatsFromLogOther(other string) cacheTokenStats {
 	}
 	return cacheTokenStats{
 		Read:                usage.CacheTokens,
-		Total:               usage.CacheTokens + cacheWriteTokens,
+		Write:               cacheWriteTokens,
 		PromptExcludesCache: usesAnthropicPromptTokens(usage.UsageSemantic, usage.Claude),
 	}
 }
@@ -701,7 +709,7 @@ func applyLogCacheTokenStats(tx *gorm.DB, recentSince int64, stat *Stat, modelSt
 			`%"cache_creation_tokens_5m"%`,
 			`%"cache_creation_tokens_1h"%`,
 		).
-		Select("COALESCE(model_name, ''), COALESCE(created_at, 0), other").
+		Select("COALESCE(model_name, ''), COALESCE(created_at, 0), COALESCE(prompt_tokens, 0), other").
 		Rows()
 	if err != nil {
 		return err
@@ -711,22 +719,25 @@ func applyLogCacheTokenStats(tx *gorm.DB, recentSince int64, stat *Stat, modelSt
 	for rows.Next() {
 		var modelName, other string
 		var createdAt int64
-		if err := rows.Scan(&modelName, &createdAt, &other); err != nil {
+		var promptTokens int
+		if err := rows.Scan(&modelName, &createdAt, &promptTokens, &other); err != nil {
 			return err
 		}
 		cache := cacheTokenStatsFromLogOther(other)
-		readInPrompt := cache.Read
+		cacheInPrompt := min(max(promptTokens, 0), max(cache.total(), 0))
 		if cache.PromptExcludesCache {
-			readInPrompt = 0
+			cacheInPrompt = 0
 			if createdAt >= recentSince {
-				stat.Tpm += cache.Total
+				stat.Tpm += cache.total()
 			}
 		}
-		stat.CacheTokens += cache.Total
-		stat.InputTokens -= readInPrompt
+		stat.CacheReadTokens += cache.Read
+		stat.CacheWriteTokens += cache.Write
+		stat.InputTokens -= cacheInPrompt
 		if modelStat := modelStats[modelName]; modelStat != nil {
-			modelStat.CacheTokens += cache.Total
-			modelStat.InputTokens -= readInPrompt
+			modelStat.CacheReadTokens += cache.Read
+			modelStat.CacheWriteTokens += cache.Write
+			modelStat.InputTokens -= cacheInPrompt
 		}
 	}
 	return rows.Err()
@@ -753,6 +764,7 @@ func modelTokenStatsMapToSortedSlice(modelStats map[string]*ModelTokenStat) []Mo
 	items := make([]ModelTokenStat, 0, len(modelStats))
 	for _, item := range modelStats {
 		item.InputTokens = max(item.InputTokens, 0)
+		item.CacheTokens = item.CacheReadTokens + item.CacheWriteTokens
 		items = append(items, *item)
 	}
 	sort.Slice(items, func(i, j int) bool {
@@ -856,6 +868,7 @@ func SumUsedQuota(logType int, startTimestamp int64, endTimestamp int64, modelNa
 		return stat, errors.New("查询统计数据失败")
 	}
 	stat.InputTokens = max(stat.InputTokens, 0)
+	stat.CacheTokens = stat.CacheReadTokens + stat.CacheWriteTokens
 	stat.ModelStats = modelTokenStatsMapToSortedSlice(modelStats)
 
 	return stat, nil

@@ -12,14 +12,14 @@ import (
 
 func TestCacheTokensFromLogOther(t *testing.T) {
 	tests := []struct {
-		name  string
-		other string
-		want  int
+		name      string
+		other     string
+		wantRead  int
+		wantWrite int
 	}{
 		{
 			name:  "empty payload",
 			other: "",
-			want:  0,
 		},
 		{
 			name: "cache read and aggregate cache write",
@@ -27,7 +27,8 @@ func TestCacheTokensFromLogOther(t *testing.T) {
 				"cache_tokens": 12,
 				"cache_creation_tokens": 34
 			}`,
-			want: 46,
+			wantRead:  12,
+			wantWrite: 34,
 		},
 		{
 			name: "split cache writes override aggregate cache write",
@@ -37,20 +38,25 @@ func TestCacheTokensFromLogOther(t *testing.T) {
 				"cache_creation_tokens_5m": 34,
 				"cache_creation_tokens_1h": 56
 			}`,
-			want: 102,
+			wantRead:  12,
+			wantWrite: 90,
+		},
+		{
+			name:      "normalized write count takes precedence over legacy fields",
+			other:     `{"cache_write_tokens":100,"cache_creation_tokens":100,"cache_creation_tokens_5m":70}`,
+			wantWrite: 100,
 		},
 		{
 			name:  "invalid payload",
 			other: "{",
-			want:  0,
 		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			if got := cacheTokenStatsFromLogOther(tt.other).Total; got != tt.want {
-				t.Fatalf("cache token total = %d, want %d", got, tt.want)
-			}
+			got := cacheTokenStatsFromLogOther(tt.other)
+			require.Equal(t, tt.wantRead, got.Read)
+			require.Equal(t, tt.wantWrite, got.Write)
 		})
 	}
 }
@@ -72,7 +78,7 @@ func TestSumUsedQuotaPreservesAnthropicInputWhenModelUsesMixedFormats(t *testing
 		{
 			Username: "alice", Type: LogTypeConsume, ModelName: "shared-model", CreatedAt: now,
 			PromptTokens: 400, CompletionTokens: 10, Quota: 10,
-			Other: `{"usage_semantic":"openai","claude":true,"cache_tokens":300}`,
+			Other: `{"usage_semantic":"openai","claude":true,"cache_tokens":300,"cache_write_tokens":40}`,
 		},
 		{
 			Username: "alice", Type: LogTypeConsume, ModelName: "other-model", CreatedAt: now,
@@ -86,14 +92,16 @@ func TestSumUsedQuotaPreservesAnthropicInputWhenModelUsesMixedFormats(t *testing
 	require.NoError(t, err)
 	require.Equal(t, 31, stat.Quota)
 	require.Equal(t, 485, stat.PromptTokens)
-	require.Equal(t, 180, stat.InputTokens)
-	require.Equal(t, 13305, stat.CacheTokens)
+	require.Equal(t, 140, stat.InputTokens)
+	require.Equal(t, 13345, stat.CacheTokens)
+	require.Equal(t, 11305, stat.CacheReadTokens)
+	require.Equal(t, 2040, stat.CacheWriteTokens)
 	require.Equal(t, 135, stat.CompletionTokens)
 	require.Equal(t, 3, stat.Rpm)
 	require.Equal(t, 12590, stat.Tpm)
 	require.Equal(t, []ModelTokenStat{
-		{ModelName: "shared-model", Quota: 30, PromptTokens: 460, InputTokens: 160, CacheTokens: 13300, CompletionTokens: 130},
-		{ModelName: "other-model", Quota: 1, PromptTokens: 25, InputTokens: 20, CacheTokens: 5, CompletionTokens: 5},
+		{ModelName: "shared-model", Quota: 30, PromptTokens: 460, InputTokens: 120, CacheTokens: 13340, CacheReadTokens: 11300, CacheWriteTokens: 2040, CompletionTokens: 130},
+		{ModelName: "other-model", Quota: 1, PromptTokens: 25, InputTokens: 20, CacheTokens: 5, CacheReadTokens: 5, CompletionTokens: 5},
 	}, stat.ModelStats)
 }
 
@@ -228,8 +236,8 @@ func TestSumUsedQuotaSummarizesTokensAndCacheTokens(t *testing.T) {
 	if stat.PromptTokens != 600 {
 		t.Fatalf("stat.PromptTokens = %d, want 600", stat.PromptTokens)
 	}
-	if stat.InputTokens != 576 {
-		t.Fatalf("stat.InputTokens = %d, want 576", stat.InputTokens)
+	if stat.InputTokens != 562 {
+		t.Fatalf("stat.InputTokens = %d, want 562", stat.InputTokens)
 	}
 	if stat.CompletionTokens != 150 {
 		t.Fatalf("stat.CompletionTokens = %d, want 150", stat.CompletionTokens)
@@ -237,6 +245,8 @@ func TestSumUsedQuotaSummarizesTokensAndCacheTokens(t *testing.T) {
 	if stat.CacheTokens != 38 {
 		t.Fatalf("stat.CacheTokens = %d, want 38", stat.CacheTokens)
 	}
+	require.Equal(t, 24, stat.CacheReadTokens)
+	require.Equal(t, 14, stat.CacheWriteTokens)
 }
 
 func TestSumUsedQuotaGroupsTokenStatsByModelName(t *testing.T) {
@@ -299,7 +309,7 @@ func TestSumUsedQuotaGroupsTokenStatsByModelName(t *testing.T) {
 	}
 
 	gptA := byModel["gpt-a"]
-	if gptA.Quota != 40 || gptA.PromptTokens != 400 || gptA.InputTokens != 392 || gptA.CacheTokens != 10 || gptA.CompletionTokens != 40 {
+	if gptA.Quota != 40 || gptA.PromptTokens != 400 || gptA.InputTokens != 390 || gptA.CacheTokens != 10 || gptA.CompletionTokens != 40 {
 		t.Fatalf("gpt-a stats = %+v", gptA)
 	}
 

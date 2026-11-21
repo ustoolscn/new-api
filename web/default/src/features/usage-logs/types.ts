@@ -321,6 +321,8 @@ export interface LogStatistics {
   input_tokens: number
   prompt_tokens: number
   cache_tokens: number
+  cache_read_tokens: number
+  cache_write_tokens: number
   completion_tokens: number
   model_stats?: ModelTokenStatistics[]
 }
@@ -331,6 +333,8 @@ export interface ModelTokenStatistics {
   input_tokens: number
   prompt_tokens: number
   cache_tokens: number
+  cache_read_tokens: number
+  cache_write_tokens: number
   completion_tokens: number
 }
 
