@@ -91,6 +91,10 @@ Keep this index current. Whenever directories, major modules, routing boundaries
 
 ### Operational Index
 
+- Native OpenAI-compatible Responses SSE settlement reads upstream usage from completed, incomplete, failed, and cancelled terminal events. When usage is missing, it estimates generated text, tool argument, reasoning, and refusal tokens, and can estimate input for streams that started without an explicit upstream failure. Channel-adjusted usage bypasses local estimates.
+
+- Relay error logs and text consumption logs with both zero billed quota and zero accounted tokens include a redacted request snapshot in `other.admin_info.request_snapshot`. The admin usage-log details display and copy the saved snapshot. The request body is captured up to 2 MiB, subject to the same limit after JSON serialization. Oversized bodies retain request metadata and are marked truncated. Prior logs contain only the data saved at request time.
+
 - Per-channel opt-in text usage adjustment is stored at `channels.setting.usage_adjustment`. `service/usage_adjustment.go` samples cache/output percentage ranges once per upstream response and rewrites recognized JSON/SSE usage before parsing, preserving total input while transferring cache-read differences to ordinary input. Client usage and settlement share the adjusted counts; original/adjusted counts, rules, and before/after quota amounts are admin-only under `other.admin_info.usage_adjustment`. The original amount is evaluated with the same request pricing without settling again; unavailable historical or unmatched amounts remain absent. Configuration, protocol scope, limits and rollback are documented in `docs/usage-adjustment.md`; dedicated audio/image/task/realtime routes are outside this feature.
 
 - Environment variables are loaded from `.env` via `godotenv.Overload(".env")` in `main.go`; application code reads them primarily through `common.InitEnv()`, `common.GetEnvOrDefault*`, direct `os.Getenv`, and frontend `VITE_` variables.

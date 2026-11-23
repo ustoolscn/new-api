@@ -316,18 +316,19 @@ func RecordErrorLog(c *gin.Context, userId int, channelId int, modelName string,
 }
 
 type RecordConsumeLogParams struct {
-	ChannelId        int                    `json:"channel_id"`
-	PromptTokens     int                    `json:"prompt_tokens"`
-	CompletionTokens int                    `json:"completion_tokens"`
-	ModelName        string                 `json:"model_name"`
-	TokenName        string                 `json:"token_name"`
-	Quota            int                    `json:"quota"`
-	Content          string                 `json:"content"`
-	TokenId          int                    `json:"token_id"`
-	UseTimeSeconds   int                    `json:"use_time_seconds"`
-	IsStream         bool                   `json:"is_stream"`
-	Group            string                 `json:"group"`
-	Other            map[string]interface{} `json:"other"`
+	ChannelId              int                    `json:"channel_id"`
+	PromptTokens           int                    `json:"prompt_tokens"`
+	CompletionTokens       int                    `json:"completion_tokens"`
+	ModelName              string                 `json:"model_name"`
+	TokenName              string                 `json:"token_name"`
+	Quota                  int                    `json:"quota"`
+	Content                string                 `json:"content"`
+	TokenId                int                    `json:"token_id"`
+	UseTimeSeconds         int                    `json:"use_time_seconds"`
+	IsStream               bool                   `json:"is_stream"`
+	Group                  string                 `json:"group"`
+	Other                  map[string]interface{} `json:"other"`
+	CaptureRequestSnapshot bool                   `json:"-"`
 }
 
 func RecordConsumeLog(c *gin.Context, userId int, params RecordConsumeLogParams) {
@@ -335,6 +336,19 @@ func RecordConsumeLog(c *gin.Context, userId int, params RecordConsumeLogParams)
 		return
 	}
 	logger.LogInfo(c, fmt.Sprintf("record consume log: userId=%d, params=%s", userId, common.GetJsonString(params)))
+	if params.CaptureRequestSnapshot {
+		if snapshot := common.BuildRequestSnapshot(c); len(snapshot) > 0 {
+			if params.Other == nil {
+				params.Other = make(map[string]any)
+			}
+			adminInfo, ok := params.Other["admin_info"].(map[string]any)
+			if !ok || adminInfo == nil {
+				adminInfo = make(map[string]any)
+				params.Other["admin_info"] = adminInfo
+			}
+			adminInfo["request_snapshot"] = snapshot
+		}
+	}
 	username := c.GetString("username")
 	requestId := c.GetString(common.RequestIdKey)
 	upstreamRequestId := c.GetString(common.UpstreamRequestIdKey)

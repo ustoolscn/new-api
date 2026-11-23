@@ -1,4 +1,4 @@
-package controller
+package common
 
 import (
 	"fmt"
@@ -6,13 +6,13 @@ import (
 	"net/url"
 	"strings"
 
-	"github.com/QuantumNous/new-api/common"
 	"github.com/gin-gonic/gin"
 )
 
-const errorRequestSnapshotBodyLimit = 16 * 1024
+const requestSnapshotBodyLimit = 2 << 20
+const requestSnapshotMetadataValueLimit = 16 << 10
 
-type errorRequestSnapshot struct {
+type requestSnapshot struct {
 	Method        string              `json:"method,omitempty"`
 	Path          string              `json:"path,omitempty"`
 	Query         string              `json:"query,omitempty"`
@@ -25,12 +25,13 @@ type errorRequestSnapshot struct {
 	BodyError     string              `json:"body_error,omitempty"`
 }
 
-func buildErrorRequestSnapshot(c *gin.Context) map[string]any {
+// BuildRequestSnapshot captures a redacted request for admin-only diagnostics.
+func BuildRequestSnapshot(c *gin.Context) map[string]any {
 	if c == nil || c.Request == nil {
 		return nil
 	}
 	req := c.Request
-	snapshot := errorRequestSnapshot{
+	snapshot := requestSnapshot{
 		Method:        req.Method,
 		ContentType:   req.Header.Get("Content-Type"),
 		ContentLength: req.ContentLength,
@@ -44,30 +45,36 @@ func buildErrorRequestSnapshot(c *gin.Context) map[string]any {
 	bodyBytes, truncated, err := readRequestSnapshotBody(c)
 	if err != nil {
 		snapshot.BodyError = err.Error()
+	} else if truncated {
+		snapshot.BodyTruncated = true
 	} else if len(bodyBytes) > 0 {
-		snapshot.BodyTruncated = truncated
-		if truncated {
-			if strings.HasPrefix(strings.ToLower(snapshot.ContentType), "application/x-www-form-urlencoded") {
-				snapshot.BodyPreview = sanitizeFormSnapshot(string(bodyBytes))
-			} else {
-				snapshot.BodyPreview = sanitizeSnapshotString(string(bodyBytes))
-			}
-		} else if isJSONSnapshotContentType(snapshot.ContentType) {
+		if isJSONSnapshotContentType(snapshot.ContentType) {
 			var parsed any
-			if err := common.Unmarshal(bodyBytes, &parsed); err == nil {
+			if err := Unmarshal(bodyBytes, &parsed); err == nil {
 				snapshot.Body = sanitizeJSONValue(parsed)
 			} else {
-				snapshot.BodyPreview = string(bodyBytes)
-				snapshot.BodyError = fmt.Sprintf("parse json failed: %s", err.Error())
+				snapshot.BodyError = "invalid JSON request body"
 			}
 		} else if isTextSnapshotContentType(snapshot.ContentType) {
 			if strings.HasPrefix(strings.ToLower(snapshot.ContentType), "application/x-www-form-urlencoded") {
 				snapshot.BodyPreview = sanitizeFormSnapshot(string(bodyBytes))
 			} else {
-				snapshot.BodyPreview = string(bodyBytes)
+				snapshot.BodyPreview = MaskSensitiveInfo(string(bodyBytes))
 			}
 		} else {
 			snapshot.BodyPreview = fmt.Sprintf("<%d bytes omitted: %s>", len(bodyBytes), snapshot.ContentType)
+		}
+	}
+	// JSON escaping can make a stored value larger than the incoming body.
+	if snapshot.Body != nil || snapshot.BodyPreview != "" {
+		body := snapshot.Body
+		if body == nil {
+			body = snapshot.BodyPreview
+		}
+		if encoded, err := Marshal(body); err != nil || len(encoded) > requestSnapshotBodyLimit {
+			snapshot.Body = nil
+			snapshot.BodyPreview = ""
+			snapshot.BodyTruncated = true
 		}
 	}
 
@@ -115,25 +122,22 @@ func sanitizeFormSnapshot(raw string) string {
 			continue
 		}
 		for i, item := range items {
-			values[key][i] = sanitizeSnapshotString(item)
+			values[key][i] = MaskSensitiveInfo(item)
 		}
 	}
 	return values.Encode()
 }
 
 func readRequestSnapshotBody(c *gin.Context) ([]byte, bool, error) {
-	storage, err := common.GetBodyStorage(c)
+	storage, err := GetBodyStorage(c)
 	if err != nil {
 		return nil, false, err
+	}
+	if storage.Size() > requestSnapshotBodyLimit {
+		return nil, true, nil
 	}
 	bodyBytes, err := storage.Bytes()
-	if err != nil {
-		return nil, false, err
-	}
-	if len(bodyBytes) <= errorRequestSnapshotBodyLimit {
-		return bodyBytes, false, nil
-	}
-	return append([]byte(nil), bodyBytes[:errorRequestSnapshotBodyLimit]...), true, nil
+	return bodyBytes, false, err
 }
 
 func sanitizeRequestHeaders(headers http.Header) map[string][]string {
@@ -174,7 +178,7 @@ func sanitizeJSONValue(value any) any {
 		}
 		return out
 	case string:
-		return sanitizeSnapshotString(typed)
+		return MaskSensitiveInfo(typed)
 	default:
 		return typed
 	}
@@ -184,10 +188,10 @@ func sanitizeSnapshotString(value string) string {
 	if value == "" {
 		return value
 	}
-	if len(value) > errorRequestSnapshotBodyLimit {
-		value = value[:errorRequestSnapshotBodyLimit] + "...(truncated)"
+	if len(value) > requestSnapshotMetadataValueLimit {
+		value = value[:requestSnapshotMetadataValueLimit] + "...(truncated)"
 	}
-	return common.MaskSensitiveInfo(value)
+	return MaskSensitiveInfo(value)
 }
 
 func isSensitiveSnapshotKey(key string) bool {

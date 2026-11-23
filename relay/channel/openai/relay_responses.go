@@ -7,11 +7,13 @@ import (
 	"strings"
 
 	"github.com/QuantumNous/new-api/common"
+	"github.com/QuantumNous/new-api/constant"
 	"github.com/QuantumNous/new-api/dto"
 	"github.com/QuantumNous/new-api/logger"
 	relaycommon "github.com/QuantumNous/new-api/relay/common"
 	"github.com/QuantumNous/new-api/relay/helper"
 	"github.com/QuantumNous/new-api/service"
+	"github.com/QuantumNous/new-api/service/relayconvert"
 	"github.com/QuantumNous/new-api/types"
 
 	"github.com/gin-gonic/gin"
@@ -79,10 +81,9 @@ func OaiResponsesStreamHandler(c *gin.Context, info *relaycommon.RelayInfo, resp
 
 	var usage = &dto.Usage{}
 	var responseTextBuilder strings.Builder
+	var started, failed bool
 
 	helper.StreamScannerHandler(c, resp, info, func(data string, sr *helper.StreamResult) {
-
-		// 检查当前数据是否包含 completed 状态和 usage 信息
 		var streamResponse dto.ResponsesStreamResponse
 		if err := common.UnmarshalJsonStr(data, &streamResponse); err != nil {
 			logger.LogError(c, "failed to unmarshal stream response: "+err.Error())
@@ -90,8 +91,13 @@ func OaiResponsesStreamHandler(c *gin.Context, info *relaycommon.RelayInfo, resp
 			return
 		}
 		sendResponsesStreamData(c, streamResponse, data)
+		started = started || strings.HasPrefix(streamResponse.Type, "response.")
+		failed = failed || streamResponse.Type == "error" || streamResponse.Type == "response.error" ||
+			streamResponse.Type == "response.failed" ||
+			(streamResponse.Response != nil && common.JsonRawMessageToString(streamResponse.Response.Status) == "failed")
+
 		switch streamResponse.Type {
-		case "response.completed":
+		case "response.completed", "response.done", "response.incomplete", "response.failed", "response.cancelled", "response.canceled":
 			if streamResponse.Response != nil {
 				if streamResponse.Response.Usage != nil {
 					if streamResponse.Response.Usage.InputTokens != 0 {
@@ -108,14 +114,18 @@ func OaiResponsesStreamHandler(c *gin.Context, info *relaycommon.RelayInfo, resp
 						usage.PromptTokensDetails.CacheWriteTokens = streamResponse.Response.Usage.InputTokensDetails.CacheWriteTokens
 					}
 				}
-				if streamResponse.Response.HasImageGenerationCall() {
+				if responseTextBuilder.Len() == 0 && usage.CompletionTokens == 0 {
+					responseTextBuilder.WriteString(relayconvert.ExtractOutputTextFromResponses(streamResponse.Response))
+				}
+				if (streamResponse.Type == "response.completed" || streamResponse.Type == "response.done") &&
+					streamResponse.Response.HasImageGenerationCall() {
 					c.Set("image_generation_call", true)
 					c.Set("image_generation_call_quality", streamResponse.Response.GetQuality())
 					c.Set("image_generation_call_size", streamResponse.Response.GetSize())
 				}
 			}
-		case "response.output_text.delta":
-			// 处理输出文本
+		case "response.output_text.delta", "response.function_call_arguments.delta",
+			"response.reasoning_summary_text.delta", "response.reasoning_text.delta", "response.refusal.delta":
 			responseTextBuilder.WriteString(streamResponse.Delta)
 		case dto.ResponsesOutputTypeItemDone:
 			// 函数调用处理
@@ -132,18 +142,20 @@ func OaiResponsesStreamHandler(c *gin.Context, info *relaycommon.RelayInfo, resp
 		}
 	})
 
-	if usage.CompletionTokens == 0 && !service.HasAdjustedUsage(info) {
-		// 计算输出文本的 token 数量
-		tempStr := responseTextBuilder.String()
-		if len(tempStr) > 0 {
-			// 非正常结束，使用输出文本的 token 数量
-			completionTokens := service.CountTextToken(tempStr, info.UpstreamModelName)
-			usage.CompletionTokens = completionTokens
+	if !service.HasAdjustedUsage(info) {
+		estimated := false
+		if usage.CompletionTokens == 0 && responseTextBuilder.Len() > 0 {
+			usage.CompletionTokens = service.CountTextToken(responseTextBuilder.String(), info.UpstreamModelName)
+			estimated = usage.CompletionTokens > 0
 		}
-	}
-
-	if usage.PromptTokens == 0 && usage.CompletionTokens != 0 && !service.HasAdjustedUsage(info) {
-		usage.PromptTokens = info.GetEstimatePromptTokens()
+		// An interrupted stream can incur input usage before emitting any output.
+		if usage.PromptTokens == 0 && (usage.CompletionTokens != 0 || (started && !failed)) {
+			usage.PromptTokens = info.GetEstimatePromptTokens()
+			estimated = estimated || usage.PromptTokens > 0
+		}
+		if estimated {
+			common.SetContextKey(c, constant.ContextKeyLocalCountTokens, true)
+		}
 	}
 
 	usage.TotalTokens = usage.PromptTokens + usage.CompletionTokens

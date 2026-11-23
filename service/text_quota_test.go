@@ -2,13 +2,16 @@ package service
 
 import (
 	"math"
+	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 	"time"
 
 	"github.com/QuantumNous/new-api/common"
 	"github.com/QuantumNous/new-api/constant"
 	"github.com/QuantumNous/new-api/dto"
+	"github.com/QuantumNous/new-api/model"
 	"github.com/QuantumNous/new-api/pkg/billingexpr"
 	relaycommon "github.com/QuantumNous/new-api/relay/common"
 	"github.com/QuantumNous/new-api/types"
@@ -16,6 +19,42 @@ import (
 	"github.com/gin-gonic/gin"
 	"github.com/stretchr/testify/require"
 )
+
+func TestPostTextConsumeQuotaRecordsMissingUsageRequestForAdmins(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	truncate(t)
+	ctx, _ := gin.CreateTestContext(httptest.NewRecorder())
+	ctx.Request = httptest.NewRequest(http.MethodPost, "/v1/responses", strings.NewReader(`{"input":"diagnostic context"}`))
+	ctx.Request.Header.Set("Content-Type", "application/json")
+	ctx.Set(common.RequestIdKey, "missing-usage-snapshot-test")
+	t.Cleanup(func() { common.CleanupBodyStorage(ctx) })
+	info := &relaycommon.RelayInfo{
+		ChannelMeta:     &relaycommon.ChannelMeta{ChannelId: 182},
+		UserId:          2522,
+		OriginModelName: "test-model",
+		StartTime:       time.Now(),
+		IsStream:        true,
+	}
+
+	PostTextConsumeQuota(ctx, info, &dto.Usage{}, nil)
+
+	var log model.Log
+	require.NoError(t, model.LOG_DB.Where("request_id = ?", "missing-usage-snapshot-test").Take(&log).Error)
+	require.Equal(t, model.LogTypeConsume, log.Type)
+	require.Zero(t, log.Quota)
+	other, err := common.StrToMap(log.Other)
+	require.NoError(t, err)
+	adminInfo, ok := other["admin_info"].(map[string]any)
+	require.True(t, ok)
+	snapshot, ok := adminInfo["request_snapshot"].(map[string]any)
+	require.True(t, ok)
+	require.Equal(t, map[string]any{"input": "diagnostic context"}, snapshot["body"])
+
+	userLogs, _, err := model.GetUserLogs(info.UserId, model.LogTypeConsume, 0, 0, "", "", 0, 10, "", log.RequestId, "")
+	require.NoError(t, err)
+	require.Len(t, userLogs, 1)
+	require.NotContains(t, userLogs[0].Other, "diagnostic context")
+}
 
 func TestCalculateTextQuotaSummaryUnifiedForClaudeSemantic(t *testing.T) {
 	gin.SetMode(gin.TestMode)

@@ -308,7 +308,7 @@ func recordRelayPrecheckErrorLog(c *gin.Context, relayInfo *relaycommon.RelayInf
 	for key, value := range extra {
 		adminInfo[key] = value
 	}
-	if snapshot := buildErrorRequestSnapshot(c); len(snapshot) > 0 {
+	if snapshot := common.BuildRequestSnapshot(c); len(snapshot) > 0 {
 		adminInfo["request_snapshot"] = snapshot
 	}
 	other["admin_info"] = adminInfo
@@ -365,7 +365,7 @@ func recordRelayModerationErrorLog(c *gin.Context, relayInfo *relaycommon.RelayI
 	if moderationErr != nil {
 		adminInfo["moderation_error"] = moderationErr.Error()
 	}
-	if snapshot := buildErrorRequestSnapshot(c); len(snapshot) > 0 {
+	if snapshot := common.BuildRequestSnapshot(c); len(snapshot) > 0 {
 		adminInfo["request_snapshot"] = snapshot
 	}
 	other["admin_info"] = adminInfo
@@ -529,7 +529,7 @@ func processChannelError(c *gin.Context, channelError types.ChannelError, err *t
 			adminInfo["multi_key_index"] = common.GetContextKeyInt(c, constant.ContextKeyChannelMultiKeyIndex)
 		}
 		service.AppendChannelAffinityAdminInfo(c, adminInfo)
-		if snapshot := buildErrorRequestSnapshot(c); len(snapshot) > 0 {
+		if snapshot := common.BuildRequestSnapshot(c); len(snapshot) > 0 {
 			adminInfo["request_snapshot"] = snapshot
 		}
 		other["admin_info"] = adminInfo
