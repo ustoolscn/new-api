@@ -16,6 +16,7 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 
 For commercial licensing, please contact support@quantumnous.com
 */
+import { useQuery } from '@tanstack/react-query'
 import type { TFunction } from 'i18next'
 import {
   Copy,
@@ -45,6 +46,7 @@ import { formatBillingCurrencyFromUSD } from '@/lib/currency'
 import { formatLogQuota, formatTokens, formatUseTime } from '@/lib/format'
 import { cn } from '@/lib/utils'
 
+import { getLogRequestSnapshot } from '../../api'
 import type { UsageLog } from '../../data/schema'
 import {
   parseLogOther,
@@ -200,12 +202,57 @@ function formatSnapshotValue(value: unknown): string {
 }
 
 function RequestSnapshotSection(props: {
-  snapshot: RequestSnapshot
+  log: UsageLog
+  snapshot: RequestSnapshot | null
   onCopy: (text: string) => void
   copiedText: string | null
 }) {
   const { t } = useTranslation()
-  const snapshot = props.snapshot
+  const snapshotQuery = useQuery({
+    queryKey: [
+      'usage-log-request-snapshot',
+      props.log.id,
+      props.log.request_id,
+      props.log.created_at,
+      props.log.type,
+      props.log.channel,
+    ],
+    queryFn: ({ signal }) => getLogRequestSnapshot(props.log, signal),
+    enabled: !props.snapshot,
+    staleTime: Infinity,
+    gcTime: 0,
+  })
+  const snapshot = props.snapshot ?? snapshotQuery.data
+  if (!snapshot) {
+    return (
+      <DetailSection label={t('Request Snapshot')}>
+        {snapshotQuery.isPending && (
+          <p role='status' className='text-muted-foreground text-sm'>
+            {t('Loading...')}
+          </p>
+        )}
+        {snapshotQuery.isError && (
+          <div className='flex items-center gap-2'>
+            <span role='alert' className='text-muted-foreground text-sm'>
+              {t('Failed to load logs')}
+            </span>
+            <Button
+              variant='outline'
+              size='sm'
+              onClick={() => snapshotQuery.refetch()}
+            >
+              {t('Retry')}
+            </Button>
+          </div>
+        )}
+        {snapshotQuery.isSuccess && (
+          <p className='text-muted-foreground text-sm'>
+            {t('No data available')}
+          </p>
+        )}
+      </DetailSection>
+    )
+  }
   const headersText = formatSnapshotValue(snapshot.headers)
   const bodyText = formatSnapshotValue(snapshot.body ?? snapshot.body_preview)
   const copyText = JSON.stringify(snapshot, null, 2)
@@ -1014,13 +1061,16 @@ export function DetailsDialog(props: DetailsDialogProps) {
           </DetailSection>
         )}
 
-        {requestSnapshot && (
-          <RequestSnapshotSection
-            snapshot={requestSnapshot}
-            onCopy={copyToClipboard}
-            copiedText={copiedText}
-          />
-        )}
+        {props.open &&
+          props.isAdmin &&
+          (requestSnapshot || props.log.has_request_snapshot) && (
+            <RequestSnapshotSection
+              log={props.log}
+              snapshot={requestSnapshot}
+              onCopy={copyToClipboard}
+              copiedText={copiedText}
+            />
+          )}
 
         {(moderation || moderationError) && (
           <ModerationSection

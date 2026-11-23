@@ -27,10 +27,29 @@ func GetAllLogs(c *gin.Context) {
 		common.ApiError(c, err)
 		return
 	}
+	if c.Query("include_request_snapshot") == "false" {
+		for _, log := range logs {
+			log.OmitRequestSnapshot()
+		}
+	}
 	pageInfo.SetTotal(int(total))
 	pageInfo.SetItems(logs)
 	common.ApiSuccess(c, pageInfo)
 	return
+}
+
+func GetLogRequestSnapshot(c *gin.Context) {
+	c.Header("Cache-Control", "no-store")
+	id, _ := strconv.Atoi(c.Query("id"))
+	createdAt, _ := strconv.ParseInt(c.Query("created_at"), 10, 64)
+	logType, _ := strconv.Atoi(c.Query("type"))
+	channelID, _ := strconv.Atoi(c.Query("channel_id"))
+	snapshot, err := model.GetLogRequestSnapshot(id, c.Query("request_id"), createdAt, logType, channelID)
+	if err != nil {
+		common.ApiError(c, err)
+		return
+	}
+	common.ApiSuccess(c, snapshot)
 }
 
 func GetUserLogs(c *gin.Context) {

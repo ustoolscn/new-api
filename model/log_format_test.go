@@ -1,12 +1,34 @@
 package model
 
 import (
+	"strings"
 	"testing"
 
 	"github.com/QuantumNous/new-api/common"
 
 	"github.com/stretchr/testify/require"
 )
+
+func TestLogRequestSnapshotCanBeFetchedAfterOmittingItFromList(t *testing.T) {
+	body := strings.Repeat("request body ", 10000)
+	log := Log{Type: LogTypeError, Other: common.MapToJsonStr(map[string]any{
+		"stream_status": "error",
+		"admin_info": map[string]any{
+			"request_snapshot": map[string]any{"body": body},
+			"status_code":      502,
+		},
+	})}
+	require.NoError(t, LOG_DB.Create(&log).Error)
+	t.Cleanup(func() { LOG_DB.Delete(&log) })
+
+	log.OmitRequestSnapshot()
+	require.True(t, log.HasRequestSnapshot)
+	require.JSONEq(t, `{"stream_status":"error","admin_info":{"status_code":502}}`, log.Other)
+
+	snapshot, err := GetLogRequestSnapshot(log.Id, "", 0, 0, 0)
+	require.NoError(t, err)
+	require.JSONEq(t, common.MapToJsonStr(map[string]any{"body": body}), string(snapshot))
+}
 
 // TestFormatUserLogsStripsQuotaSaturation verifies the admin-only quota
 // saturation marker (nested under other.admin_info) is removed for non-admin

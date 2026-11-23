@@ -2,6 +2,7 @@ package model
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"sort"
@@ -14,6 +15,8 @@ import (
 	"github.com/QuantumNous/new-api/types"
 
 	"github.com/gin-gonic/gin"
+	"github.com/tidwall/gjson"
+	"github.com/tidwall/sjson"
 
 	"gorm.io/gorm"
 )
@@ -80,6 +83,48 @@ type Log struct {
 	RequestId         string `json:"request_id,omitempty" gorm:"type:varchar(64);index:idx_logs_request_id;default:''"`
 	UpstreamRequestId string `json:"upstream_request_id,omitempty" gorm:"type:varchar(128);index:idx_logs_upstream_request_id;default:''"`
 	Other             string `json:"other"`
+
+	HasRequestSnapshot bool `json:"has_request_snapshot,omitempty" gorm:"-"`
+}
+
+const logRequestSnapshotPath = "admin_info.request_snapshot"
+
+func (log *Log) OmitRequestSnapshot() {
+	if !strings.Contains(log.Other, `"request_snapshot"`) || !gjson.Get(log.Other, logRequestSnapshotPath).IsObject() {
+		return
+	}
+	other, err := sjson.Delete(log.Other, logRequestSnapshotPath)
+	if err == nil {
+		log.Other = other
+		log.HasRequestSnapshot = true
+	}
+}
+
+func GetLogRequestSnapshot(id int, requestID string, createdAt int64, logType, channelID int) (json.RawMessage, error) {
+	query := LOG_DB.Model(&Log{})
+	if common.UsingLogDatabase(common.DatabaseTypeClickHouse) {
+		// ClickHouse list IDs are synthetic. Match the request and its log coordinates.
+		if requestID == "" || createdAt <= 0 {
+			return nil, nil
+		}
+		query = query.Where("request_id = ? AND created_at = ? AND type = ? AND channel_id = ?", requestID, createdAt, logType, channelID)
+	} else {
+		if id <= 0 {
+			return nil, nil
+		}
+		query = query.Where("id = ?", id)
+	}
+
+	var others []string
+	if err := query.Pluck("other", &others).Error; err != nil {
+		return nil, err
+	}
+	for _, other := range others {
+		if snapshot := gjson.Get(other, logRequestSnapshotPath); snapshot.IsObject() {
+			return json.RawMessage(snapshot.Raw), nil
+		}
+	}
+	return nil, nil
 }
 
 // don't use iota, avoid change log type value

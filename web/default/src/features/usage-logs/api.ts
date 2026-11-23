@@ -18,7 +18,7 @@ For commercial licensing, please contact support@quantumnous.com
 */
 import { api } from '@/lib/api'
 
-import { buildQueryParams } from './lib/utils'
+import type { UsageLog } from './data/schema'
 import type {
   GetLogsParams,
   GetLogsResponse,
@@ -26,12 +26,23 @@ import type {
   GetLogStatsResponse,
   GetMidjourneyLogsParams,
   GetTaskLogsParams,
+  RequestSnapshot,
   UserInfo,
 } from './types'
 
 // ============================================================================
 // Generic API Helpers
 // ============================================================================
+
+function buildQueryParams(params: Record<string, unknown>): URLSearchParams {
+  const queryParams = new URLSearchParams()
+  for (const [key, value] of Object.entries(params)) {
+    if (value !== undefined && value !== null && value !== '') {
+      queryParams.append(key, String(value))
+    }
+  }
+  return queryParams
+}
 
 function buildApiPath(endpoint: string, isAdmin: boolean): string {
   return isAdmin ? endpoint : `${endpoint}/self`
@@ -71,7 +82,35 @@ async function fetchLogStats<T>(
 // ============================================================================
 
 export const getAllLogs = (params: GetLogsParams = {}) =>
-  fetchLogs('/api/log', params, true)
+  fetchLogs('/api/log', { ...params, include_request_snapshot: 'false' }, true)
+
+export async function getLogRequestSnapshot(
+  log: Pick<UsageLog, 'id' | 'request_id' | 'created_at' | 'type' | 'channel'>,
+  signal: AbortSignal
+): Promise<RequestSnapshot | null> {
+  const params = {
+    id: log.id,
+    request_id: log.request_id,
+    created_at: log.created_at,
+    type: log.type,
+    channel_id: log.channel,
+  }
+  const response = await api.get<{
+    success: boolean
+    message?: string
+    data: RequestSnapshot | null
+  }>('/api/log/request-snapshot', {
+    params,
+    signal,
+    disableDuplicate: true,
+    skipBusinessError: true,
+    skipErrorHandler: true,
+  })
+  if (!response.data.success) {
+    throw new Error(response.data.message)
+  }
+  return response.data.data
+}
 
 export const getUserLogs = (
   params: Omit<GetLogsParams, 'username' | 'channel'> = {}
